@@ -1,0 +1,20 @@
+# game files / build state (never commit: large and come from your own install)
+backup/
+originals.bin
+*.pck
+*.tmp
+
+# personal setup (each player makes their own)
+profile.json
+CLAUDE.md
+
+# third-party or personal assets that aren't ours to redistribute
+src/osuskin/
+src/font/
+src/border/
+src/discord/*.png
+src/intro/*.mp3
+src/replay/icons/*.woff
+
+__pycache__/
+*.zip
