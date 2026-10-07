@@ -452,6 +452,7 @@ func _relayout_mods():
 	if hp:
 		placed.append([hp, Vector2(hp.rect_position.x - col_a, y + 4)])
 		y += 44
+		_hp_switch(hp)
 	var card = Panel.new()
 	card.name = "ModsCard"
 	var cs = StyleBoxFlat.new()
@@ -465,21 +466,43 @@ func _relayout_mods():
 	var first = mods.get_child_count()
 	for e in placed: first = min(first, e[0].get_index())
 	mods.move_child(card, first) # above Speed/Start From for clicks, below the checkboxes
-	var origin = Vector2(mods_toggle.rect_position.x + 165, mods_toggle.rect_position.y - 10 - y)
+	var origin = Vector2(mods_toggle.rect_position.x + 165, mods_toggle.rect_position.y - 18 - y)
 	card.rect_position = origin + Vector2(-165, 0)
-	card.rect_size = Vector2(max(col_b - col_a + 205, mods_toggle.rect_size.x), y)
+	card.rect_size = Vector2(max(col_b - col_a + 205, mods_toggle.rect_size.x), y + 16) # down to the bar: no gap onto Speed underneath
 	mods_nodes.append(card)
 	for e in placed:
 		e[0].rect_position = origin + e[1]
 		mods_nodes.append(e[0])
 	for n in mods_nodes: # draw over the bottom visualizer / fade
 		VisualServer.canvas_item_set_z_index(n.get_canvas_item(), 6)
-	if hp: # the health model dropdown opens above the card (it inherited z 0 and drew behind it)
-		var pop = hp.get_popup()
-		VisualServer.canvas_item_set_z_as_relative_to_parent(pop.get_canvas_item(), false)
-		VisualServer.canvas_item_set_z_index(pop.get_canvas_item(), 20)
-		if !pop.is_connected("popup_hide", self, "_hp_closed"): pop.connect("popup_hide", self, "_hp_closed")
 	_toggle_mods(Engine.get_meta("mods_open") if Engine.has_meta("mods_open") else false)
+
+# Health Model has two choices: a tap switches between them. Its dropdown (a MenuButton popup)
+# didn't take touch taps on Android and sat right above the MODS bar. The stock button keeps its
+# look and "Health Model" label; a see-through button on top of it does the switching.
+func _hp_switch(hp:MenuButton):
+	if hp.has_node("Switch"): return
+	hp.mouse_filter = MOUSE_FILTER_IGNORE
+	var b = Button.new()
+	b.name = "Switch"
+	b.flat = true
+	b.focus_mode = FOCUS_NONE
+	b.anchor_right = 1
+	b.anchor_bottom = 1
+	b.mouse_default_cursor_shape = CURSOR_POINTING_HAND
+	b.hint_tooltip = "Tap to switch"
+	var none = StyleBoxEmpty.new()
+	for st in ["normal", "hover", "pressed", "focus", "disabled"]: b.add_stylebox_override(st, none)
+	var hov = StyleBoxFlat.new()
+	hov.bg_color = Color(1, 1, 1, 0.08)
+	hov.set_corner_radius_all(6)
+	b.add_stylebox_override("hover", hov)
+	b.connect("pressed", self, "_hp_next", [hp])
+	hp.add_child(b)
+
+func _hp_next(hp:MenuButton):
+	var n = hp.get("names").size() if hp.get("names") else 2
+	hp.on_pressed((Rhythia.health_model + 1) % n)
 
 # clicking anywhere outside the open card (and its bar / dropdowns) closes it. Touch screens: the
 # tap that picks a health model can arrive as the dropdown closes, so taps on the dropdown, on any
@@ -496,10 +519,6 @@ func _input(ev):
 	if mods_toggle.get_global_rect().has_point(p): return
 	for n in mods_nodes:
 		if n.visible and n.get_global_rect().has_point(p): return
-	var hp = get_node_or_null("RS/H2/Mods/HpModel")
-	if hp:
-		var pop = hp.get_popup()
-		if pop.visible or pop.get_global_rect().has_point(p): return
 	_toggle_mods(false)
 
 var mods_tween:Tween = null
