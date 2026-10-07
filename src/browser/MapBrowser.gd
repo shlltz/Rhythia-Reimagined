@@ -837,9 +837,12 @@ func _install_rhm(b:Dictionary, path:String) -> String:
 	var dir = Globals.p(TMP) + "/%d" % oid
 	var d = Directory.new()
 	d.make_dir_recursive(dir)
-	var out = []
-	var code = OS.execute("tar", ["-xf", '"%s"' % ProjectSettings.globalize_path(path), "-C", '"%s"' % ProjectSettings.globalize_path(dir)], true, out, true)
-	if code != 0: return "!couldn't unpack the .rhm file (tar exit %d)" % code
+	var err = _unzip(path, dir)
+	if err != "":
+		if OS.get_name() != "Windows": return "!couldn't unpack the .rhm file (" + err + ")"
+		var out = [] # Windows: fall back to tar.exe
+		var code = OS.execute("tar", ["-xf", '"%s"' % ProjectSettings.globalize_path(path), "-C", '"%s"' % ProjectSettings.globalize_path(dir)], true, out, true)
+		if code != 0: return "!couldn't unpack the .rhm file (%s; tar exit %d)" % [err, code]
 	var f = File.new()
 	if f.open(dir + "/map", File.READ) != OK: return "!the .rhm file has no map data"
 	var m = parse_json(f.get_as_text())
@@ -876,6 +879,68 @@ func _install_rhm(b:Dictionary, path:String) -> String:
 	reg.check_and_remove_id(sid)
 	if reg.add_sspm_map(Globals.p("user://maps/%s.sspm") % sid) == null: return "!the converted map didn't load"
 	return sid
+
+# .rhm files are zips. Godot 3 has no zip reader and no shell tar on Android, so: read the zip
+# directory, and inflate each deflated entry as a gzip stream built from the entry's own CRC and
+# size (Godot decompresses gzip). Returns "" when done, else what went wrong.
+static func _u16(b:PoolByteArray, i:int) -> int:
+	return b[i] | (b[i + 1] << 8)
+
+static func _u32(b:PoolByteArray, i:int) -> int:
+	return b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)
+
+static func _le32(v:int) -> PoolByteArray:
+	return PoolByteArray([v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >> 24) & 255])
+
+static func _unzip(path:String, dir:String) -> String:
+	var f = File.new()
+	if f.open(path, File.READ) != OK: return "can't open the download"
+	var b:PoolByteArray = f.get_buffer(f.get_len())
+	f.close()
+	var n = b.size()
+	var eocd = -1
+	var i = n - 22
+	while i >= max(0, n - 65557):
+		if b[i] == 0x50 and b[i + 1] == 0x4b and b[i + 2] == 5 and b[i + 3] == 6:
+			eocd = i
+			break
+		i -= 1
+	if eocd < 0: return "not a zip file"
+	var count = _u16(b, eocd + 10)
+	var p = _u32(b, eocd + 16)
+	var d = Directory.new()
+	for _e in count:
+		if p + 46 > n or _u32(b, p) != 0x02014b50: return "broken zip directory"
+		var method = _u16(b, p + 10)
+		var crc = _u32(b, p + 16)
+		var csize = _u32(b, p + 20)
+		var usize = _u32(b, p + 24)
+		var nlen = _u16(b, p + 28)
+		var skip = nlen + _u16(b, p + 30) + _u16(b, p + 32)
+		var loc = _u32(b, p + 42)
+		var name = b.subarray(p + 46, p + 45 + nlen).get_string_from_utf8()
+		p += 46 + skip
+		if name.ends_with("/") or name.find("..") != -1: continue
+		if loc + 30 > n: return "broken zip entry"
+		var start = loc + 30 + _u16(b, loc + 26) + _u16(b, loc + 28)
+		var data = PoolByteArray()
+		if csize > 0:
+			if start + csize > n: return "truncated zip"
+			data = b.subarray(start, start + csize - 1)
+		if method == 8:
+			var gz = PoolByteArray([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0xff])
+			gz.append_array(data)
+			gz.append_array(_le32(crc))
+			gz.append_array(_le32(usize))
+			data = gz.decompress(usize, File.COMPRESSION_GZIP) if usize > 0 else PoolByteArray()
+			if data.size() != usize: return "couldn't inflate " + name
+		elif method != 0: return "unsupported zip compression %d" % method
+		var out = dir + "/" + name
+		d.make_dir_recursive(out.get_base_dir())
+		if f.open(out, File.WRITE) != OK: return "can't write " + name
+		f.store_buffer(data)
+		f.close()
+	return ""
 
 func _refresh_library():
 	var list = get_tree().root.get_node_or_null("Menu/Main/Maps/MapRegistry/S/VBoxContainer")

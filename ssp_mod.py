@@ -13,7 +13,7 @@ so removed mods leave nothing behind. The previous game file is kept in backup/S
   opacity X                                  border opacity only
   restore                                    remove every mod (original game)
   package [--out ZIP]                        shareable no-Python patch (replay + stars), default ..\..\Rhythia-reimagined-lite-vX.Y.Z.zip
-  portable [--out ZIP]                       ready-to-play zip: game exe + DLLs + pck with the No-Browser share build
+  portable [--out ZIP]                       ready-to-play zip: game exe + DLLs + pck with the share build (with map browser)
   apk APK [--out FILE]                       Rhythia Legacy Android: mods written into the APK (unsigned; sign before installing)
   tweaks [--without browser]                 full share zip ..\..\Rhythia-reimagined-vX.Y.Z.zip
   version [X.Y.Z]                            show / set the version (version.txt; zip names, README, title screen)
@@ -555,11 +555,11 @@ def _readme_without(data, without):
 
 # ---------- shareable patch (PowerShell, no Python needed) ----------
 SHARE = ['replay', 'stars']
-# ready-to-play folder: the original exe + DLLs + a pck with the No-Browser share build baked in
+# ready-to-play folder: the original exe + DLLs + a pck with the share build (map browser included) baked in
 PORTABLE_FILES = ['SoundSpacePlus.exe', 'discord-game-sdk-godot.dll', 'discord_game_sdk.dll',
                   'libgodot_openvr.dll', 'libnativedialogs.dll', 'openvr_api.dll']
 def portable(out):
-    prof = {k: v for k, v in load_profile().items() if k not in TWEAKS_EXCLUDE and k != 'browser'}
+    prof = {k: v for k, v in load_profile().items() if k not in TWEAKS_EXCLUDE}
     prof['sharelook'] = {}
     pk = build(prof)
     tmp = out + '.pck.tmp'; pk.fn = tmp; pk.save(bak=False)
@@ -570,7 +570,7 @@ def portable(out):
             z.write(tmp, root + 'SoundSpacePlus.pck')
             v = version().encode()
             z.writestr(root + 'README.txt', src('share', 'README_portable.txt').replace(b'@@VERSION@@', v))
-            mods = _readme_without(src('share', 'README_tweaks.txt'), ('browser',))
+            mods = src('share', 'README_tweaks.txt')
             mods = mods[mods.index(b'WHAT YOU GET'):]                 # (no install / uninstall steps)
             z.writestr(root + 'README-mods.txt', b'RHYTHIA-REIMAGINED v' + v + bytes([13, 10, 13, 10]) + mods)
             z.writestr(root + 'LICENSE_SoundSpacePlus.txt', src('share', 'LICENSE_SoundSpacePlus.txt'))
@@ -583,7 +583,7 @@ def portable(out):
 # Rhythia Legacy Android (com.rhythialegacy.net, same Godot 3.6.2 build): the APK keeps the game
 # files loose under assets/, so the mods are written straight in. Windows-only mods are left out.
 # The result is UNSIGNED - sign it (zipalign + apksigner, e.g. uber-apk-signer) before installing.
-APK_SKIP = ['browser', 'discord', 'autodelete']   # tar.exe / Discord DLL / PowerShell recycle bin
+APK_SKIP = ['discord', 'autodelete']   # Discord DLL / PowerShell recycle bin (the browser unzips .rhm itself)
 def apk(src_apk, out):
     prof = {k: v for k, v in load_profile().items() if k not in TWEAKS_EXCLUDE and k not in APK_SKIP}
     prof['sharelook'] = {}

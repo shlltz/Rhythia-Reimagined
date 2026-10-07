@@ -2,7 +2,7 @@ RHYTHIA-REIMAGINED v@@VERSION@@ - ready-to-play Sound Space Plus (Rhythia Legacy
 
 PLAY
   Extract this zip anywhere and double-click SoundSpacePlus.exe. Nothing to install.
-  (No online map browser in this build.)
+  Browse (sidebar cloud icon) searches and downloads maps from rhythia.com.
 
 YOUR DATA
   Maps, scores, replays and settings live in %APPDATA%\SoundSpacePlus - the same folder a normal
