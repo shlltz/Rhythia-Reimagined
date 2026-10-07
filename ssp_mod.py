@@ -14,6 +14,7 @@ so removed mods leave nothing behind. The previous game file is kept in backup/S
   restore                                    remove every mod (original game)
   package [--out ZIP]                        shareable no-Python patch (replay + stars), default ..\..\Rhythia-reimagined-lite-vX.Y.Z.zip
   portable [--out ZIP]                       ready-to-play zip: game exe + DLLs + pck with the No-Browser share build
+  apk APK [--out FILE]                       Rhythia Legacy Android: mods written into the APK (unsigned; sign before installing)
   tweaks [--without browser]                 full share zip ..\..\Rhythia-reimagined-vX.Y.Z.zip
   version [X.Y.Z]                            show / set the version (version.txt; zip names, README, title screen)
 
@@ -570,6 +571,43 @@ def portable(out):
         if os.path.exists(tmp): os.remove(tmp)
     print('%s written (%s)' % (out, ', '.join(n for n in ORDER if n in prof)))
 
+# Rhythia Legacy Android (com.rhythialegacy.net, same Godot 3.6.2 build): the APK keeps the game
+# files loose under assets/, so the mods are written straight in. Windows-only mods are left out.
+# The result is UNSIGNED - sign it (zipalign + apksigner, e.g. uber-apk-signer) before installing.
+APK_SKIP = ['browser', 'discord', 'autodelete']   # tar.exe / Discord DLL / PowerShell recycle bin
+def apk(src_apk, out):
+    prof = {k: v for k, v in load_profile().items() if k not in TWEAKS_EXCLUDE and k not in APK_SKIP}
+    prof['sharelook'] = {}
+    pk = build(prof)
+    files = {}
+    for p in pk.by:
+        if p not in pk.new: continue
+        if p in pk.bak and pk.new[p] == pk.bak[p]: continue               # untouched game file
+        files['assets/' + p[len('res://'):]] = pk.new[p]
+    zin = zipfile.ZipFile(src_apk)
+    with zipfile.ZipFile(out, 'w') as zo:
+        for i in zin.infolist():
+            if i.filename.startswith('META-INF/') or i.filename in files: continue   # old signature / replaced
+            zo.writestr(i, zin.read(i.filename), compress_type=i.compress_type)
+        for f, d in sorted(files.items()):
+            zo.writestr(zipfile.ZipInfo(f, (2026, 1, 1, 0, 0, 0)), d, compress_type=zipfile.ZIP_DEFLATED)
+    print('%s written (unsigned): %d game files (%s)' % (out, len(files), ', '.join(n for n in ORDER if n in prof)))
+    _sign_apk(out)
+
+# sign with tools/rr-release.jks (keep it: Android only installs updates signed with the same key)
+def _sign_apk(unsigned):
+    import glob, subprocess
+    t = os.path.join(HERE, 'tools'); jar = os.path.join(t, 'uber-apk-signer.jar'); ks = os.path.join(t, 'rr-release.jks')
+    java = (glob.glob(r'C:\Program Files\Eclipse Adoptium\jre-*in\java.exe') or [shutil.which('java')])[0]
+    if not (java and os.path.exists(jar) and os.path.exists(ks)): return print('not signed (needs Java + tools/uber-apk-signer.jar + tools/rr-release.jks)')
+    pw = open(os.path.join(t, 'rr-release.pass')).read().strip(); tmp = unsigned + '.signdir'
+    subprocess.run([java, '-jar', jar, '-a', unsigned, '-o', tmp, '--ks', ks, '--ksAlias', 'rhythiareimagined',
+                    '--ksPass', pw, '--ksKeyPass', pw], check=True, capture_output=True)
+    signed = [f for f in os.listdir(tmp) if f.endswith('.apk')][0]
+    final = unsigned.replace('-unsigned.apk', '.apk')
+    os.replace(os.path.join(tmp, signed), final); shutil.rmtree(tmp); os.remove(unsigned)
+    print('signed:', final)
+
 def package(out):
     pk = Pck(PCK); swap, new = [], []
     for name in SHARE:
@@ -606,6 +644,7 @@ if __name__ == '__main__':
     tw.add_argument('--without', default='', help='comma list of mods to leave out, e.g. browser')
     pkg = sp.add_parser('package'); pkg.add_argument('--out')
     pt = sp.add_parser('portable'); pt.add_argument('--out')
+    ak = sp.add_parser('apk'); ak.add_argument('apk'); ak.add_argument('--out')
     sp.add_parser('version').add_argument('value', nargs='?')
     for n in ('status', 'rebuild', 'restore'): sp.add_parser(n)
     a = ap.parse_args(); prof = load_profile()
@@ -617,6 +656,7 @@ if __name__ == '__main__':
             assert re.fullmatch(r'\d+\.\d+\.\d+', a.value), 'version must look like 0.1.2'
             open(VERSION_FILE, 'w').write(a.value + '\n')
         print('Rhythia-reimagined v' + version()); sys.exit()
+    if a.cmd == 'apk': apk(a.apk, a.out or os.path.join(os.path.dirname(GAME), 'Rhythia-reimagined-android-v%s-unsigned.apk' % version())); sys.exit()
     if a.cmd == 'portable': portable(a.out or os.path.join(os.path.dirname(GAME), 'Rhythia-reimagined-portable-v%s.zip' % version())); sys.exit()
     if a.cmd == 'package': package(a.out or os.path.join(os.path.dirname(GAME), 'Rhythia-reimagined-lite-v%s.zip' % version())); sys.exit()
     if a.cmd == 'tweaks':

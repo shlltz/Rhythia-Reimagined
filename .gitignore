@@ -18,3 +18,7 @@ src/replay/icons/*.woff
 
 __pycache__/
 *.zip
+
+# signing tools + the APK signing key (keep private: updates must be signed with the same key)
+tools/
+*.apk
