@@ -598,7 +598,7 @@ def apk(src_apk, out):
 def _sign_apk(unsigned):
     import glob, subprocess
     t = os.path.join(HERE, 'tools'); jar = os.path.join(t, 'uber-apk-signer.jar'); ks = os.path.join(t, 'rr-release.jks')
-    java = (glob.glob(r'C:\Program Files\Eclipse Adoptium\jre-*in\java.exe') or [shutil.which('java')])[0]
+    java = (glob.glob(os.path.join(os.environ.get('ProgramFiles', 'C:/Program Files'), 'Eclipse Adoptium', 'jre-*', 'bin', 'java.exe')) or [shutil.which('java')])[0]
     if not (java and os.path.exists(jar) and os.path.exists(ks)): return print('not signed (needs Java + tools/uber-apk-signer.jar + tools/rr-release.jks)')
     pw = open(os.path.join(t, 'rr-release.pass')).read().strip(); tmp = unsigned + '.signdir'
     subprocess.run([java, '-jar', jar, '-a', unsigned, '-o', tmp, '--ks', ks, '--ksAlias', 'rhythiareimagined',
