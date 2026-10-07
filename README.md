@@ -2,6 +2,11 @@
 
 A mod pack for **Rhythia Legacy / Sound Space Plus nightly** (the Godot 3.6.2 build). It patches the game's `SoundSpacePlus.pck` with GDScript mods. You don't need Godot or the game's source code.
 
+> [!WARNING]
+> **This project is vibecoded.** Almost all of the code was written by an AI (Claude) from my descriptions, then tested by playing.
+> It works on my machine and I've tried to test it, but nobody has reviewed the code line by line. Expect bugs and rough edges.
+> Back up `%APPDATA%\SoundSpacePlus` if your maps and scores matter to you, and report problems in [Issues](../../issues).
+
 **Just want to play?** Get a zip from the [Releases](../../releases) page:
 - **portable**: unzip it and run `SoundSpacePlus.exe`.
 - **patch**: unzip it into your game folder and run `Install.bat`.
