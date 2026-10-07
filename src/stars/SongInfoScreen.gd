@@ -278,19 +278,19 @@ func _share_buttons():
 		var big = b == run_btn
 		for st in ["normal", "hover", "pressed", "focus", "disabled"]:
 			var sb = StyleBoxFlat.new()
-			sb.set_corner_radius_all(6)
-			sb.bg_color = Color(0.2, 0.17, 0.21, 0.95)
-			sb.border_color = Color(1, 1, 1, 0.22)
-			sb.set_border_width_all(1)
-			if big: # Start: the logo pink
-				sb.bg_color = Color(acc.r * 0.62, acc.g * 0.62, acc.b * 0.62, 0.97)
-				sb.border_color = Color(acc.r, acc.g, acc.b, 1.0).lightened(0.25)
-				sb.set_border_width_all(2)
+			# outline only, white text: rounded accent border on a see-through fill
+			sb.set_corner_radius_all(8)
+			sb.corner_detail = 6
+			sb.anti_aliasing = true
+			sb.bg_color = Color(0, 0, 0, 0.35)
+			sb.border_color = Color(acc.r, acc.g, acc.b, 0.75).lightened(0.2)
+			sb.set_border_width_all(2)
+			if big: sb.border_color = Color(acc.r, acc.g, acc.b, 1.0).lightened(0.2)
 			if st == "hover":
-				sb.bg_color = sb.bg_color.lightened(0.15)
-				sb.border_color = Color(acc.r, acc.g, acc.b, 1.0).lightened(0.35)
-			elif st == "pressed": sb.bg_color = sb.bg_color.darkened(0.2)
-			elif st == "disabled": sb.bg_color.a = 0.5
+				sb.bg_color = Color(acc.r, acc.g, acc.b, 0.16)
+				sb.border_color = Color(acc.r, acc.g, acc.b, 1.0).lightened(0.4)
+			elif st == "pressed": sb.bg_color = Color(acc.r, acc.g, acc.b, 0.3)
+			elif st == "disabled": sb.border_color.a = 0.35
 			b.add_stylebox_override(st, sb)
 	for k in ["font_color", "font_color_hover", "font_color_pressed", "font_color_focus"]:
 		run_btn.add_color_override(k, Color(1, 1, 1, 0.95))

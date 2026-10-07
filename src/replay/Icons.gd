@@ -9,6 +9,8 @@ const CODES = {
 	"cloud-download": 0xf45c, "settings-sliders": 0xfbab, "heart": 0xf794, "square-plus": 0xfc99,
 	"language": 0xf85b, "power": 0xfaa8, "search": 0xfb98, "menu-dots": 0xf918, "users": 0xfe7e,
 	"music-note": 0xf987, "info": 0xf7ff, "star": 0xfcc1, "folder": 0xf6ac, "time-past": 0xfd82,
+	"rewind": 0xfb31, "forward": 0xf6b9, "step-backward": 0xfcc9, "step-forward": 0xfcca, "minus": 0xf93e,
+	"plus": 0xfa8c, "cross": 0xf4ed, "eye-crossed": 0xf5e9, "eye": 0xf5eb,
 }
 # sidebar button name (lower case) -> icon
 const SIDEBAR = {

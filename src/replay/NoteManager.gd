@@ -891,7 +891,22 @@ func replay_length() -> float:
 
 # Rebuilds the whole replay state at replay time `target` (real ms, same clock as rms)
 # by re-running the recorded signals and note results from the start, silently.
-func replay_seek(target:float):
+# replay times (rms) of every miss, for the viewer's seek bar: one silent run over the whole
+# replay with the same judging as replay_seek, then the state is rebuilt at the current time
+var sim_miss_log = null
+func replay_miss_times() -> Array:
+	if !replay_viewer or !notes_loaded: return []
+	var keep = rms
+	var pauses = Rhythia.song_end_pause_count
+	sim_miss_log = []
+	replay_seek(Rhythia.replay.length_ms(), true)
+	var out = sim_miss_log
+	sim_miss_log = null
+	replay_seek(keep)
+	Rhythia.song_end_pause_count = pauses
+	return out
+
+func replay_seek(target:float, dry:bool = false):
 	if !replay_viewer or !notes_loaded: return
 	var rp = Rhythia.replay
 	var game = get_parent()
@@ -991,6 +1006,7 @@ func replay_seek(target:float):
 				elif sms > nms + hit_window or ps == -1:
 					notes[i][2] = Globals.NSTATE_MISS
 					last_judged = nms
+					if sim_miss_log != null: sim_miss_log.append(srms)
 					if _sim_miss(game):
 						end_type = Globals.END_FAIL
 						break
@@ -998,6 +1014,7 @@ func replay_seek(target:float):
 				cur = i + 1
 			i += 1
 	
+	if dry: return
 	ms = sms
 	rms = srms
 	pause_state = ps
@@ -1044,8 +1061,17 @@ func _key_just(k:int) -> bool:
 	keys_down[k] = down
 	return down and !was
 
+# mobile "tap to pause" (stock HUD TouchScreenButton) presses the "pause" action, which is also
+# Space on PC; Space alone stays skip, so the action only counts while Space isn't held
+func _mobile_pause_just() -> bool:
+	var down = Input.is_action_pressed("pause") and !Input.is_key_pressed(KEY_SPACE)
+	var was = keys_down.get("mpause", false)
+	keys_down["mpause"] = down
+	return down and !was
+
 func _live_pause(delta:float):
-	var esc = _key_just(KEY_ESCAPE)
+	var mp = _mobile_pause_just()
+	var esc = _key_just(KEY_ESCAPE) or mp
 	var space = _key_just(KEY_SPACE)
 	if pause_state == 0:
 		pause_cooldown = max(pause_cooldown - delta, 0)

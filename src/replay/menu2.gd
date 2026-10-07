@@ -58,6 +58,9 @@ func _ready():
 	# Alt + wheel volume overlay: one instance on the root, survives scene changes
 	if !get_tree().root.has_node("VolumeOverlay"):
 		get_tree().root.call_deferred("add_child", load("res://mods/replay/VolumeOverlay.gd").new())
+	# touch screens: drag-to-scroll for the settings page, replay list and other scroll areas
+	if OS.has_touchscreen_ui_hint() and !get_tree().root.has_node("TouchScroll"):
+		get_tree().root.call_deferred("add_child", load("res://mods/replay/TouchScroll.gd").new())
 
 # ---------------------------------------------------------------- osu-style screens
 # results screen after a run, title menu on startup and on Esc from map selection

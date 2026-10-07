@@ -21,12 +21,13 @@ const KEYS = [
 var spawn = null          # NoteManager
 var speed_i:int = 3
 var ui_state:int = 0      # 0 all, 1 recording (HUD only), 2 clean
-var show_keys:bool = true
+var show_keys:bool = !OS.has_touchscreen_ui_hint()
 var dragging:bool = false
 var drag_value:float = 0
 var last_drag_seek:int = 0
 var flash_t:float = 0
 var esc_was_down:bool = false
+var mpause_was_down:bool = false
 
 # hidden benchmark (F8): seek to 0:30, record 20 s of frames, write user://perf_log.txt
 var bench_t:float = -1
@@ -70,6 +71,66 @@ class SeekBar extends Control:
 			viewer.drag(clamp(ev.position.x / rect_size.x, 0, 1))
 			accept_event()
 
+# on-screen control button (rounded outline + Flaticon icon, text fallback); works with touch too
+class Btn extends Control:
+	signal tap
+	var icon:String = ""
+	var text:String = ""
+	var accent:bool = false
+	var hover:bool = false
+	var down:bool = false
+	var lib = null
+	var fnt:DynamicFont
+
+	func _init(i:String, t:String, w:float, f:DynamicFont):
+		icon = i
+		text = t
+		fnt = f
+		rect_min_size = Vector2(w, 44)
+		mouse_filter = MOUSE_FILTER_STOP
+		mouse_default_cursor_shape = CURSOR_POINTING_HAND
+		lib = load("res://mods/replay/Icons.gd")
+		if !lib.available(): lib = null
+		connect("mouse_entered", self, "_hov", [true])
+		connect("mouse_exited", self, "_hov", [false])
+
+	func _hov(v:bool):
+		hover = v
+		update()
+
+	func set_icon(i:String, t:String):
+		if i == icon and t == text: return
+		icon = i
+		text = t
+		update()
+
+	func _gui_input(ev):
+		if ev is InputEventMouseButton and ev.button_index == BUTTON_LEFT:
+			accept_event()
+			down = ev.pressed
+			if !ev.pressed and Rect2(Vector2(), rect_size).has_point(ev.position): emit_signal("tap")
+			update()
+
+	func _draw():
+		var sb = StyleBoxFlat.new()
+		sb.bg_color = Color(1, 1, 1, 0.2 if down else (0.1 if hover else 0.0))
+		sb.border_color = Color("#8a6cff") if accent else Color(1, 1, 1, 0.55)
+		for s in ["left", "top", "right", "bottom"]: sb.set("border_width_" + s, 2 if accent else 1)
+		for c in ["top_left", "top_right", "bottom_right", "bottom_left"]: sb.set("corner_radius_" + c, 10)
+		sb.corner_detail = 6
+		sb.anti_aliasing = true
+		draw_style_box(sb, Rect2(Vector2(), rect_size))
+		if lib and icon != "" and lib.has(icon):
+			var s = 20.0
+			lib.draw(self, icon, Rect2((rect_size - Vector2(s, s)) / 2, Vector2(s, s)), Color(1, 1, 1))
+		else:
+			var sz = fnt.get_string_size(text)
+			draw_string(fnt, ((rect_size - sz) / 2 + Vector2(0, fnt.get_ascent())).round(), text, Color(1, 1, 1))
+
+var play_btn:Btn
+var speed_btn:Btn
+var ui_btn:Btn
+
 func font(size:int) -> DynamicFont:
 	var f = DynamicFont.new()
 	f.font_data = load("res://assets/font/Lato/Lato-Bold.ttf")
@@ -111,7 +172,7 @@ func _ready():
 	panel.anchor_top = 1
 	panel.anchor_right = 1
 	panel.anchor_bottom = 1
-	panel.margin_top = -86
+	panel.margin_top = -104
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(panel)
 
@@ -125,36 +186,72 @@ func _ready():
 	bar.mouse_filter = Control.MOUSE_FILTER_STOP
 	panel.add_child(bar)
 
-	state_label = make_label(20, Label.ALIGN_LEFT)
+	# left: play state + time; centre: transport + speed; right: hide UI + leave (all tappable)
+	state_label = make_label(16, Label.ALIGN_LEFT)
 	state_label.margin_left = 24
-	state_label.margin_top = 40
-	state_label.margin_right = 140
-	state_label.margin_bottom = 76
+	state_label.margin_top = 44
+	state_label.margin_right = 300
+	state_label.margin_bottom = 66
+	state_label.modulate = Color(1, 1, 1, 0.6)
 	panel.add_child(state_label)
 
 	time_label = make_label(20, Label.ALIGN_LEFT)
-	time_label.margin_left = 140
-	time_label.margin_top = 40
-	time_label.margin_right = 420
-	time_label.margin_bottom = 76
+	time_label.margin_left = 24
+	time_label.margin_top = 64
+	time_label.margin_right = 300
+	time_label.margin_bottom = 92
 	panel.add_child(time_label)
 
-	speed_label = make_label(20, Label.ALIGN_LEFT)
-	speed_label.margin_left = 420
-	speed_label.margin_top = 40
-	speed_label.margin_right = 560
-	speed_label.margin_bottom = 76
+	speed_label = make_label(20, Label.ALIGN_LEFT) # kept for _process; shown on the speed button
+	speed_label.visible = false
 	panel.add_child(speed_label)
 
-	var hint = make_label(15, Label.ALIGN_RIGHT)
-	hint.anchor_right = 1
-	hint.margin_left = 560
-	hint.margin_right = -24
-	hint.margin_top = 40
-	hint.margin_bottom = 76
-	hint.text = "K  keybinds"
-	hint.modulate = Color(1, 1, 1, 0.5)
-	panel.add_child(hint)
+	var f = font(17)
+	var row = HBoxContainer.new()
+	row.anchor_right = 1
+	row.margin_top = 46
+	row.margin_bottom = 90
+	row.alignment = BoxContainer.ALIGN_CENTER
+	row.set("custom_constants/separation", 8)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(row)
+	var spec = [
+		["rewind", "-5s", 52, "_b_back"], ["step-backward", "<", 52, "_b_frame_back"],
+		["pause", "II", 64, "toggle_pause"], ["step-forward", ">", 52, "_b_frame_fwd"],
+		["forward", "+5s", 52, "_b_fwd"], [null, "", 18, ""],
+		["minus", "-", 44, "_b_slower"], ["", "1.00x", 76, "_b_speed_reset"], ["plus", "+", 44, "_b_faster"]]
+	for s in spec:
+		if s[0] == null:
+			var gap = Control.new()
+			gap.rect_min_size = Vector2(s[2], 0)
+			gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			row.add_child(gap)
+			continue
+		var btn = Btn.new(s[0], s[1], s[2], f)
+		btn.connect("tap", self, s[3])
+		row.add_child(btn)
+		if s[3] == "toggle_pause":
+			play_btn = btn
+			btn.accent = true
+		elif s[3] == "_b_speed_reset": speed_btn = btn
+
+	var right = HBoxContainer.new()
+	right.anchor_left = 1
+	right.anchor_right = 1
+	right.margin_left = -140
+	right.margin_right = -24
+	right.margin_top = 46
+	right.margin_bottom = 90
+	right.alignment = BoxContainer.ALIGN_END
+	right.set("custom_constants/separation", 8)
+	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(right)
+	ui_btn = Btn.new("eye-crossed", "HIDE", 52, f)
+	ui_btn.connect("tap", self, "_b_hide")
+	right.add_child(ui_btn)
+	var x = Btn.new("cross", "EXIT", 52, f)
+	x.connect("tap", self, "leave")
+	right.add_child(x)
 
 	center_label = make_label(40, Label.ALIGN_CENTER)
 	center_label.anchor_right = 1
@@ -175,7 +272,7 @@ func build_keys_panel():
 	keys_panel.anchor_bottom = 1
 	keys_panel.margin_left = -404
 	keys_panel.margin_right = -24
-	keys_panel.margin_bottom = -104
+	keys_panel.margin_bottom = -122
 	keys_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	keys_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(keys_panel)
@@ -222,17 +319,17 @@ func build_keys_panel():
 func length() -> float:
 	return max(spawn.replay_length(), 1)
 
-# note times of the misses (0..1 of the length), from the replay's per-note results
+# misses as 0..1 of the replay length, on the same clock as the bar (rms: lead-in, skips,
+# pauses and speed included); computed once by a silent run of the replay (NoteManager)
 var _misses = null
 func miss_marks() -> Array:
-	if _misses != null: return _misses
-	var rp = Rhythia.replay
-	if !rp or !spawn or spawn.notes.empty() or rp.note_results.empty(): return []
+	return _misses if _misses != null else []
+
+func _calc_misses():
+	if _misses != null or !spawn or !spawn.notes_loaded or spawn.notes.empty(): return
 	var l = length()
 	_misses = []
-	for i in spawn.notes.size():
-		if rp.note_results.has(i) and !rp.note_results[i] and spawn.notes[i][1] <= l: _misses.append(spawn.notes[i][1] / l)
-	return _misses
+	for r in spawn.replay_miss_times(): _misses.append(clamp(r / l, 0, 1))
 
 func progress() -> float:
 	if dragging: return drag_value
@@ -271,6 +368,24 @@ func toggle_pause():
 	spawn.replay_paused = !spawn.replay_paused
 	flash("PAUSED" if spawn.replay_paused else "")
 
+func _b_back(): do_seek(spawn.rms - 5000)
+func _b_fwd(): do_seek(spawn.rms + 5000)
+func _b_slower(): set_speed(speed_i - 1)
+func _b_faster(): set_speed(speed_i + 1)
+func _b_speed_reset(): set_speed(3)
+func _b_frame_back():
+	if !spawn.replay_paused: spawn.replay_paused = true
+	do_seek(spawn.rms - FRAME)
+	flash("PAUSED")
+func _b_frame_fwd():
+	if !spawn.replay_paused: spawn.replay_paused = true
+	spawn.replay_step = FRAME / 1000.0
+	flash("PAUSED")
+# hide the whole viewer UI; any tap / click on the screen brings it back
+func _b_hide():
+	ui_state = 1
+	apply_ui_state()
+
 func flash(t:String):
 	center_label.text = t
 	flash_t = 1.2 if t != "PAUSED" else 0
@@ -292,6 +407,12 @@ func apply_ui_state():
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if ui_state == 0 else Input.MOUSE_MODE_HIDDEN)
 
 func _input(ev):
+	# UI hidden (H / hide button): a tap or click shows it again (touch has no H key)
+	if ui_state > 0 and ((ev is InputEventScreenTouch and ev.pressed) or (ev is InputEventMouseButton and ev.pressed and ev.button_index == BUTTON_LEFT)):
+		ui_state = 0
+		apply_ui_state()
+		get_tree().set_input_as_handled()
+		return
 	if not (ev is InputEventKey) or not ev.pressed: return
 	var handled = true
 	match ev.scancode:
@@ -313,14 +434,8 @@ func _input(ev):
 		KEY_DOWN:
 			if ev.echo: return
 			set_speed(speed_i - 1)
-		KEY_PERIOD:
-			if !spawn.replay_paused: spawn.replay_paused = true
-			spawn.replay_step = FRAME / 1000.0
-			flash("PAUSED")
-		KEY_COMMA:
-			if !spawn.replay_paused: spawn.replay_paused = true
-			do_seek(spawn.rms - FRAME)
-			flash("PAUSED")
+		KEY_PERIOD: _b_frame_fwd()
+		KEY_COMMA: _b_frame_back()
 		KEY_H:
 			if ev.echo: return
 			ui_state = (ui_state + 1) % 3
@@ -375,10 +490,14 @@ func bench_step(delta):
 
 func _process(delta):
 	if bench_t >= 0: bench_step(delta)
+	_calc_misses()
 	# Esc is also polled, in case the key event never reaches _input
 	var esc = Input.is_key_pressed(KEY_ESCAPE)
 	if esc and !esc_was_down: leave()
 	esc_was_down = esc
+	var mp = Input.is_action_pressed("pause") and !Input.is_key_pressed(KEY_SPACE)
+	if mp and !mpause_was_down: toggle_pause()
+	mpause_was_down = mp
 
 	if flash_t > 0:
 		flash_t -= delta
@@ -387,6 +506,8 @@ func _process(delta):
 	center_label.visible = ui_state == 0
 	if !root.visible: return
 	state_label.text = "PAUSED" if spawn.replay_paused else "PLAYING"
+	play_btn.set_icon("play" if spawn.replay_paused else "pause", ">" if spawn.replay_paused else "II")
+	speed_btn.set_icon("", "%.2fx" % SPEEDS[speed_i])
 	time_label.text = "%s / %s" % [fmt(progress() * length()), fmt(length())]
 	speed_label.text = "%.2fx" % SPEEDS[speed_i]
 	bar.update()

@@ -148,7 +148,8 @@ DIFF = {'EASY': ((0, 1, 0), (0.3, 1, 0.45)), 'MEDIUM': ((1, 0.72549, 0), (1, 0.8
         'HARD': ((1, 0, 0), (1, 0.25, 0.25)), 'LOGIC': ((0.843137, 0.415686, 1), (0.75, 0.4, 1)),
         'TASUKETE': ((0.211765, 0.188235, 0.309804), (0.211765, 0.188235, 0.309804)), 'AMOGUS': ((0.211765, 0.188235, 0.309804), (0.211765, 0.188235, 0.309804))}
 def C(l, al): return 'Color( %s, %s, %s, %s )' % tuple('%g' % round(v, 6) for v in (l, l, l, al))
-def theme_text(t, width):
+def theme_text(t, width, mono=True, edge=None):
+    # mono: square + greyscale (own look); mono=False keeps corners and colours, edge(L) gives the outline colour
     keep = {m.group(2) for m in re.finditer(r'([\w/]+) = SubResource\( (\d+) \)', t) if m.group(1).split('/')[-1] in KEEP_FILL}
     def txt(m):
         r, g, b, al = (float(x) for x in m.groups()[1:]); L = luma(r, g, b)
@@ -171,25 +172,27 @@ def theme_text(t, width):
                     return m.group(0)
                 blk = COL.sub(dsub, blk)
         if h and h.group(1) == 'StyleBoxFlat':
-            blk = re.sub(r'(?m)^corner_(radius_\w+|detail) = .*\n', '', blk)
+            if mono: blk = re.sub(r'(?m)^corner_(radius_\w+|detail) = .*\n', '', blk)
+            elif 'corner_radius_' not in blk:          # share: round the (square) stock boxes
+                blk = blk.rstrip('\n') + '\n' + ''.join('corner_radius_%s = 6\n' % c for c in ('top_left', 'top_right', 'bottom_right', 'bottom_left')) + 'corner_detail = 5\nanti_aliasing = true\n\n'
             bg = re.search(r'(?m)^bg_color = ' + COL.pattern, blk)
             r, g, b, al = (float(x) for x in bg.groups()) if bg else (0.6, 0.6, 0.6, 1); L = luma(r, g, b)
             if 'draw_center = false' not in blk and h.group(2) not in keep and al > 0.3 and L >= 0.3:
                 blk = blk.rstrip('\n') + '\ndraw_center = false\n'
                 if 'border_width_' not in blk:
                     blk += ''.join('border_width_%s = %d\n' % (x, width) for x in ('left', 'top', 'right', 'bottom'))
-                blk = re.sub(r'(?m)^border_color = .*\n', '', blk) + 'border_color = %s\n\n' % C(min(1, 0.55 + 0.45 * L), 1)
+                blk = re.sub(r'(?m)^border_color = .*\n', '', blk) + 'border_color = %s\n\n' % (C(min(1, 0.55 + 0.45 * L), 1) if mono else edge(L))
         blk = re.sub(r'(?m)^([\w/]*(?:font_color(?!_shadow)\w*|cursor_color|clear_button_color\w*)) = ' + COL.pattern, txt, blk)
-        blk = COL.sub(lambda m: C(luma(*(float(x) for x in m.groups()[:3])), float(m.group(4))), blk)
+        if mono: blk = COL.sub(lambda m: C(luma(*(float(x) for x in m.groups()[:3])), float(m.group(4))), blk)
         res.append(blk.replace('KEEPCOL(', 'Color('))
     return ''.join(res)
-def theme(pk, width):
+def theme(pk, width, mono=True, edge=None, current=False):
     n = 0
     for p in list(pk.by):
         if not p.endswith(('.tscn', '.tres')) or p.startswith(SKIP): continue
-        raw = pk.bak.get(p) or pk.read(p)          # always start from the original
+        raw = pk.read(p) if current else (pk.bak.get(p) or pk.read(p))   # own theme: from the original; share: on top of the other mods
         if not raw.startswith(b'[gd_'): continue
-        t = raw.decode('utf-8'); nt = theme_text(t, width)
+        t = raw.decode('utf-8'); nt = theme_text(t, width, mono, edge)
         if nt.encode('utf-8') != pk.read(p): pk.write(p, nt.encode('utf-8')); n += 1
     print('theme applied to', n, 'files')
 
@@ -399,7 +402,7 @@ SCRIPT_MODS = {
                           'HUD.gd': 'res://scripts/game/HUD.gd', 'CursorTrail.gd': 'res://scripts/game/CursorTrail.gd',
                           'songload.gd': 'res://scripts/loaders/songload.gd', 'EndInfo.gd': 'res://scripts/ui/menu/buttons/EndInfo.gd'},
                ['ReplayViewer.gd', 'ReplayBrowser.gd', 'UIAnim.gd', 'VolumeOverlay.gd', 'LoadScreen.gd', 'AudioVisualizer.gd', 'PauseMenu.gd', 'UIJuice.gd', 'OsuSfx.gd', 'TitleMenu.gd', 'ResultsScreen.gd',
-                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'Icons.gd',
+                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd',
                 'icons/uicons-solid-rounded.woff', 'icons/Flaticon-license.txt']),
     'browser': ('browser', {}, ['MapBrowser.gd']),
     'hype': ('hype', {}, ['Hype.gd', 'PassFx.gd']),     # cover visualizer, 7+/10+ star glow / quake / lightning, pass glow + zoom
@@ -438,6 +441,11 @@ def sharelook(pk, o):
     import colorsys
     for t, f in SHARE_FONTS.items(): pk.write('res://assets/font/' + t, src('sharelook', f))
     hue = colorsys.rgb_to_hsv(*(int(SHARE_ACCENT[i:i + 2], 16) / 255 for i in (0, 2, 4)))[0]
+    # outline-only buttons and boxes with white text (like the own theme), but rounded and in the accent colour
+    def edge(L):
+        r, g, b = colorsys.hsv_to_rgb(hue, 0.62, min(1.0, 0.8 + 0.2 * L))
+        return 'Color( %g, %g, %g, 1 )' % (round(r, 6), round(g, 6), round(b, 6))
+    theme(pk, 2, mono=False, edge=edge, current=True)
     # every coloured (not grey) theme colour -> the logo's hue, kept easy on the eyes: fills become
     # dark, low-saturation rose (bright crimson input boxes were glaring), outlines carry the accent
     def rec(key, r, g, b, a):
@@ -454,7 +462,7 @@ def sharelook(pk, o):
         if not m: return l
         c = rec(m.group(2), *(float(x) for x in m.groups()[2:]))
         return m.group(1) + c if c else l
-    t = (pk.bak.get(UITHEME) or pk.read(UITHEME)).decode('utf-8')
+    t = pk.read(UITHEME).decode('utf-8')
     pk.write(UITHEME, chr(10).join(line(l) for l in t.split(chr(10))).encode('utf-8'))
     print('share look: Exo 2 font, colours -> #' + SHARE_ACCENT)
 
