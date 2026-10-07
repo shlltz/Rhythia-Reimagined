@@ -474,15 +474,32 @@ func _relayout_mods():
 		mods_nodes.append(e[0])
 	for n in mods_nodes: # draw over the bottom visualizer / fade
 		VisualServer.canvas_item_set_z_index(n.get_canvas_item(), 6)
+	if hp: # the health model dropdown opens above the card (it inherited z 0 and drew behind it)
+		var pop = hp.get_popup()
+		VisualServer.canvas_item_set_z_as_relative_to_parent(pop.get_canvas_item(), false)
+		VisualServer.canvas_item_set_z_index(pop.get_canvas_item(), 20)
+		if !pop.is_connected("popup_hide", self, "_hp_closed"): pop.connect("popup_hide", self, "_hp_closed")
 	_toggle_mods(Engine.get_meta("mods_open") if Engine.has_meta("mods_open") else false)
 
-# clicking anywhere outside the open card (and its bar / dropdowns) closes it
+# clicking anywhere outside the open card (and its bar / dropdowns) closes it. Touch screens: the
+# tap that picks a health model can arrive as the dropdown closes, so taps on the dropdown, on any
+# control of the card, or just after the dropdown closed never count as outside.
+var hp_closed_at:int = -100000
+func _hp_closed():
+	hp_closed_at = OS.get_ticks_msec()
+
 func _input(ev):
-	if !(ev is InputEventMouseButton) or !ev.pressed or mods_nodes.empty() or !mods_nodes[0].visible: return
-	var p = ev.global_position
-	if mods_nodes[0].get_global_rect().has_point(p) or mods_toggle.get_global_rect().has_point(p): return
+	var touch = ev is InputEventScreenTouch
+	if !(ev is InputEventMouseButton or touch) or !ev.pressed or mods_nodes.empty() or !mods_nodes[0].visible: return
+	if OS.get_ticks_msec() - hp_closed_at < 500: return
+	var p = ev.position if touch else ev.global_position
+	if mods_toggle.get_global_rect().has_point(p): return
+	for n in mods_nodes:
+		if n.visible and n.get_global_rect().has_point(p): return
 	var hp = get_node_or_null("RS/H2/Mods/HpModel")
-	if hp and hp.get_popup().visible: return
+	if hp:
+		var pop = hp.get_popup()
+		if pop.visible or pop.get_global_rect().has_point(p): return
 	_toggle_mods(false)
 
 var mods_tween:Tween = null

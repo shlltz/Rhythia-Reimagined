@@ -395,6 +395,7 @@ SCRIPT_MODS = {
     'fixes': ('fixes', {'Song.gd': 'res://scripts/content/game/Song.gd'}, []),
     'stars': ('stars', {'SongInfoScreen.gd': 'res://scripts/ui/menu/SongInfoScreen.gd',
                         'v3MapList.gd': 'res://scripts/ui/menu/buttons/v3MapList.gd',
+                        'StartOffset.gd': 'res://scripts/ui/menu/StartOffset.gd',
                         'contentmgr.gd': 'res://scripts/ui/cmgr/contentmgr.gd'},
               ['StarRating.gd', 'StarCache.gd', 'StarBadge.gd', 'CMIcon.gd', 'CMStyle.gd', 'RecentPlays.gd', 'IconGlyph.gd']),
     'replay': ('replay', {'Replay.gd': 'res://scripts/content/game/Replay.gd', 'NoteManager.gd': 'res://scripts/game/NoteManager.gd',
