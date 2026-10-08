@@ -14,7 +14,8 @@ const W = 1060.0
 const H = 680.0
 const TABS = [["trail", "Cursor trail", "style, colour, opacity"], ["hud", "HUD layout", "move & scale panels"],
 	["skin", "Skin", "border, icons, logo"], ["collections", "Collections", "map packs"],
-	["interface", "Interface", "map list & clutter"], ["storage", "Storage", "user folder location"]]
+	["interface", "Interface", "map list & clutter"], ["storage", "Storage", "user folder location"],
+	["logs", "Logs", "for bug reports"]]
 const UserDir = preload("res://mods/replay/UserDir.gd")
 
 var menu:Node
@@ -122,6 +123,7 @@ func _ready():
 	_build_collections()
 	_build_interface()
 	_build_storage()
+	_build_logs()
 	show_tab(Engine.get_meta("rr_tab") if Engine.has_meta("rr_tab") else "trail", false)
 	# opening click = the game's own (menu2 open_customize plays Press)
 	UIAnim.play(card, Vector2(0, 26), Vector2.ZERO, 0.0, 1.0, 0.3)
@@ -590,6 +592,57 @@ var dir_dialog:FileDialog
 var move_confirm:ConfirmationDialog
 var storage_msg:Label
 var move_dest:String = ""
+
+# Logs (mainly for phones, where the log file can't be reached): the end of the game log, with
+# Copy (clipboard) to paste it in a bug report. File logging is switched on for every platform by
+# the build (ssp_mod.py), so Android writes user://logs/godot.log too.
+const LOG_FILE = "user://logs/godot.log"
+const LOG_LINES = 400
+var NL = char(10)
+var log_view:TextEdit
+var log_msg:Label
+
+func _build_logs():
+	var p = _page("logs")
+	_heading(p, "Game log", "What the game printed this session (errors included). Copy it and paste it when you report a bug.")
+	var h = HBoxContainer.new()
+	h.add_constant_override("separation", 8)
+	for b in [["Copy log", "_logs_copy"], ["Refresh", "_logs_refresh"]]:
+		var btn = Button.new()
+		btn.text = b[0]
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.rect_min_size = Vector2(160, 36)
+		btn.connect("pressed", self, b[1])
+		h.add_child(btn)
+	log_msg = _label("", 14, Color(0.6, 1, 0.6))
+	h.add_child(log_msg)
+	p.add_child(h)
+	log_view = TextEdit.new()
+	log_view.readonly = true
+	log_view.wrap_enabled = true
+	log_view.rect_min_size = Vector2(0, 380)
+	log_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	p.add_child(log_view)
+	_logs_refresh()
+
+func _log_text() -> String:
+	var f = File.new()
+	if f.open(Globals.p(LOG_FILE), File.READ) != OK: return "(no log file - restart the game once after updating)"
+	var lines = f.get_as_text().split(NL)
+	f.close()
+	var from = max(0, lines.size() - LOG_LINES)
+	var out = PoolStringArray()
+	for i in range(from, lines.size()): out.append(lines[i])
+	return "Rhythia-reimagined v@@VERSION@@ - %s %s" % [OS.get_name(), OS.get_model_name()] + NL + out.join(NL)
+
+func _logs_refresh():
+	log_view.text = _log_text()
+	log_view.cursor_set_line(log_view.get_line_count())
+	log_msg.text = ""
+
+func _logs_copy():
+	OS.clipboard = _log_text()
+	log_msg.text = "Copied"
 
 func _build_storage():
 	var p = _page("storage")

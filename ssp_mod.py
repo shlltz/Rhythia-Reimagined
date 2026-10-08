@@ -505,7 +505,17 @@ def build(profile):
     for p in [p for p in pk.by if p.startswith('res://mods/')]: pk.drop(p)
     for name in ORDER:
         if name in profile: apply(pk, name, profile[name])
+    if 'replay' in profile: file_logging(pk)
     return pk
+
+# the log file is only on by default on desktop: turn it on everywhere, so phones get
+# user://logs/godot.log too (shown in Customize > Logs)
+def file_logging(pk):
+    p = 'res://project.binary'; b = pk.read(p); key = b'logging/file_logging/enable_file_logging'
+    if struct.pack('<I', len(key)) + key + struct.pack('<I', 8) in b: return
+    n, = struct.unpack_from('<I', b, 4)
+    ent = struct.pack('<I', len(key)) + key + struct.pack('<III', 8, 1, 1)   # bool true
+    pk.write(p, b[:4] + struct.pack('<I', n + 1) + b[8:] + ent)
 def rebuild(profile, out=None):
     if not out and game_running(): sys.exit('close the game first (SoundSpacePlus.exe is running) - nothing was changed')
     pk = build(profile)
