@@ -559,8 +559,8 @@ func _build_interface():
 	var gap = Control.new()
 	gap.rect_min_size = Vector2(0, 12)
 	p.add_child(gap)
-	_check(p, "Glitch + chromatic aberration (10+ star maps and the title logo)", R.val("glitch_fx"), "_if_glitch")
-	_check(p, "Lighter effects for low-end PCs (no full-screen colour split or logo effect; turns on by itself if they slow the game down)", R.val("lite_fx"), "_if_lite")
+	_check(p, "Glitch + chromatic aberration (10+ star maps, title logo)", R.val("glitch_fx"), "_if_glitch")
+	_check(p, "Lighter effects for low-end PCs (auto when the game slows down)", R.val("lite_fx"), "_if_lite")
 	_heading(p, "Map list", "Also under Filters next to the map list.")
 	_row(p, "Sort by", _seg([["stars", "STARS"], ["name", "NAME"], ["mapper", "MAPPER"]], cf.sort, "_if_sort"))
 
