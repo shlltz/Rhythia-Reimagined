@@ -190,18 +190,24 @@ func _process(delta):
 			run.rect_scale = Vector2.ONE
 	update()
 
-# shake offset on top of wherever the container put the node. Smooth noise (mixed sines), not a
-# new random jump every frame: the old per-frame jumps + whole-pixel snapping made the cover
-# stutter and its edges flicker.
+# shake offset on top of wherever the container put the node: a new random jolt QUAKE_HZ times a
+# second, held in between - choppy like a real quake, and the same at any frame rate (a new jump
+# every frame turned into a blur / flicker at high fps)
+const QUAKE_HZ = 30.0
+var shake_hold:Dictionary = {} # node -> [time of the next jolt, offset, rotation]
 func _shake(n:Control, amp:float, tilt:bool = true):
 	var last = shake_last.get(n, [Vector2.ZERO, n.rect_position])
 	var base = n.rect_position - last[0] if n.rect_position.is_equal_approx(last[1]) else n.rect_position
 	var off = Vector2.ZERO
 	var rot = 0.0
 	if amp > 0:
-		var s = OS.get_ticks_msec() / 1000.0 + (n.get_instance_id() % 97)
-		off = Vector2(sin(s * 23.0) + 0.5 * sin(s * 41.0 + 1.3), sin(s * 19.0 + 2.1) + 0.5 * sin(s * 37.0 + 0.4)) * (amp / 1.5)
-		rot = (sin(s * 17.0 + 0.7) + 0.5 * sin(s * 29.0)) / 1.5 * amp * 0.08
+		var now = OS.get_ticks_msec() / 1000.0
+		var h = shake_hold.get(n, [0.0, Vector2.ZERO, 0.0])
+		if now >= h[0]:
+			h = [now + 1.0 / QUAKE_HZ, Vector2(rand_range(-amp, amp), rand_range(-amp, amp)).round(), rand_range(-amp, amp) * 0.08]
+			shake_hold[n] = h
+		off = h[1]
+		rot = h[2]
 	n.rect_position = base + off
 	n.rect_rotation = rot if tilt else 0.0
 	shake_last[n] = [off, n.rect_position]

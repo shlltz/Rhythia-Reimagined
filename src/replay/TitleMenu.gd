@@ -91,6 +91,15 @@ var open_amt:float = 0.0       # logo shift / turn, 0..1 (smoothed)
 var expanded:bool = false
 var anim_t:float = 10.0        # seconds since the cards were told to open / close
 var beat:float = 0.0
+# beat detection (kicks in the menu music): punch jumps to 1 on a kick and decays fast;
+# it drives the logo hit, the ring, a small screen bump, the glow and a wave down the cards
+var punch:float = 0.0
+var since_beat:float = 10.0
+var bass_avg:float = 0.0
+var bass_prev:float = 0.0
+var beat_cd:float = 0.0
+var glow:Control
+const R = preload("res://mods/replay/Ring.gd")
 var closing:bool = false
 var parallax:Vector2 = Vector2.ZERO
 var covered:Array = []
@@ -136,10 +145,16 @@ func _ready():
 		root.add_child(c)
 		cards.append(c)
 
+	glow = Control.new() # soft light behind the logo that flashes on the beat
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glow.connect("draw", self, "_draw_glow")
+	root.add_child(glow)
+	root.move_child(glow, topo.get_index() + 1)
 	ring = Control.new()
 	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ring.connect("draw", self, "_draw_ring")
 	root.add_child(ring)
+	root.move_child(ring, glow.get_index() + 1) # ring + glow behind the cards
 	logo = TextureRect.new()
 	logo.texture = load("res://assets/images/branding/icon.png")
 	logo.expand = true
@@ -344,11 +359,30 @@ func _process(delta):
 		for i in 6: e += vis.mags[i]
 		e = clamp(e / 6.0 / vis.ceiling, 0.0, 1.0)
 	beat = max(e, beat - delta * 2.5)
+	var raw = 0.0
+	if vis and vis.mags.size() > 8 and vis.ceiling > 0:
+		for i in 4: raw += vis.mags[i]
+		raw = raw / 4.0 / vis.ceiling
+	var rising = raw - bass_prev
+	bass_prev = raw
+	bass_avg = lerp(bass_avg, raw, 1.0 - exp(-delta * 3.0))
+	beat_cd -= delta
+	since_beat += delta
+	if raw > bass_avg * 1.12 and rising > 0.0 and raw > 0.15 and beat_cd <= 0.0:
+		punch = 1.0
+		beat_cd = 0.14
+		since_beat = 0.0
+	punch *= exp(-delta * 8.0)
+	root.rect_pivot_offset = size / 2 # the whole screen bumps a little on the kick
+	var bump = 1.0 + 0.012 * punch
+	root.rect_scale = Vector2(bump, bump)
+	glow.rect_position = Vector2.ZERO
+	glow.update()
 	var m = (get_viewport().get_mouse_position() / size - Vector2(0.5, 0.5)) * 2.0
 	parallax = parallax.linear_interpolate(m, 1.0 - exp(-delta * 4.0))
 	topo.material.set_shader_param("offset", parallax * 0.012)
 	var centre = size / 2 + Vector2(-SHIFT * open_amt, 0) - parallax * 6.0
-	var s = (1.0 + beat * 0.06) * (1.0 - 0.12 * open_amt)
+	var s = (1.0 + beat * 0.04 + punch * 0.07) * (1.0 - 0.12 * open_amt)
 	if logo.get_global_rect().has_point(get_viewport().get_mouse_position()): s *= 1.03
 	logo.rect_position = centre - logo.rect_pivot_offset
 	logo.rect_scale = Vector2(s, s)
@@ -363,6 +397,11 @@ func _process(delta):
 		c.modulate.a = clamp(k * 1.4, 0.0, 1.0)
 		c.visible = k > 0.005
 		c.mouse_filter = Control.MOUSE_FILTER_STOP if k > 0.9 else Control.MOUSE_FILTER_IGNORE
+		var d = since_beat - i * 0.035 # the hit runs down the cards like a wave
+		var pulse = exp(-d * 9.0) if d >= 0.0 else 0.0
+		if abs(pulse - c.beat) > 0.002:
+			c.beat = pulse
+			c.update()
 	ring.rect_position = centre
 	ring.update()
 
@@ -371,18 +410,31 @@ func _draw_ring():
 	if !vis or vis.mags.size() < 8 or vis.ceiling <= 0: return
 	var r = LOGO / 2 * logo.rect_scale.x * 0.92
 	var n = 90
-	var col = Color(1, 1, 1, 0.22)
+	var col = Color(1, 1, 1, 0.22 + 0.3 * punch)
 	for i in n:
 		var k = int(float(i % (n / 2)) / (n / 2) * min(vis.mags.size(), 64))
 		var v = clamp(vis.mags[k] / vis.ceiling, 0.0, 1.0)
 		var a = -PI / 2 + i * TAU / n
 		var d = Vector2(cos(a), sin(a))
-		ring.draw_line(d * r, d * (r + 6 + v * 70), col, 4.0)
+		var c = col # bars facing the (see-through) cards fade out while they're open
+		c.a *= 1.0 - open_amt * clamp((d.x - 0.15) * 2.5, 0.0, 1.0)
+		if c.a > 0.005: ring.draw_line(d * r, d * (r + 6 + v * 70 * (1.0 + 0.35 * punch)), c, 4.0, true)
+
+func _draw_glow():
+	if punch < 0.01 and beat < 0.01: return
+	var c = logo.rect_position + logo.rect_pivot_offset
+	var r = LOGO / 2 * logo.rect_scale.x
+	var a = 0.04 * beat + 0.1 * punch
+	for k in 6: # stacked soft discs = a cheap radial glow
+		R.disc(glow, c, r * (1.0 + 0.22 * k), Color(1, 1, 1, a * (1.0 - k / 6.0) * 0.5))
 
 # ------------------------------------------------------------------ card
-# dark glass card: accent bar (widens on hover), title + subtitle, chevron; slides a little on hover
+# outlined card on a see-through black fill: accent bar (grows on hover), title + subtitle,
+# chevron; slides a little on hover, the outline lights up in the card colour on hover and
+# flashes on the beat
 class Card extends Control:
 	signal pressed
+	var beat:float = 0.0
 	var title:String = ""
 	var sub:String = ""
 	var col:Color = Color(1, 1, 1)
@@ -415,11 +467,23 @@ class Card extends Control:
 	func _draw():
 		var w = rect_size.x
 		var h = rect_size.y
-		var x0 = hover * 12.0 - press * 4.0
-		draw_rect(Rect2(x0, 0, w, h), Color(0.07, 0.07, 0.09, 0.94))
-		draw_rect(Rect2(x0, 0, w, h), Color(col.r, col.g, col.b, 0.07 + 0.08 * hover))
-		draw_rect(Rect2(x0, 0, 4 + 8 * hover, h), col)
-		draw_rect(Rect2(x0, h - 1, w, 1), Color(1, 1, 1, 0.06))
+		var x0 = hover * 12.0 - press * 4.0 + beat * 5.0
+		var sb = StyleBoxFlat.new()
+		sb.bg_color = Color(col.r * 0.08, col.g * 0.08, col.b * 0.08, 0.32 + 0.1 * hover)
+		var edge = Color(1, 1, 1, 0.3).linear_interpolate(col, hover)
+		edge.a = min(1.0, edge.a + 0.4 * beat)
+		sb.border_color = edge
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(12)
+		sb.corner_detail = 8
+		sb.anti_aliasing = true
+		draw_style_box(sb, Rect2(x0, 0, w, h))
+		var bh = h * (0.36 + 0.16 * hover)
+		var bar = StyleBoxFlat.new()
+		bar.bg_color = col
+		bar.set_corner_radius_all(2)
+		bar.anti_aliasing = true
+		draw_style_box(bar, Rect2(x0 + 14, (h - bh) / 2, 4 + 2 * hover, bh))
 		var tx = x0 + 34 + 6 * hover
 		if font_big: draw_string(font_big, Vector2(tx, h * 0.5 + 2), title, Color(1, 1, 1))
 		if font_small: draw_string(font_small, Vector2(tx, h * 0.5 + 24), sub, Color(1, 1, 1, 0.45 + 0.2 * hover))
