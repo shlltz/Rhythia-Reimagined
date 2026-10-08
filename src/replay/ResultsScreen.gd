@@ -197,11 +197,13 @@ func _font(size:int):
 class GradeRing extends Control:
 	var col:Color = Color(1, 1, 1)
 	var center:Vector2
-	var k:float = 0.0
+	var k:float = 0.0 # 0..1 animation time
 	func _draw():
 		if k <= 0: return
-		draw_arc(center, 168, -PI / 2, -PI / 2 + TAU * k, 96, Color(col.r, col.g, col.b, 0.55), 3.0, true)
-		draw_arc(center, 182, 0, TAU, 96, Color(col.r, col.g, col.b, 0.12 * k), 1.5, true)
+		var R = load("res://mods/replay/Ring.gd")
+		var e = 1.0 - pow(1.0 - k, 3) # ease out: fast start, soft landing
+		R.arc(self, center, 182, 1.5, 0, TAU, Color(col.r, col.g, col.b, 0.14 * e))
+		R.arc(self, center, 168, 3.0, -PI / 2, -PI / 2 + TAU * e, Color(col.r, col.g, col.b, 0.6), true)
 
 var grade_ring = null
 
@@ -294,12 +296,15 @@ func _layout():
 	var size = get_viewport().get_visible_rect().size
 	var mouse = get_viewport().get_mouse_position()
 	var target = (size - Vector2(W, H)) / 2 + (size / 2 - mouse) * (8.0 / size.y) - Vector2(0, 30)
-	holder.rect_position = holder.rect_position.linear_interpolate(target, 0.2) if t > 0.05 else target
-	grade_text.rect_scale = grade_text.rect_scale.linear_interpolate(Vector2.ONE, 0.18)
-	if grade_ring and stamped and grade_ring.k < 1.0: # ring sweeps in after the grade stamp
-		grade_ring.center = grade_text.rect_position + grade_text.rect_size / 2
-		grade_ring.k = min(1.0, grade_ring.k + get_process_delta_time() / 0.5)
-		grade_ring.update()
+	var dt = get_process_delta_time() # (smoothing by time, not per frame: same feel at any fps)
+	holder.rect_position = holder.rect_position.linear_interpolate(target, 1.0 - exp(-dt * 12.0)) if t > 0.05 else target
+	grade_text.rect_scale = grade_text.rect_scale.linear_interpolate(Vector2.ONE, 1.0 - exp(-dt * 11.0))
+	if grade_ring and stamped: # ring sweeps in after the grade stamp
+		var c = grade_text.rect_position + grade_text.rect_size / 2
+		if grade_ring.k < 1.0 or !c.is_equal_approx(grade_ring.center):
+			grade_ring.center = c
+			grade_ring.k = min(1.0, grade_ring.k + dt / 0.7)
+			grade_ring.update()
 
 # ------------------------------------------------------------------ actions
 func _input(ev):

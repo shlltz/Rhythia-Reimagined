@@ -14,7 +14,7 @@ const COLOR_BACK = Color(1, 0.7921569, 0.8039216, 0.74509805)
 const HEIGHT = 140.0 # bar strip height (was 64)
 const FADE = 64.0 # soft fade above the strip so the map list melts into the bars
 const FADE_COLOR = Color(0, 0, 0, 0.85)
-const BOTTOM_GAP = 22.0 # bars float above the screen edge (phones round / cut the bottom corners)
+const BOTTOM_GAP = 0.0 # bars float above the screen edge (phones round / cut the bottom corners)
 const SCROLL_COL = "Main/Maps/ScrollControl" # map list UP / DOWN buttons: the strip stops left of them
 const PREVIEW = "Main/Maps/Results/Results/RS/H1/Info/Control/PreviewMusic"
 

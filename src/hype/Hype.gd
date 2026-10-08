@@ -190,13 +190,20 @@ func _process(delta):
 			run.rect_scale = Vector2.ONE
 	update()
 
-# random offset on top of wherever the container put the node
+# shake offset on top of wherever the container put the node. Smooth noise (mixed sines), not a
+# new random jump every frame: the old per-frame jumps + whole-pixel snapping made the cover
+# stutter and its edges flicker.
 func _shake(n:Control, amp:float, tilt:bool = true):
 	var last = shake_last.get(n, [Vector2.ZERO, n.rect_position])
 	var base = n.rect_position - last[0] if n.rect_position.is_equal_approx(last[1]) else n.rect_position
-	var off = Vector2(rand_range(-amp, amp), rand_range(-amp, amp)).round() if amp > 0 else Vector2.ZERO
+	var off = Vector2.ZERO
+	var rot = 0.0
+	if amp > 0:
+		var s = OS.get_ticks_msec() / 1000.0 + (n.get_instance_id() % 97)
+		off = Vector2(sin(s * 23.0) + 0.5 * sin(s * 41.0 + 1.3), sin(s * 19.0 + 2.1) + 0.5 * sin(s * 37.0 + 0.4)) * (amp / 1.5)
+		rot = (sin(s * 17.0 + 0.7) + 0.5 * sin(s * 29.0)) / 1.5 * amp * 0.08
 	n.rect_position = base + off
-	n.rect_rotation = rand_range(-amp, amp) * 0.08 if amp > 0 and tilt else 0.0
+	n.rect_rotation = rot if tilt else 0.0
 	shake_last[n] = [off, n.rect_position]
 
 func _bolt(target:Rect2):
@@ -276,6 +283,8 @@ func _draw():
 class CoverViz extends Control:
 	var hype = null
 	const BARS = 20
+	var lv = [] # smoothed bar heights (4 sides x BARS)
+	var last_us:int = 0
 	func _ready():
 		anchor_right = 1
 		anchor_bottom = 1
@@ -290,6 +299,12 @@ class CoverViz extends Control:
 		if hype and hype.hype: col = load("res://mods/stars/StarCache.gd").color_for(hype.stars)
 		var s = rect_size
 		var n = min(vis.mags.size(), 64)
+		var now = OS.get_ticks_usec()
+		var dt = clamp((now - last_us) / 1000000.0, 0.0, 0.1) if last_us > 0 else 0.0
+		last_us = now
+		if lv.size() != 4 * BARS:
+			lv = []
+			for i in 4 * BARS: lv.append(0.0)
 		var sides = [[Vector2(0, 0), Vector2(s.x, 0), Vector2(0, -1)], [Vector2(s.x, 0), Vector2(s.x, s.y), Vector2(1, 0)],
 				[Vector2(s.x, s.y), Vector2(0, s.y), Vector2(0, 1)], [Vector2(0, s.y), Vector2(0, 0), Vector2(-1, 0)]]
 		for si in 4:
@@ -299,8 +314,13 @@ class CoverViz extends Control:
 			for i in BARS:
 				var f = abs((i + 0.5) / BARS * 2.0 - 1.0) # side centre = bass, corners = treble
 				var k = int(f * f * n * 0.7)
-				var v = clamp(vis.mags[k] / vis.ceiling * (1.0 + 0.6 * (hype.punch if hype else 0.0)), 0.0, 1.0) * (hype.gate if hype else 1.0)
+				var target = clamp(vis.mags[k] / vis.ceiling * (1.0 + 0.6 * (hype.punch if hype else 0.0)), 0.0, 1.0) * (hype.gate if hype else 1.0)
+				var j = si * BARS + i
+				# rise fast, fall slower: smooth motion instead of per-frame flicker
+				lv[j] = lerp(lv[j], target, 1.0 - exp(-dt * (30.0 if target > lv[j] else 9.0)))
+				var v = lv[j]
+				if v < 0.05: continue # quiet: no bar (the resting stubs looked like a dotted frame)
 				var p = a.linear_interpolate(b, (i + 0.5) / BARS)
 				var c = col
-				c.a *= 0.35 + 0.65 * v
-				draw_line(p + out * 5, p + out * (8 + v * 70), c, 5.0)
+				c.a *= min(1.0, (v - 0.05) * 8.0) * (0.35 + 0.65 * v)
+				draw_line(p + out * 6, p + out * (6 + v * 72), c, 5.0, true)

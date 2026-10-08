@@ -32,6 +32,9 @@ var alpha:float = 0.0
 var show_left:float = 0.0
 var save_left:float = -1.0
 var active:int = 0 # meter last changed (highlighted)
+var shown = [-1.0, -1.0, -1.0] # drawn level per meter, glides to the real one
+var lit_k = [0.0, 0.0, 0.0] # highlight per meter, fades in / out
+var R = preload("res://mods/replay/Ring.gd")
 
 func _ready():
 	name = "VolumeOverlay"
@@ -119,8 +122,18 @@ func _process(delta):
 		alpha = max(alpha - delta / FADE_TIME, 0.0)
 	else:
 		if canvas.visible: canvas.visible = false
+		for i in shown.size(): shown[i] = -1.0
 		return
-	canvas.modulate.a = alpha
+	var hovered = _meter_at(canvas.get_local_mouse_position())
+	for i in meters.size():
+		var lv = meter_level(i)
+		shown[i] = lv if shown[i] < 0 else R.approach(shown[i], lv, 16.0, delta)
+		lit_k[i] = R.approach(lit_k[i], 1.0 if i == active or i == hovered else 0.0, 12.0, delta)
+	var e = alpha * alpha * (3.0 - 2.0 * alpha) # smoothstep fade
+	canvas.modulate.a = e
+	canvas.rect_pivot_offset = canvas.rect_size
+	var s = 0.96 + 0.04 * e # small grow while fading in
+	canvas.rect_scale = Vector2(s, s)
 	canvas.update()
 
 # ---------------------------------------------------------------- drawing
@@ -129,17 +142,16 @@ func _centered(f:Font, text:String, c:Vector2, col:Color):
 
 func _draw_overlay():
 	var corner = canvas.rect_size
-	var hovered = _meter_at(canvas.get_local_mouse_position())
 	for i in meters.size():
 		var m = meters[i]
 		var c = corner + m.pos
-		var lit = i == active or i == hovered
-		var col = C_TEXT if lit else C_MUTED
+		var col = C_MUTED.linear_interpolate(C_TEXT, lit_k[i])
 		var level = meter_level(i)
-		canvas.draw_circle(c, m.r + RING_W + 4, C_BG)
-		canvas.draw_arc(c, m.r, 0, TAU, 64, C_TRACK, RING_W, true)
-		if level > 0:
-			canvas.draw_arc(c, m.r, -PI / 2, -PI / 2 + TAU * level, 64, col, RING_W, true)
+		var drawn = shown[i] if shown[i] >= 0 else level
+		R.disc(canvas, c, m.r + RING_W + 4, C_BG)
+		R.arc(canvas, c, m.r, RING_W, 0, TAU, C_TRACK)
+		if drawn > 0.002:
+			R.arc(canvas, c, m.r, RING_W, -PI / 2, -PI / 2 + TAU * min(drawn, 1.0), col, true)
 		var big = m.r > 50
 		_centered(big_font if big else mid_font, "%d" % round(level * 100), c + Vector2(0, -6), col)
 		_centered(label_font, m.name, c + Vector2(0, m.r * 0.42), col)

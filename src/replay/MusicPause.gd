@@ -13,6 +13,10 @@ var paused:bool = false
 var hover:bool = false
 var idle:float = 0.0
 var icons = null # Icons.gd when the Flaticon font is there
+var hover_k:float = 0.0 # hover / paused states fade instead of snapping
+var pause_k:float = 0.0
+var press_k:float = 0.0
+var R = preload("res://mods/replay/Ring.gd")
 
 func _ready():
 	name = "MusicPause"
@@ -39,6 +43,15 @@ func _process(delta):
 	if a != modulate.a:
 		modulate.a = a
 		mouse_filter = MOUSE_FILTER_STOP if a > 0.2 else MOUSE_FILTER_IGNORE # hidden = no invisible click target
+	var h = R.approach(hover_k, 1.0 if hover else 0.0, 14.0, delta)
+	var p = R.approach(pause_k, 1.0 if paused else 0.0, 12.0, delta)
+	var q = R.approach(press_k, 0.0, 10.0, delta)
+	if abs(h - hover_k) + abs(p - pause_k) + abs(q - press_k) > 0.0005:
+		hover_k = h; pause_k = p; press_k = q
+		rect_pivot_offset = rect_size / 2
+		var s = 1.0 + 0.06 * hover_k - 0.1 * press_k
+		rect_scale = Vector2(s, s)
+		update()
 
 func _hover(v:bool):
 	hover = v
@@ -50,6 +63,7 @@ func _gui_input(e):
 		if !e.pressed and Rect2(Vector2(), rect_size).has_point(e.position): toggle()
 
 func toggle():
+	press_k = 1.0
 	paused = !paused
 	_apply(get_tree().root)
 	update()
@@ -74,10 +88,10 @@ func _exit_tree():
 func _draw():
 	var c = rect_size / 2
 	var r = SIZE / 2
-	draw_circle(c, r, Color(0, 0, 0, 0.75))
-	var ring = ACCENT if paused else Color(1, 1, 1, 0.35 if !hover else 0.7)
-	draw_arc(c, r - 1, 0, TAU, 48, ring, 2.0, true)
-	var col = Color(1, 1, 1, 0.95 if hover else 0.8)
+	R.disc(self, c, r - 0.5, Color(0, 0, 0, 0.75).linear_interpolate(Color(ACCENT.r * 0.25, ACCENT.g * 0.25, ACCENT.b * 0.25, 0.85), pause_k))
+	var ring = Color(1, 1, 1, 0.35 + 0.35 * hover_k).linear_interpolate(ACCENT, pause_k)
+	R.arc(self, c, r - 1.5, 2.0, 0, TAU, ring)
+	var col = Color(1, 1, 1, 0.8 + 0.15 * hover_k)
 	if icons:
 		var s = SIZE * 0.4
 		icons.draw(self, "play" if paused else "pause", Rect2(c - Vector2(s, s) / 2 + Vector2(1 if paused else 0, 0), Vector2(s, s)), col)
