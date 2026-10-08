@@ -47,14 +47,50 @@ func _preview() -> Button:
 		preview = menu.find_node("PreviewMusic", true, false) if menu else null
 	return preview
 
+# Crash hardening (Rhythia-reimagined): a drag fires value_changed on every mouse move and each
+# one seeked the preview (a fresh decoder restart on the audio thread every frame), could press
+# the preview button again while it was still starting, and could seek past the end of a song
+# shorter than the map. Now: seeks are throttled while dragging (the exact spot is seeked when
+# the slider settles), the preview is started at most once per 0.5 s and never for maps whose
+# music failed to load, and every seek stays inside the song.
+const SEEK_GAP_MS = 80
+var last_seek_ms:int = -100000
+var last_start_ms:int = -100000
+var seek_pending:bool = false
+
 func upd_label():
 	var total_seconds = int(self.value)
 	var minutes = floor(total_seconds / 60)
 	var seconds = total_seconds % 60
 	$TimeTextBox.text = "%d:%02d" % [minutes,seconds]
+	_sync_preview()
+
+func _sync_preview():
 	var btn = _preview()
-	if !btn or !btn.has_node("Song"): return
+	if !btn or !btn.is_inside_tree() or !btn.has_node("Song"): return
 	var song_preview:AudioStreamPlayer = btn.get_node("Song")
-	if !song_preview.playing and user and !btn.disabled: btn._pressed() # start the preview, then jump
-	if song_preview.playing:
-		song_preview.seek(max(0.0, total_seconds + Rhythia.music_offset / 1000.0))
+	var now = OS.get_ticks_msec()
+	if !song_preview.playing:
+		if !user or btn.disabled or now - last_start_ms < 500: return
+		var s = Rhythia.selected_song
+		if !s or s.is_broken: return
+		last_start_ms = now
+		btn._pressed() # start the preview, then jump
+		if !song_preview.playing or song_preview.stream == Globals.error_sound:
+			return
+	if now - last_seek_ms < SEEK_GAP_MS: # dragging: seek again when it settles
+		if !seek_pending:
+			seek_pending = true
+			get_tree().create_timer(SEEK_GAP_MS / 1000.0).connect("timeout", self, "_flush_seek")
+		return
+	last_seek_ms = now
+	var st = song_preview.stream
+	if !st or st == Globals.error_sound: return
+	var length = st.get_length()
+	var to = max(0.0, int(self.value) + Rhythia.music_offset / 1000.0)
+	if length > 1.0: to = min(to, length - 0.5)
+	song_preview.seek(to)
+
+func _flush_seek():
+	seek_pending = false
+	if is_inside_tree(): _sync_preview()
