@@ -559,6 +559,7 @@ func _build_interface():
 	var gap = Control.new()
 	gap.rect_min_size = Vector2(0, 12)
 	p.add_child(gap)
+	_check(p, "Lighter effects for low-end PCs (no full-screen colour split or logo effect; turns on by itself if they slow the game down)", R.val("lite_fx"), "_if_lite")
 	_heading(p, "Map list", "Also under Filters next to the map list.")
 	_row(p, "Sort by", _seg([["stars", "STARS"], ["name", "NAME"], ["mapper", "MAPPER"]], cf.sort, "_if_sort"))
 
@@ -567,6 +568,10 @@ func _if_hitbox(on:bool):
 	get_tree().call_group("rr_mappage", "_rr_apply")
 
 func _if_config(on:bool): R.set_val("hide_config_hud", on)
+
+func _if_lite(on:bool):
+	R.set_val("lite_fx", on)
+	if !on and Engine.has_meta("rr_auto_lite"): Engine.remove_meta("rr_auto_lite")
 
 func _if_bg(v:String):
 	R.set_val("title_bg", v)

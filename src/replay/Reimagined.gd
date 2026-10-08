@@ -18,7 +18,8 @@ const DEFAULTS = {
 	"sort": "stars",            # map list: stars | name | mapper
 	"collection": "",           # map list filter ("" = all maps)
 	"half_ghost_length": 1.0,   # Half Ghost: how long the notes take to fade (1.0 = game default)
-	"swept_hitbox": true,       # count notes the cursor passes through between frames (NoteManager)
+	"swept_hitbox": true,
+	"lite_fx": false,           # lighter effects for low-end PCs (also switched on for the session by fps_watch)       # count notes the cursor passes through between frames (NoteManager)
 	"title_bg": "rain",         # title screen background: rain | snow | waves (topographic)
 }
 # side panels the layout editor moves: sprite, label, default centre (world x, y), size (w, h)
@@ -48,6 +49,24 @@ static func cfg() -> Dictionary:
 
 static func val(k:String):
 	return cfg()[k]
+
+# Lighter effects: no full-screen colour split, no title-logo effect. On when the player picks it
+# (Customize > Interface) or, for this session, when the effects keep the game under 40 fps.
+static func lite() -> bool:
+	return bool(val("lite_fx")) or Engine.has_meta("rr_auto_lite")
+
+# call every frame while heavy effects run: ~3 s in total under 40 fps (with no fps cap below 45)
+# switches lighter effects on for the rest of the session
+static func fps_watch(delta:float):
+	if Engine.has_meta("rr_auto_lite"): return
+	if Engine.target_fps != 0 and Engine.target_fps < 45: return
+	var slow = Engine.get_meta("rr_slow_s") if Engine.has_meta("rr_slow_s") else 0.0
+	if Engine.get_frames_per_second() < 40 and delta < 0.5: slow += delta
+	else: slow = max(0.0, slow - delta * 0.25)
+	Engine.set_meta("rr_slow_s", slow)
+	if slow > 3.0:
+		Engine.set_meta("rr_auto_lite", true)
+		print("Rhythia-reimagined: low fps, lighter effects on for this session")
 
 static func set_val(k:String, v):
 	cfg()[k] = v

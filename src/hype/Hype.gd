@@ -247,7 +247,7 @@ var fx_card = null          # [BackBufferCopy, overlay, card] on the selected ma
 
 func _fx_overlay(parent:Control, sd:float) -> Array:
 	var bb = BackBufferCopy.new()
-	bb.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	bb.copy_mode = BackBufferCopy.COPY_MODE_RECT # only the area around the overlay (see _fx_rect)
 	parent.add_child(bb)
 	var o = ColorRect.new()
 	o.mouse_filter = MOUSE_FILTER_IGNORE
@@ -291,6 +291,9 @@ func _fx(delta:float, cover):
 	if punch > 0.85 and glitch_left <= 0.0: glitch_left = 0.09
 	glitch_left -= delta
 	glitch = (rand_range(0.55, 1.0) if glitch_left > 0.0 else max(0.0, glitch - delta * 8.0)) * fx_k
+	var R = load("res://mods/replay/Reimagined.gd")
+	R.fps_watch(delta)
+	var lite = R.lite()
 	if !fx_layer:
 		fx_layer = CanvasLayer.new()
 		fx_layer.layer = 100 # over the menu and its overlays, under the volume overlay (128)
@@ -303,7 +306,7 @@ func _fx(delta:float, cover):
 		chroma.material.shader = Shader.new()
 		chroma.material.shader.code = CHROMA_SHADER
 		fx_layer.add_child(chroma)
-	chroma.visible = true
+	chroma.visible = !lite # (lighter effects: no full-screen pass)
 	# (kept gentle: the real glitching is on the cover and the map card only)
 	chroma.material.set_shader_param("amount", fx_k * (1.0 + 2.0 * punch + 1.5 * dim + 1.0 * glitch))
 	chroma.material.set_shader_param("tear", 0.0)
@@ -314,6 +317,7 @@ func _fx(delta:float, cover):
 	if fx_cover:
 		fx_cover[1].material.set_shader_param("power", glitch)
 		fx_cover[1].material.set_shader_param("size", cover.rect_size)
+		_fx_rect(fx_cover[0], cover.rect_size)
 		fx_cover[1].visible = glitch > 0.01
 		fx_cover[0].visible = fx_cover[1].visible
 	# selected map card (the list rebuilds its cards on every page change)
@@ -325,8 +329,14 @@ func _fx(delta:float, cover):
 	if fx_card:
 		fx_card[1].material.set_shader_param("power", glitch * 0.8)
 		fx_card[1].material.set_shader_param("size", card.rect_size)
+		_fx_rect(fx_card[0], card.rect_size)
 		fx_card[1].visible = glitch > 0.01
 		fx_card[0].visible = fx_card[1].visible
+
+# copy the overlay's area plus room for the sideways shifts / colour split (not the whole screen)
+func _fx_rect(bb:BackBufferCopy, size:Vector2):
+	var r = Rect2(-size * Vector2(0.12, 0.02), size * Vector2(1.24, 1.04))
+	if bb.rect != r: bb.rect = r
 
 func _exit_tree():
 	_fx_off()

@@ -249,6 +249,9 @@ func _after_close(then:String):
 	visible = false
 	set_process(false)
 	_cover(false)
+	if then == "": # into map selection: the map cards slide in
+		var ml = menu.get_node_or_null("Main/Maps/MapRegistry/S/VBoxContainer")
+		if ml and ml.has_method("rr_slide_in"): ml.rr_slide_in()
 	match then:
 		"settings": _sidebar(1)
 		"browse":
@@ -459,7 +462,8 @@ var logo_glitch_left:float = 0.0
 
 func _logo_fx():
 	var bb = BackBufferCopy.new()
-	bb.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	bb.copy_mode = BackBufferCopy.COPY_MODE_RECT # just the logo's area
+	bb.name = "FxCopy"
 	logo.add_child(bb)
 	logo_fx = ColorRect.new()
 	logo_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -472,6 +476,14 @@ func _logo_fx():
 
 func _logo_fx_step(delta:float):
 	if !logo_fx: return
+	var RI = load("res://mods/replay/Reimagined.gd")
+	RI.fps_watch(delta)
+	var on = !RI.lite()
+	logo_fx.visible = on
+	logo.get_node("FxCopy").visible = on
+	if !on: return
+	var ls = logo.rect_size
+	logo.get_node("FxCopy").rect = Rect2(-ls * Vector2(0.1, 0.02), ls * Vector2(1.2, 1.04))
 	logo_glitch_next -= delta
 	if logo_glitch_next <= 0.0:
 		logo_glitch_next = rand_range(1.8, 4.5)

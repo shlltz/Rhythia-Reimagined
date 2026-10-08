@@ -123,6 +123,7 @@ func _process(delta):
 			elif cur_map + int(diff.y/80) > drag_cur_map:
 				call_deferred("pg_up")
 
+	tween_length(delta)
 	pt += delta
 	if OS.window_maximized != was_maximized or OS.window_fullscreen != was_fullscreen:
 		was_maximized = OS.window_maximized
@@ -154,7 +155,6 @@ func _physics_process(delta):
 		call_deferred("pg_down")
 	if scroll_up:
 		call_deferred("pg_up")
-	tween_length()
 
 func check_drag_on():
 	momentum = 0
@@ -542,10 +542,65 @@ func tween_in(p:Panel):
 	var tween = get_tree().create_tween()
 	tween.tween_property(p, "rect_min_size", Vector2(size_x - (next_index() - prev_index())/2 * 10, 90), 0.2)
 
-func tween_length():
+# Card widths (the curve of the list). Stock started a new tween for every card on every physics
+# frame (~1000 tweens a second); now each width just eases toward its target every frame - same
+# look, a fraction of the work (Rhythia-reimagined). Height stays with tween_in / tween_out.
+# rr_slide_in(): coming from the title screen the cards slide in from the right, one after another
+# (width grows from 0 with the content clipped, so each card's left edge sweeps right to left).
+const SLIDE_TIME = 0.45
+const SLIDE_WAVE = 0.35 # top of the screen to the bottom
+var slide_t:float = -1.0
+
+func rr_slide_in():
+	slide_t = 0.0
+	for b in btns:
+		if is_instance_valid(b):
+			_slide_prep(b)
+			b.rect_min_size.x = 0
+			b.modulate.a = 0.0
+
+# while a card is narrow: clip it, and keep the name on one line (no wrapping as it widens)
+func _slide_prep(b:Control):
+	if b.has_meta("rr_slide"): return
+	b.set_meta("rr_slide", true)
+	b.rect_clip_content = true
+	var n = b.get_node_or_null("Name")
+	if n is Label:
+		b.set_meta("rr_wrap", n.autowrap)
+		n.autowrap = false
+
+func tween_length(delta:float = 0.016):
+	var mid = (next_index() - prev_index()) / 2
+	var a = 1.0 - exp(-delta * 20.0) # (about the old 0.15 s tween)
+	var sliding = slide_t >= 0.0
+	if sliding: slide_t += delta
+	var done = true
 	for i in btns.size():
-		var tween = get_tree().create_tween()
-		tween.tween_property(btns[i], "rect_min_size", Vector2(size_x-(15*(abs((next_index() - prev_index())/2-i))), 90), 0.15)
+		var b = btns[i]
+		if !is_instance_valid(b): continue
+		var w = size_x - 15 * abs(mid - i)
+		var nw:float
+		if sliding:
+			var vh = max(1.0, get_viewport_rect().size.y)
+			var delay = clamp(b.rect_global_position.y / vh, 0.0, 1.0) * SLIDE_WAVE # wave down the screen
+			var k = clamp((slide_t - delay) / SLIDE_TIME, 0.0, 1.0)
+			if k < 1.0: done = false
+			k = 1.0 - pow(1.0 - k, 3) # ease out
+			nw = w * k
+			_slide_prep(b)
+			b.modulate.a = clamp(k * 1.6, 0.0, 1.0)
+		else:
+			nw = lerp(b.rect_min_size.x, w, a)
+		if abs(nw - b.rect_min_size.x) > 0.2: b.rect_min_size.x = nw
+	if sliding and done:
+		slide_t = -1.0
+		for b in btns:
+			if is_instance_valid(b) and b.has_meta("rr_slide"):
+				b.remove_meta("rr_slide")
+				b.rect_clip_content = false
+				b.modulate.a = 1.0
+				var n = b.get_node_or_null("Name")
+				if n is Label and b.has_meta("rr_wrap"): n.autowrap = b.get_meta("rr_wrap")
 	
 
 func _input(ev:InputEvent):
