@@ -68,41 +68,80 @@ enum {
 	DT_ARRAY = 0x0c
 }
 
+# Covers (Rhythia-reimagined fix): the map list loads every cover on a background thread
+# (v3MapList._load_covers). Making the ImageTexture there calls the graphics driver off the main
+# thread, which Android's GLES driver doesn't allow - it crashed the game a few seconds after
+# returning to the menu. Now the thread only reads + decodes the image (_cover_image) and the
+# texture is made on the main thread (_cover_ready). Main-thread callers decode and upload at once.
+var cover_queued:bool = false # a decoded image is on its way to _cover_ready (plain bools: safe to read from the thread)
+var cover_made:bool = false
+
 func _get_cover():
 	if !has_cover:
 		return
 	if is_instance_valid(cover):
 		return cover
+	var img = _cover_image()
+	if img is Image: _set_cover_image(img)
+	elif img is Texture: cover = img
+	return cover
+
+# background thread: decode only, hand the image to the main thread
+func preload_cover():
+	if !has_cover or cover_queued or cover_made: return
+	cover_queued = true
+	call_deferred("_cover_ready", _cover_image())
+
+func _cover_ready(img):
+	cover_queued = false
+	if is_instance_valid(cover): return
+	if img is Image: _set_cover_image(img)
+	elif img is Texture: cover = img
+
+func _set_cover_image(img:Image):
+	if img.is_empty(): return
+	var imgtex:ImageTexture = ImageTexture.new()
+	imgtex.create_from_image(img)
+	cover = imgtex
+	cover_made = true
+
+# the cover as an Image (no GPU work, any thread), the "invalid" texture for unknown formats, or null
+func _cover_image():
 	var file = File.new()
 	var err = file.open(filePath,File.READ)
 	if err != OK:
 		print(err)
+		return null
 	file.seek(cover_offset)
+	var cbuf:PoolByteArray
 	if songType == Globals.MAP_SSPM:
 		var ct = file.get_8()
-		if ct == 1 or ct == 2:
+		if ct == 1:
+			var h:int = file.get_16()
+			var w:int = file.get_16()
+			var mip:bool = bool(file.get_8())
+			var format:int = file.get_8()
+			var clen:int = file.get_64()
+			var raw:PoolByteArray = file.get_buffer(clen)
+			file.close()
 			var img:Image = Image.new()
-			if ct == 1:
-				var h:int = file.get_16()
-				var w:int = file.get_16()
-				var mip:bool = bool(file.get_8())
-				var format:int = file.get_8()
-				var clen:int = file.get_64()
-				var cbuf:PoolByteArray = file.get_buffer(clen)
-				img.create_from_data(w,h,mip,format,cbuf)
-				var imgtex:ImageTexture = ImageTexture.new()
-				imgtex.create_from_image(img)
-				cover = imgtex
-			elif ct == 2:
-				var clen:int = file.get_64()
-				var cbuf:PoolByteArray = file.get_buffer(clen)
-				cover = Globals.imageLoader.load_buffer(cbuf) as ImageTexture
+			img.create_from_data(w,h,mip,format,raw)
+			return img
+		elif ct == 2:
+			var clen:int = file.get_64()
+			cbuf = file.get_buffer(clen)
 	elif songType == Globals.MAP_SSPM2:
-		var cbuf:PoolByteArray = file.get_buffer(cover_length)
-		cover = Globals.imageLoader.load_buffer(cbuf) as ImageTexture
+		cbuf = file.get_buffer(cover_length)
 	file.close()
-#	cover.call_deferred("unreference")
-	return cover
+	if cbuf.size() < 12: return null
+	var img:Image = Image.new()
+	var e = ERR_FILE_UNRECOGNIZED
+	if cbuf[0] == 0x89 and cbuf[1] == 0x50: e = img.load_png_from_buffer(cbuf)
+	elif cbuf[0] == 0xFF and cbuf[1] == 0xD8: e = img.load_jpg_from_buffer(cbuf)
+	elif cbuf[0] == 0x42 and cbuf[1] == 0x4D: e = img.load_bmp_from_buffer(cbuf)
+	elif cbuf[0] == 0x52 and cbuf[8] == 0x57: e = img.load_webp_from_buffer(cbuf)
+	if e != OK: return Globals.imageLoader.invalid_texture # (loaded at startup: no GPU work here)
+	return img
 
 func is_valid_id(txt:String):
 	return !(

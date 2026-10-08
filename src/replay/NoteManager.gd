@@ -1071,8 +1071,13 @@ func _mobile_pause_just() -> bool:
 
 func _live_pause(delta:float):
 	var mp = _mobile_pause_just()
-	var esc = _key_just(KEY_ESCAPE) or mp
 	var space = _key_just(KEY_SPACE)
+	# the mobile button is the phone's Space too: it skips the intro / a break when a skip is
+	# possible (like the stock game), and pauses otherwise
+	if mp and pause_state == 0 and can_skip:
+		space = true
+		mp = false
+	var esc = _key_just(KEY_ESCAPE) or mp
 	if pause_state == 0:
 		pause_cooldown = max(pause_cooldown - delta, 0)
 		if space and can_skip:

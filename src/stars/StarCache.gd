@@ -169,7 +169,7 @@ func _note_source(song):
 	s.filePath = song.filePath
 	s.initFile = song.initFile
 	s.rawData = song.rawData
-	s.marker_types = song.marker_types
+	s.marker_types = song.marker_types.duplicate(true) # own copy: the worker must not share arrays with the game
 	s.marker_count = song.marker_count
 	s.note_count = song.note_count
 	if song.notes.size() != 0 and song.songType == Globals.MAP_RAW:
