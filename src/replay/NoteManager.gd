@@ -223,7 +223,62 @@ func note_check_collision(i:int):
 		var hbs:float = Rhythia.note_hitbox_size/2
 		if hbs == 0.57: hbs = 0.56875 # 1.1375
 		var ori:Vector2 = notes[i][0]
-		return (cpos.x <= ori.x + hbs and cpos.x >= ori.x - hbs) and (cpos.y <= ori.y + hbs and cpos.y >= ori.y - hbs)
+		if (cpos.x <= ori.x + hbs and cpos.x >= ori.x - hbs) and (cpos.y <= ori.y + hbs and cpos.y >= ori.y - hbs):
+			return true
+		return sweep_on and !Rhythia.replaying and _swept_hit(i, ori, hbs)
+
+# Swept hitbox (Rhythia-reimagined, Customize > Gameplay). Stock Sound Space (and the Rhythia
+# rewrite, same 1.14 box / 55 ms window) only tests where the cursor IS on each frame, so a fast
+# flick that crosses a note between two frames never counts - worse at low fps / on phones.
+# This also tests the straight path the cursor travelled since the last frame, limited to the
+# part of that frame inside the note's hit window. Same box, same window: only the gaps between
+# frames are closed. Replays store their hit results, so they play back the same either way.
+var sweep_on:bool = false
+var sweep_from:Vector2 = Vector2()
+var sweep_from_ms:float = -1e9
+var sweep_to:Vector2 = Vector2()
+var sweep_to_ms:float = -1e9
+
+func _sweep_frame():
+	var cp:Vector3 = $Cursor.transform.origin
+	if ms < sweep_to_ms: # rewind / restart: no path to sweep
+		sweep_to_ms = -1e9
+	if ms > sweep_to_ms:
+		sweep_from = sweep_to
+		sweep_from_ms = sweep_to_ms
+		sweep_to_ms = ms
+	sweep_to = Vector2(cp.x, cp.y)
+
+func _swept_hit(i:int, ori:Vector2, hbs:float) -> bool:
+	var span = sweep_to_ms - sweep_from_ms
+	if span <= 0.0 or span > 100.0 * max(speed_multi, 1.0): return false # first frame / long hitch
+	var nms:float = notes[i][1]
+	var t0 = clamp((nms - sweep_from_ms) / span, 0.0, 1.0)
+	var t1 = clamp((nms + hit_window - sweep_from_ms) / span, 0.0, 1.0)
+	if t1 <= t0: return false
+	return _segment_hits_box(sweep_from.linear_interpolate(sweep_to, t0), sweep_from.linear_interpolate(sweep_to, t1), ori, hbs)
+
+# does the segment a-b touch the square centred on c with half size h (slab test)
+static func _segment_hits_box(a:Vector2, b:Vector2, c:Vector2, h:float) -> bool:
+	var d = b - a
+	var lo = 0.0
+	var hi = 1.0
+	for ax in 2:
+		var p = a.x if ax == 0 else a.y
+		var dd = d.x if ax == 0 else d.y
+		var mn = (c.x if ax == 0 else c.y) - h
+		var mx = (c.x if ax == 0 else c.y) + h
+		if abs(dd) < 0.000001:
+			if p < mn or p > mx: return false
+		else:
+			var u0 = (mn - p) / dd
+			var u1 = (mx - p) / dd
+			if u0 > u1:
+				var s = u0; u0 = u1; u1 = s
+			lo = max(lo, u0)
+			hi = min(hi, u1)
+			if lo > hi: return false
+	return true
 
 var asq = Rhythia.note_visual_approach
 var last_reposition_ms:float = -10000
@@ -257,6 +312,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 				break
 	
 	last_reposition_ms = ms
+	_sweep_frame()
 	
 	for i in range(max(current_note,rerun_start), notes.size()):
 		var notems:float = notes[i][1]
@@ -418,6 +474,8 @@ func spawn_notes(note_array:Array):
 
 func _ready():
 	cache_settings()
+	if ResourceLoader.exists("res://mods/replay/Reimagined.gd"):
+		sweep_on = bool(load("res://mods/replay/Reimagined.gd").val("swept_hitbox"))
 	if Rhythia.do_note_pushback:
 		grid_pushback = pushback_defaults.do_pushback
 	else:

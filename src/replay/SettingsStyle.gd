@@ -116,6 +116,7 @@ func _ready():
 				ls.thickness = 2
 				sl.add_stylebox_override("separator", ls)
 	_add_half_ghost_fade()
+	_add_hitbox_mode()
 	scroll.connect("resized", self, "_fit")
 	settings.connect("visibility_changed", self, "_visibility")
 	_visibility()
@@ -144,6 +145,23 @@ func _add_half_ghost_fade():
 	row.get_node("Label").text = "Half Ghost Fade"
 	fl.get_parent().add_child(row)
 	fl.get_parent().move_child(row, fl.get_index() + 1)
+
+# hitbox system switch, under Hitbox Size / Hit Window (NoteManager: swept vs classic check)
+func _add_hitbox_mode():
+	var sw = tabs.get_node_or_null("Gameplay/Modifiers/Group/H/SpeedWindow")
+	var hw = tabs.get_node_or_null("Gameplay/Modifiers/Group/H/HitWindow")
+	if !sw or sw.get_parent().has_node("SweptHitbox"): return
+	var c:CheckBox = sw.duplicate(0) # (no script: the game's checkbox script writes a Rhythia setting)
+	c.name = "SweptHitbox"
+	c.text = "Swept Hitbox"
+	c.hint_tooltip = "[def. on] Rhythia-reimagined hitbox. Classic checks where your cursor is once per frame, so a fast flick that crosses a note between two frames misses. Swept also checks the path your cursor moved since the last frame. Same hitbox size, same hit window - only the gaps between frames are closed. Off = classic. Applies on the next map."
+	c.pressed = bool(load("res://mods/replay/Reimagined.gd").val("swept_hitbox"))
+	c.connect("toggled", self, "_swept_changed")
+	sw.get_parent().add_child(c)
+	sw.get_parent().move_child(c, (hw.get_index() + 1) if hw else sw.get_index())
+
+func _swept_changed(on:bool):
+	load("res://mods/replay/Reimagined.gd").set_val("swept_hitbox", on)
 
 func _half_ghost_changed(v:float):
 	load("res://mods/replay/Reimagined.gd").set_val("half_ghost_length", v / 100.0)

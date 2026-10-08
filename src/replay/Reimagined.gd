@@ -18,6 +18,7 @@ const DEFAULTS = {
 	"sort": "stars",            # map list: stars | name | mapper
 	"collection": "",           # map list filter ("" = all maps)
 	"half_ghost_length": 1.0,   # Half Ghost: how long the notes take to fade (1.0 = game default)
+	"swept_hitbox": true,       # count notes the cursor passes through between frames (NoteManager)
 	"title_bg": "rain",         # title screen background: rain | snow | waves (topographic)
 }
 # side panels the layout editor moves: sprite, label, default centre (world x, y), size (w, h)
