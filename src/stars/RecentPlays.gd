@@ -109,6 +109,10 @@ func _ready():
 	empty = Label.new()
 	empty.modulate = Color(1, 1, 1, 0.5)
 	empty.autowrap = true
+	# (a wrapping label is as tall as its width allows: while the column is briefly 0 px wide -
+	# e.g. the map page laid out behind the results screen after a fail - it wrapped one letter
+	# per line, ~2000 px tall, and pushed the whole map page down off the screen)
+	empty.rect_min_size.x = 360
 	body.add_child(empty)
 	list = VBoxContainer.new()
 	list.add_constant_override("separation", 4)

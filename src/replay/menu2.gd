@@ -82,6 +82,7 @@ func _add_settings_style():
 	add_child(s)
 
 func show_title():
+	print("DBG %d show_title" % OS.get_ticks_msec())
 	var t = get_node_or_null("TitleMenu")
 	if t: t.show_menu()
 	else:
@@ -95,6 +96,7 @@ func _input(ev):
 		open_customize()
 		return
 	if !(ev is InputEventKey) or !ev.pressed or ev.echo or ev.scancode != KEY_ESCAPE: return
+	print("DBG %d menu2 esc, results %s handled %s" % [OS.get_ticks_msec(), has_node("ResultsScreen"), get_tree().is_input_handled()])
 	var maps = get_node_or_null("Main/Maps")
 	var st = get_node_or_null("Main/Settings")
 	if !(maps and maps.is_visible_in_tree()) and !(st and st.is_visible_in_tree()): return
