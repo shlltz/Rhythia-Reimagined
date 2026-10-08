@@ -97,6 +97,7 @@ func get_stars_at(song, speed:float) -> float:
 	if song == null or song.is_online: return -1.0
 	var mk = memo_key(song, speed)
 	if speed_memo.has(mk): return speed_memo[mk]
+	_check_worker()
 	mutex.lock()
 	if !queued.has(mk):
 		queued[mk] = true
@@ -337,3 +338,14 @@ static func color_for(stars:float) -> Color:
 			var a = COLORS[i-1]; var b = COLORS[i]
 			return a[1].linear_interpolate(b[1], (stars - a[0]) / (b[0] - a[0]))
 	return COLORS[-1][1]
+
+# the worker thread can die (a script error in a job ends it): start a new one
+func _check_worker():
+	if !running or !thread.has_method("is_alive") or thread.is_alive(): return
+	print("Rhythia-reimagined: star rating worker stopped, restarting it")
+	thread.wait_to_finish()
+	mutex.lock()
+	queued.clear() # (jobs it never finished are asked for again)
+	mutex.unlock()
+	thread = Thread.new()
+	thread.start(self, "_worker")

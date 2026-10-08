@@ -17,12 +17,29 @@ var anim:float = 0.0 # 1 -> 0 after a speed change: the number counts to the new
 var pill:bool = true # dark backdrop so the star colour reads on any button
 
 # speed != 1: rating of the map played at that speed (computed immediately)
+# (a speed rating that hasn't come back from the worker after WAIT_MAX s is computed right here:
+# on a friend's Linux install S-- / S--- never updated, the worker answer never arrived)
+const WAIT_MAX = 1.2
+var waiting:float = -1.0
+
 func _ready():
-	set_process(anim > 0)
+	set_process(anim > 0 or waiting >= 0)
 
 func _process(delta):
 	anim = max(0.0, anim - delta / 0.7)
-	if anim <= 0: set_process(false)
+	if waiting >= 0:
+		waiting += delta
+		if waiting > WAIT_MAX:
+			waiting = -1.0
+			if cache and cache.is_connected("rated_at", self, "_on_rated_at"): cache.disconnect("rated_at", self, "_on_rated_at")
+			if is_instance_valid(song) and !is_equal_approx(speed, 1.0):
+				var v = cache.get_stars_at_now(song, speed)
+				print("Rhythia-reimagined: speed star rating computed in place (%s at %sx)" % [song.id, speed])
+				if stars >= 0 and abs(v - stars) > 0.005:
+					from_stars = stars
+					anim = 1.0
+				stars = v
+	if anim <= 0 and waiting < 0: set_process(false)
 	update()
 
 func set_song(s, f:Font = null, spd:float = 1.0):
@@ -32,6 +49,7 @@ func set_song(s, f:Font = null, spd:float = 1.0):
 	speed = spd
 	font = f
 	suffix = ""
+	waiting = -1.0
 	if cache and cache.is_connected("rated", self, "_on_rated"):
 		cache.disconnect("rated", self, "_on_rated")
 	mouse_filter = MOUSE_FILTER_IGNORE
@@ -45,6 +63,8 @@ func set_song(s, f:Font = null, spd:float = 1.0):
 		suffix = " (%sx)" % str(stepify(speed, 0.01))
 		if stars < 0: # computing on the worker: keep showing the old number, animate when it lands
 			cache.connect("rated_at", self, "_on_rated_at", [cache.memo_key(song, speed)])
+			waiting = 0.0
+			set_process(true)
 			if prev_key == key and prev >= 0: stars = prev
 	if prev_key == key and prev >= 0 and stars >= 0 and abs(stars - prev) > 0.005: # same map, new speed
 		from_stars = prev
@@ -58,6 +78,7 @@ func set_song(s, f:Font = null, spd:float = 1.0):
 
 func _on_rated_at(mk, v, want):
 	if mk != want: return
+	waiting = -1.0
 	cache.disconnect("rated_at", self, "_on_rated_at")
 	if stars >= 0 and abs(v - stars) > 0.005:
 		from_stars = stars
