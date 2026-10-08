@@ -289,8 +289,6 @@ func _draw():
 class CoverViz extends Control:
 	var hype = null
 	const BARS = 20
-	var lv = [] # smoothed bar heights (4 sides x BARS)
-	var last_us:int = 0
 	func _ready():
 		anchor_right = 1
 		anchor_bottom = 1
@@ -305,12 +303,6 @@ class CoverViz extends Control:
 		if hype and hype.hype: col = load("res://mods/stars/StarCache.gd").color_for(hype.stars)
 		var s = rect_size
 		var n = min(vis.mags.size(), 64)
-		var now = OS.get_ticks_usec()
-		var dt = clamp((now - last_us) / 1000000.0, 0.0, 0.1) if last_us > 0 else 0.0
-		last_us = now
-		if lv.size() != 4 * BARS:
-			lv = []
-			for i in 4 * BARS: lv.append(0.0)
 		var sides = [[Vector2(0, 0), Vector2(s.x, 0), Vector2(0, -1)], [Vector2(s.x, 0), Vector2(s.x, s.y), Vector2(1, 0)],
 				[Vector2(s.x, s.y), Vector2(0, s.y), Vector2(0, 1)], [Vector2(0, s.y), Vector2(0, 0), Vector2(-1, 0)]]
 		for si in 4:
@@ -320,16 +312,11 @@ class CoverViz extends Control:
 			for i in BARS:
 				var f = abs((i + 0.5) / BARS * 2.0 - 1.0) # side centre = bass, corners = treble
 				var k = int(f * f * n * 0.7)
-				var pu = hype.punch if hype else 0.0
-				# the beat: every bar jumps together on a hit, on top of its own band
-				var target = clamp(vis.mags[k] / vis.ceiling * (1.0 + 0.8 * pu) + 0.32 * pu * pu, 0.0, 1.0) * (hype.gate if hype else 1.0)
-				var j = si * BARS + i
-				# snappy: jumps up at once, drops fast; drawn in steps (LED-meter look, not a smooth glide)
-				lv[j] = target if target > lv[j] else lerp(lv[j], target, 1.0 - exp(-dt * 18.0))
-				var v = floor(lv[j] * 14.0) / 14.0
-				if v < 0.05: continue # quiet: no bar (the resting stubs looked like a dotted frame)
+				# same motion as the menu's bottom visualizer: each bar is its band's level as the
+				# visualizer has it (its own smoothing + auto ceiling), no extra smoothing or beat boost
+				var v = clamp(vis.mags[k] / vis.ceiling, 0.0, 1.0) * (hype.gate if hype else 1.0)
+				if v < 0.03: continue # quiet: no bar (resting stubs looked like a dotted frame)
 				var p = a.linear_interpolate(b, (i + 0.5) / BARS)
 				var c = col
-				c.a *= min(1.0, (v - 0.05) * 8.0) * (0.35 + 0.65 * v)
-				c = c.linear_interpolate(Color(1, 1, 1, c.a), 0.5 * pu) # flash white on the hit
-				draw_line(p + out * 6, p + out * (6 + v * 76), c, 5.0 + 2.0 * pu, true)
+				c.a *= min(1.0, (v - 0.03) * 10.0) * (0.35 + 0.65 * v)
+				draw_line(p + out * 6, p + out * (6 + v * 76), c, 5.0, true)
