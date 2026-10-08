@@ -462,7 +462,7 @@ var logo_glitch_left:float = 0.0
 
 func _logo_fx():
 	var bb = BackBufferCopy.new()
-	bb.copy_mode = BackBufferCopy.COPY_MODE_RECT # just the logo's area
+	bb.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
 	bb.name = "FxCopy"
 	logo.add_child(bb)
 	logo_fx = ColorRect.new()
@@ -482,8 +482,6 @@ func _logo_fx_step(delta:float):
 	logo_fx.visible = on
 	logo.get_node("FxCopy").visible = on
 	if !on: return
-	var ls = logo.rect_size
-	logo.get_node("FxCopy").rect = Rect2(-ls * Vector2(0.1, 0.02), ls * Vector2(1.2, 1.04))
 	logo_glitch_next -= delta
 	if logo_glitch_next <= 0.0:
 		logo_glitch_next = rand_range(1.8, 4.5)

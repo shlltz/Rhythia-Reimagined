@@ -247,7 +247,7 @@ var fx_card = null          # [BackBufferCopy, overlay, card] on the selected ma
 
 func _fx_overlay(parent:Control, sd:float) -> Array:
 	var bb = BackBufferCopy.new()
-	bb.copy_mode = BackBufferCopy.COPY_MODE_RECT # only the area around the overlay (see _fx_rect)
+	bb.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
 	parent.add_child(bb)
 	var o = ColorRect.new()
 	o.mouse_filter = MOUSE_FILTER_IGNORE
@@ -317,7 +317,6 @@ func _fx(delta:float, cover):
 	if fx_cover:
 		fx_cover[1].material.set_shader_param("power", glitch)
 		fx_cover[1].material.set_shader_param("size", cover.rect_size)
-		_fx_rect(fx_cover[0], cover.rect_size)
 		fx_cover[1].visible = glitch > 0.01
 		fx_cover[0].visible = fx_cover[1].visible
 	# selected map card (the list rebuilds its cards on every page change)
@@ -329,14 +328,8 @@ func _fx(delta:float, cover):
 	if fx_card:
 		fx_card[1].material.set_shader_param("power", glitch * 0.8)
 		fx_card[1].material.set_shader_param("size", card.rect_size)
-		_fx_rect(fx_card[0], card.rect_size)
 		fx_card[1].visible = glitch > 0.01
 		fx_card[0].visible = fx_card[1].visible
-
-# copy the overlay's area plus room for the sideways shifts / colour split (not the whole screen)
-func _fx_rect(bb:BackBufferCopy, size:Vector2):
-	var r = Rect2(-size * Vector2(0.12, 0.02), size * Vector2(1.24, 1.04))
-	if bb.rect != r: bb.rect = r
 
 func _exit_tree():
 	_fx_off()
