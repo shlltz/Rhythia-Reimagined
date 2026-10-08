@@ -403,7 +403,7 @@ SCRIPT_MODS = {
                           'HUD.gd': 'res://scripts/game/HUD.gd', 'CursorTrail.gd': 'res://scripts/game/CursorTrail.gd',
                           'songload.gd': 'res://scripts/loaders/songload.gd', 'EndInfo.gd': 'res://scripts/ui/menu/buttons/EndInfo.gd'},
                ['ReplayViewer.gd', 'ReplayBrowser.gd', 'UIAnim.gd', 'VolumeOverlay.gd', 'LoadScreen.gd', 'AudioVisualizer.gd', 'PauseMenu.gd', 'UIJuice.gd', 'OsuSfx.gd', 'TitleMenu.gd', 'ResultsScreen.gd',
-                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd',
+                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd', 'CrashWatch.gd',
                 'icons/uicons-solid-rounded.woff', 'icons/Flaticon-license.txt']),
     'browser': ('browser', {}, ['MapBrowser.gd']),
     'hype': ('hype', {}, ['Hype.gd', 'PassFx.gd']),     # cover visualizer, 7+/10+ star glow / quake / lightning, pass glow + zoom
@@ -515,7 +515,12 @@ def file_logging(pk):
     if struct.pack('<I', len(key)) + key + struct.pack('<I', 8) in b: return
     n, = struct.unpack_from('<I', b, 4)
     ent = struct.pack('<I', len(key)) + key + struct.pack('<III', 8, 1, 1)   # bool true
-    pk.write(p, b[:4] + struct.pack('<I', n + 1) + b[8:] + ent)
+    b = b[:4] + struct.pack('<I', n + 1) + b[8:] + ent
+    # keep the last few sessions' logs (was 1): the crash report reads the session that crashed
+    mk = b'logging/file_logging/max_log_files' + struct.pack('<II', 8, 2)
+    i = b.find(mk)
+    if i >= 0: b = b[:i + len(mk)] + struct.pack('<I', 5) + b[i + len(mk) + 4:]
+    pk.write(p, b)
 def rebuild(profile, out=None):
     if not out and game_running(): sys.exit('close the game first (SoundSpacePlus.exe is running) - nothing was changed')
     pk = build(profile)

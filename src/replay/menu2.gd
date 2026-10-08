@@ -14,6 +14,8 @@ func idle_status():
 
 func _ready():
 	get_tree().paused = false
+	load("res://mods/replay/CrashWatch.gd").start(get_tree())
+	call_deferred("_crash_prompt")
 	if Rhythia.arcw_mode:
 		get_tree().change_scene("res://w.tscn")
 	if Rhythia.sex_mode:
@@ -287,6 +289,26 @@ func open_replays():
 	var browser = load("res://mods/replay/ReplayBrowser.gd").new()
 	browser.name = "ReplayBrowser"
 	add_child(browser)
+
+# the last session crashed: offer its log (once per start)
+func _crash_prompt():
+	var CW = load("res://mods/replay/CrashWatch.gd")
+	if !CW.crashed() or Engine.has_meta("rr_crash_asked"): return
+	Engine.set_meta("rr_crash_asked", true)
+	yield(get_tree().create_timer(1.5), "timeout")
+	while is_inside_tree() and has_node("TitleMenu") and get_node("TitleMenu").visible: # (it would sit behind the title screen)
+		yield(get_tree().create_timer(0.3), "timeout")
+	if !is_inside_tree(): return
+	Globals.confirm_prompt.open("The game closed unexpectedly last time. Its log can help find out why: copy it and paste it in a bug report.", "Crash report", [{text="Close"}, {text="View log"}, {text="Copy log"}])
+	var option = yield(Globals.confirm_prompt, "option_selected")
+	Globals.confirm_prompt.close()
+	if option == 2:
+		OS.clipboard = load("res://mods/replay/ReimaginedPanel.gd").crash_report()
+		Globals.notify(Globals.NOTIFY_INFO, "Crash log copied", "Crash report", 3)
+	elif option == 1:
+		open_customize()
+		var p = get_node_or_null("ReimaginedPanel")
+		if p: p.call_deferred("show_tab", "logs", false)
 
 func open_customize():
 	if has_node("ReimaginedPanel"): return

@@ -598,7 +598,6 @@ var move_dest:String = ""
 # the build (ssp_mod.py), so Android writes user://logs/godot.log too.
 const LOG_FILE = "user://logs/godot.log"
 const LOG_LINES = 400
-var NL = char(10)
 var log_view:TextEdit
 var log_msg:Label
 
@@ -607,7 +606,7 @@ func _build_logs():
 	_heading(p, "Game log", "What the game printed this session (errors included). Copy it and paste it when you report a bug.")
 	var h = HBoxContainer.new()
 	h.add_constant_override("separation", 8)
-	for b in [["Copy log", "_logs_copy"], ["Refresh", "_logs_refresh"]]:
+	for b in [["Copy log", "_logs_copy"], ["Refresh", "_logs_refresh"], ["Last session", "_logs_prev"]]:
 		var btn = Button.new()
 		btn.text = b[0]
 		btn.focus_mode = Control.FOCUS_NONE
@@ -623,11 +622,31 @@ func _build_logs():
 	log_view.rect_min_size = Vector2(0, 380)
 	log_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	p.add_child(log_view)
+	log_prev = load("res://mods/replay/CrashWatch.gd").crashed() # (after a crash: that session's log first)
 	_logs_refresh()
 
+var log_prev:bool = false # showing the previous session's log
+
+func _logs_prev():
+	log_prev = !log_prev
+	_logs_refresh()
+
+# the log of the session that crashed, ready to paste (also used by the menu's crash prompt)
+static func crash_report() -> String:
+	var path = load("res://mods/replay/CrashWatch.gd").previous_log()
+	return "CRASH REPORT (previous session)" + char(10) + _read_log(path if path != "" else LOG_FILE)
+
 func _log_text() -> String:
+	if log_prev:
+		var path = load("res://mods/replay/CrashWatch.gd").previous_log()
+		if path == "": return "(no log from the last session)"
+		return "LAST SESSION" + (" (crashed)" if load("res://mods/replay/CrashWatch.gd").crashed() else "") + char(10) + _read_log(path)
+	return _read_log(LOG_FILE)
+
+static func _read_log(path:String) -> String:
+	var NL = char(10)
 	var f = File.new()
-	if f.open(Globals.p(LOG_FILE), File.READ) != OK: return "(no log file - restart the game once after updating)"
+	if f.open(Globals.p(path) if path.begins_with("user://") else path, File.READ) != OK: return "(no log file - restart the game once after updating)"
 	var lines = f.get_as_text().split(NL)
 	f.close()
 	var from = max(0, lines.size() - LOG_LINES)
@@ -638,7 +657,7 @@ func _log_text() -> String:
 func _logs_refresh():
 	log_view.text = _log_text()
 	log_view.cursor_set_line(log_view.get_line_count())
-	log_msg.text = ""
+	log_msg.text = "showing the last session" if log_prev else ""
 
 func _logs_copy():
 	OS.clipboard = _log_text()
