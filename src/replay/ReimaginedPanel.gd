@@ -14,7 +14,8 @@ const W = 1060.0
 const H = 680.0
 const TABS = [["trail", "Cursor trail", "style, colour, opacity"], ["hud", "HUD layout", "move & scale panels"],
 	["skin", "Skin", "border, icons, logo"], ["collections", "Collections", "map packs"],
-	["interface", "Interface", "map list & clutter"]]
+	["interface", "Interface", "map list & clutter"], ["storage", "Storage", "user folder location"]]
+const UserDir = preload("res://mods/replay/UserDir.gd")
 
 var menu:Node
 var sfx:Node
@@ -120,6 +121,7 @@ func _ready():
 	_build_skin()
 	_build_collections()
 	_build_interface()
+	_build_storage()
 	show_tab(Engine.get_meta("rr_tab") if Engine.has_meta("rr_tab") else "trail", false)
 	# opening click = the game's own (menu2 open_customize plays Press)
 	UIAnim.play(card, Vector2(0, 26), Vector2.ZERO, 0.0, 1.0, 0.3)
@@ -574,6 +576,82 @@ func _if_bg(v:String):
 func _if_sort(v:String):
 	R.set_val("sort", v)
 	get_tree().call_group("rr_collections", "_rr_collections_changed")
+
+# ------------------------------------------------------------------ storage
+var dir_dialog:FileDialog
+var move_confirm:ConfirmationDialog
+var storage_msg:Label
+var move_dest:String = ""
+
+func _build_storage():
+	var p = _page("storage")
+	_heading(p, "User folder", "Your maps, replays, scores, skins and settings. Move it to another drive to free space: the game closes, a window copies everything, checks the copy, links the old place to the new folder (so everything keeps working) and starts the game again. Nothing is deleted until the copy is checked.")
+	if !UserDir.supported():
+		p.add_child(_label("Only available on Windows.", 15, Color(1, 1, 1, 0.5)))
+		return
+	var loc = _label(UserDir.location(), 15, Color(1, 1, 1))
+	loc.autowrap = true
+	loc.rect_min_size.x = content.rect_size.x - 190
+	_row(p, "Location" + ("  (moved)" if UserDir.moved() else ""), loc)
+	var h = HBoxContainer.new()
+	h.add_constant_override("separation", 8)
+	for b in [["Open folder", "_storage_open", false], ["Move to...", "_storage_pick", false], ["Move back to default", "_storage_back", !UserDir.moved()]]:
+		var btn = Button.new()
+		btn.text = b[0]
+		btn.disabled = b[2]
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.rect_min_size = Vector2(190, 36)
+		btn.connect("pressed", self, b[1])
+		h.add_child(btn)
+	p.add_child(h)
+	storage_msg = _label("", 14, Color(1, 0.55, 0.55))
+	storage_msg.autowrap = true
+	storage_msg.rect_min_size.x = content.rect_size.x
+	p.add_child(storage_msg)
+	var note = _label("Tip: big library? Pick a folder on a drive with plenty of space, like D:\\Games. A folder named SoundSpacePlus is made inside the one you pick.", 13, Color(1, 1, 1, 0.35))
+	note.autowrap = true
+	note.rect_min_size.x = content.rect_size.x
+	p.add_child(note)
+	dir_dialog = FileDialog.new()
+	dir_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dir_dialog.mode = FileDialog.MODE_OPEN_DIR
+	dir_dialog.window_title = "Pick where your user folder goes"
+	dir_dialog.connect("dir_selected", self, "_storage_picked")
+	root.add_child(dir_dialog)
+	move_confirm = ConfirmationDialog.new()
+	move_confirm.window_title = "Move user folder"
+	move_confirm.get_ok().text = "Close game and move"
+	move_confirm.connect("confirmed", self, "_storage_go")
+	root.add_child(move_confirm)
+
+func _storage_open():
+	OS.shell_open(UserDir.location())
+
+func _storage_pick():
+	storage_msg.text = ""
+	dir_dialog.current_dir = "C:/"
+	dir_dialog.popup_centered(Vector2(900, 560))
+
+func _storage_picked(dir:String):
+	var dest = UserDir.target_for(dir)
+	var why = UserDir.check(dest)
+	if why != "":
+		storage_msg.text = why
+		sfx.play("menuback.wav", -10.0)
+		return
+	move_dest = dest
+	move_confirm.dialog_text = "Move your user folder\n  from  %s\n  to      %s ?\n\nThe game closes now and starts again when the move is done.\nBig libraries can take a few minutes." % [UserDir.location(), dest]
+	move_confirm.popup_centered()
+
+func _storage_back():
+	storage_msg.text = ""
+	move_dest = ""
+	move_confirm.dialog_text = "Move your user folder back\n  from  %s\n  to      %s ?\n\nThe game closes now and starts again when the move is done." % [UserDir.location(), UserDir.default_path()]
+	move_confirm.popup_centered()
+
+func _storage_go():
+	var err = UserDir.start(get_tree(), move_dest)
+	if err != "": storage_msg.text = err
 
 # ------------------------------------------------------------------ widgets
 class TabButton extends Control:
