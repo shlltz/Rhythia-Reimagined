@@ -839,10 +839,16 @@ func _install_rhm(b:Dictionary, path:String) -> String:
 	d.make_dir_recursive(dir)
 	var err = _unzip(path, dir)
 	if err != "":
-		if OS.get_name() != "Windows": return "!couldn't unpack the .rhm file (" + err + ")"
-		var out = [] # Windows: fall back to tar.exe
-		var code = OS.execute("tar", ["-xf", '"%s"' % ProjectSettings.globalize_path(path), "-C", '"%s"' % ProjectSettings.globalize_path(dir)], true, out, true)
-		if code != 0: return "!couldn't unpack the .rhm file (%s; tar exit %d)" % [err, code]
+		if OS.get_name() == "Android": return "!couldn't unpack the .rhm file (" + err + ")"
+		var out = [] # fall back to tar.exe on Windows, unzip elsewhere (GNU tar can't read zips)
+		var src = ProjectSettings.globalize_path(path)
+		var dst = ProjectSettings.globalize_path(dir)
+		var code:int
+		if OS.get_name() == "Windows": # (one command line there, so the paths need quotes)
+			code = OS.execute("tar", ["-xf", '"%s"' % src, "-C", '"%s"' % dst], true, out, true)
+		else:
+			code = OS.execute("unzip", ["-o", "-q", src, "-d", dst], true, out, true)
+		if code != 0: return "!couldn't unpack the .rhm file (%s; exit %d)" % [err, code]
 	var f = File.new()
 	if f.open(dir + "/map", File.READ) != OK: return "!the .rhm file has no map data"
 	var m = parse_json(f.get_as_text())

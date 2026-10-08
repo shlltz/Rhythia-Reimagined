@@ -558,7 +558,14 @@ SHARE = ['replay', 'stars']
 # ready-to-play folder: the original exe + DLLs + a pck with the share build (map browser included) baked in
 PORTABLE_FILES = ['SoundSpacePlus.exe', 'discord-game-sdk-godot.dll', 'discord_game_sdk.dll',
                   'libgodot_openvr.dll', 'libnativedialogs.dll', 'openvr_api.dll']
-def portable(out):
+# Linux (x86_64): the official Sound Space Plus jun21-2026 linux.zip ships the same Godot 3.6.2
+# build and a byte-identical SoundSpacePlus.pck, so the same modded pck runs natively there.
+# Its program + GDNative libraries are kept in ..\_linux (from that release, not committed).
+LINUX_DIR = os.path.join(GAME, '_linux')
+LINUX_FILES = ['SoundSpacePlus.x86_64', 'libdiscord-game-sdk-godot.so', 'libdiscord_game_sdk.so',
+               'libgodot_openvr.so', 'libnativedialogs.so', 'libopenvr_api.so']
+
+def portable(out, linux=False):
     prof = {k: v for k, v in load_profile().items() if k not in TWEAKS_EXCLUDE}
     prof['sharelook'] = {}
     pk = build(prof)
@@ -566,10 +573,18 @@ def portable(out):
     root = os.path.splitext(os.path.basename(out))[0] + '/'
     try:
         with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
-            for f in PORTABLE_FILES: z.write(os.path.join(GAME, f), root + f)
+            for f in (LINUX_FILES if linux else PORTABLE_FILES):
+                p = os.path.join(LINUX_DIR if linux else GAME, f)
+                if not linux: z.write(p, root + f); continue
+                zi = zipfile.ZipInfo.from_file(p, root + f)
+                zi.create_system = 3                                  # unix: keep the run permission
+                zi.external_attr = (0o100755 if f.endswith('.x86_64') else 0o100644) << 16
+                zi.compress_type = zipfile.ZIP_DEFLATED
+                with open(p, 'rb') as fh: z.writestr(zi, fh.read())
             z.write(tmp, root + 'SoundSpacePlus.pck')
             v = version().encode()
-            z.writestr(root + 'README.txt', src('share', 'README_portable.txt').replace(b'@@VERSION@@', v))
+            rd = src('share', 'README_portable_linux.txt' if linux else 'README_portable.txt')
+            z.writestr(root + 'README.txt', rd.replace(b'@@VERSION@@', v))
             mods = src('share', 'README_tweaks.txt')
             mods = mods[mods.index(b'WHAT YOU GET'):]                 # (no install / uninstall steps)
             z.writestr(root + 'README-mods.txt', b'RHYTHIA-REIMAGINED v' + v + bytes([13, 10, 13, 10]) + mods)
@@ -653,6 +668,7 @@ if __name__ == '__main__':
     tw.add_argument('--without', default='', help='comma list of mods to leave out, e.g. browser')
     pkg = sp.add_parser('package'); pkg.add_argument('--out')
     pt = sp.add_parser('portable'); pt.add_argument('--out')
+    sp.add_parser('linux').add_argument('--out')
     ak = sp.add_parser('apk'); ak.add_argument('apk'); ak.add_argument('--out')
     sp.add_parser('version').add_argument('value', nargs='?')
     for n in ('status', 'rebuild', 'restore'): sp.add_parser(n)
@@ -666,6 +682,9 @@ if __name__ == '__main__':
             open(VERSION_FILE, 'w').write(a.value + '\n')
         print('Rhythia-reimagined v' + version()); sys.exit()
     if a.cmd == 'apk': apk(a.apk, a.out or os.path.join(os.path.dirname(GAME), 'Rhythia-reimagined-android-v%s-unsigned.apk' % version())); sys.exit()
+    if a.cmd == 'linux':
+        if not all(os.path.exists(os.path.join(LINUX_DIR, f)) for f in LINUX_FILES): sys.exit('missing Linux files in ' + LINUX_DIR)
+        portable(a.out or os.path.join(os.path.dirname(GAME), 'Rhythia-reimagined-linux-v%s.zip' % version()), linux=True); sys.exit()
     if a.cmd == 'portable': portable(a.out or os.path.join(os.path.dirname(GAME), 'Rhythia-reimagined-portable-v%s.zip' % version())); sys.exit()
     if a.cmd == 'package': package(a.out or os.path.join(os.path.dirname(GAME), 'Rhythia-reimagined-lite-v%s.zip' % version())); sys.exit()
     if a.cmd == 'tweaks':
