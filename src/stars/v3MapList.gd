@@ -179,6 +179,9 @@ func load_pg(select_cur:bool=false):
 	size_list()
 	for n in btns: n.queue_free()
 	btns.clear()
+	thumb_mx.lock() # covers of the old page that haven't loaded yet: not needed any more
+	thumb_queue.clear()
+	thumb_mx.unlock()
 
 	if disp.size() == 0: return
 	page_size = ((get_parent().rect_size.y)/90) * 1.5
@@ -456,7 +459,7 @@ func make_song_button(id:int=-1):
 	btn.get_node("Label").visible = false
 	if map.has_cover:
 		btn.get_node("Cover").visible = true
-		btn.get_node("Cover").texture = map.cover
+		btn.get_node("Cover").texture = _list_cover(map)
 	btn.get_node("Name").visible = true
 	if map.name.length() > 55:
 		btn.get_node("Name").text = strip_diacritics(map.name)
@@ -606,8 +609,8 @@ func scroll_to(i:int):
 	scrolling_to = true
 
 func _ready():
-	thread = Thread.new() # Load Covers
-	thread.start(self, "_load_covers")
+	thread = Thread.new() # list covers (thumbnails), loaded as the maps come on screen
+	thread.start(self, "_thumb_worker")
 
 	randomize()
 	if !visible: return
@@ -629,22 +632,52 @@ func _ready():
 	print("size_x: ", size_x)
 
 func _exit_tree():
-	covers_stop = true # leaving the menu: don't wait for the whole library's covers
+	covers_stop = true
+	thumb_sem.post()
 	thread.wait_to_finish()
 
 func size_list():
 	size_x = get_viewport_rect().size.x/2.8
 	$"..".rect_min_size.x = size_x
 
-# (decodes only; the textures are made on the main thread - see Song.preload_cover)
+# List covers (Rhythia-reimagined): the stock list loaded every map's full-size cover at startup
+# and kept them all in video memory. Now each button gets a small thumbnail (THUMB px), decoded
+# on the worker thread only when its map comes on screen; the texture is made on the main
+# thread (Android's GLES can't make textures off it). Song keeps the last 120 thumbnails.
+const THUMB = 384
 var covers_stop:bool = false
-func _load_covers():
-	var allmaps:Array = Rhythia.registry_song.get_items()
-	for i in range(allmaps.size()):
+var thumb_queue:Array = []
+var thumb_mx = Mutex.new()
+var thumb_sem = Semaphore.new()
+
+func _list_cover(map):
+	if !map.has_method("thumb_image"): return map.cover
+	if map.thumb: return map.thumb
+	var full = map.loaded_cover()
+	if full: return full
+	thumb_mx.lock()
+	if !thumb_queue.has(map): thumb_queue.append(map)
+	thumb_mx.unlock()
+	thumb_sem.post()
+	return null
+
+func _thumb_worker(_u = null):
+	while true:
+		thumb_sem.wait()
 		if covers_stop: return
-		var s = allmaps[i]
-		if s.has_method("preload_cover"): s.preload_cover()
-		else: s._get_cover()
+		thumb_mx.lock()
+		var s = thumb_queue.pop_back() if thumb_queue.size() > 0 else null # newest first: what's on screen now
+		thumb_mx.unlock()
+		if s == null: continue
+		call_deferred("_thumb_ready", s, s.thumb_image(THUMB))
+
+func _thumb_ready(s, img):
+	if covers_stop: return
+	if !s.thumb: s.set_thumb(img)
+	if !s.thumb: return
+	for b in btns:
+		if is_instance_valid(b) and b.get("song") == s and b.has_node("Cover"):
+			b.get_node("Cover").texture = s.thumb
 
 func strip_diacritics(s:String): # we hardcoding tonight   -  edit nvm im literally a genius
 #	var diacritics = "[̴̧̳̦̜̱͖̲̺͊͜1̷̨̛̝̼̓͒8̶̳̘̥̰̌̋̎͛̐͛̄̾ͅ6̶̡̛̦̻̭̅͝0̷̼̤͓̹͚͇͐͒́͗̿̍͋̕͜ ̸̦̥̻͈̳̥̲͖̆̀̽̋͘Ḇ̴̢̲̞̰͉̬͙̮̗͒̿̉͛͊P̸̩͉̻͓̱͕͖͉͕̉͌̈̅̃̈͑̚͜͝M̶̡̜͕̺̞͔̾̉ ̵̠̈È̸̛̤̖͍̈̓̏̒̆̋͘x̸̨̛͉̀͛͑͑́t̸̲̹̖̺̥̪̙͗̒̓̆̀͒͒̚r̷̲̩̦̓̔̓̑̀̿́̕͝ã̷̢̢̤̹̹̝̓͌̃͂t̸̲͉͊̀o̸͉͈̿̿̌͋̋n̶̗̺̩̱̠͚͌͛̈́͂̃̀̚͠͝ȩ̷̠̻͕̠̫̗͖̹̊]̶͖̙̳̳̲̪̌̆̄̈͊͛͘͜͜͜͝ ̸̧̩͕̲́̇̃̑A̶̱̖͔̪̦̮̐̉̀͗͊̚͝w̶̢͕̬̪̞̲͚͕̫̠̎̀̾̌̓̊̚͝͠â̵͇̮͖̜̱͙̗k̸̢̛̥̩͈̤̩͍̱͍͇̆̆̀̎̓͐̊̕ȩ̵̦̙̠̬̔̍́̚s̴̡̬̦̈́̈̄͌̃͠y̶̙͒͐̉̆̔ ̸̙̦̲̃͆̇́́͂͠C̵̨̖̻̯̪͎̀̊̄̏͛͗͝h̵̨̦̫̖͇̮̥̿͊̎̂͝r̴̖̙̤͖̤̻̝̬̗̓̄̓̆̇̈́̇̄͠ḭ̷̧̧͙̲͈̬̦̮̈́̀͗͌̕ͅs̴̯̿t̸̡̡͈̰̮͎̺͌̏ͅḿ̸̢̛̼̼͖̗ã̵̢̢̬͜s̶̡̙̼̥̣̺̻̭̱̈̈́̆̒̒̈́͠ͅ ̷̧̗͌́̐̌̽̅͠B̴̨̡̢̟͕̦̹͉̺̔ͅë̷̻̞͎̬͎̗͋̀͐́̅l̷̛̠̪͕͖̊̾l̶̹̤͊͊s̷̛͉͛͌̐͘̚̚͘ ̷͕̯̲̟̦̥͍̞͑̾̀͆͛͑̂͊͐R̵̮̮͖̥̜̠̖̥̲͇̋́i̵̟͚̭̣̙̫̙̘͍͛̍͝ͅņ̷̩͉̮̭͙̌͆g̵̨̡̹̗̗͍̟̟̩̓̾̂̍̆ ̴̺̥̙͉͉̾̉̽f̴͓̏̿̅̋͛̓̓o̴͈̎̀͒̏̚͠͝r̷̡̬͉͇̞̉̈̀ ̶̡̛̘̭̩͓̟̊̆̓̓̏̇͝͝H̴̢͓̫̰́̈̋E̶̛̛̥̬̯̺͊̏̽̀L̵̟̮̞̫̟͗̑̀͂̽͑̔̐̉̕L̷̛̹̼͎̰͗̾̆͋̊́̆͆"

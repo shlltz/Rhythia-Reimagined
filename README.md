@@ -20,9 +20,10 @@ A mod pack for **Rhythia Legacy / Sound Space Plus nightly** (the Godot 3.6.2 bu
 | **Map page** | The cover art works as a visualizer: it hits on the map's own notes and has spectrum bars around it. Maps over 7★ get glowing screen sides. Maps over 10★ make the cover and Start quake, a lightning bolt strikes when you select one, and hovering Start dims everything else. The mods menu wipes up. |
 | **Browse** | Search and download maps from rhythia.com inside the game, in a panel that slides up. |
 | **Replays** | A replay browser and viewer. You can seek, change speed, pause, step frame by frame and hide the UI. Misses show as red ticks on the timeline. |
-| **Customize** (F1) | Cursor trail: the game's own trail, an osu!-style trail, or off, with colour, opacity, length and size. A drag-and-drop HUD layout editor. Skins for the border, grid, trail, logo and sidebar icons. Interface toggles. |
+| **Customize** (F1) | Cursor trail: the game's own trail, an osu!-style trail, or off, with colour, opacity, length and size. A drag-and-drop HUD layout editor. Skins for the border, grid, trail, logo and sidebar icons. Interface toggles. Storage: move your user folder (maps, replays, scores) to another drive (Windows). |
 | **Gameplay** | osu!-style pause screen and results screen. A green glow when you pass a map, then a zoom into the results. Adjustable half-ghost fade. |
 | **Menu** | Springy buttons, animations, audio visualizer, Alt + mouse wheel volume, and a pause-all-music button. Icons are Flaticon UIcons. |
+| **Performance** | The map list uses small cover thumbnails loaded only for the maps on screen, and only the last few full-size covers stay in memory (about 1 GB of video memory down to under 100 MB on a 590-map library). The map cache re-reads a map whose file changed. |
 | **Other** | Vietnamese translation, Discord status, imported map files go to the Recycle Bin, map cache fix, small FPS tweaks. |
 
 ## Building it yourself

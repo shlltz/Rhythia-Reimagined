@@ -80,11 +80,67 @@ func _get_cover():
 	if !has_cover:
 		return
 	if is_instance_valid(cover):
+		_cover_used()
 		return cover
 	var img = _cover_image()
 	if img is Image: _set_cover_image(img)
 	elif img is Texture: cover = img
+	_cover_used()
 	return cover
+
+# Memory (Rhythia-reimagined): full-size covers used to stay loaded for every map ever shown -
+# the menu even loaded the whole library's covers at startup (hundreds of MB of video memory
+# on big libraries). Now only the last FULL_COVERS_KEPT full covers stay on the songs; older
+# ones are dropped (anything still showing one keeps its own reference). The map list uses
+# small thumbnails instead (thumb / thumb_image), loaded only for the maps on screen.
+const FULL_COVERS_KEPT = 6
+const THUMBS_KEPT = 120
+var thumb:Texture = null
+
+func _cover_used():
+	_lru("rr_cover_lru", FULL_COVERS_KEPT, "cover")
+
+func _lru(key:String, keep:int, field:String):
+	if !Engine.has_meta(key): Engine.set_meta(key, [])
+	var l:Array = Engine.get_meta(key)
+	var i = l.find(self)
+	if i == l.size() - 1 and i != -1: return
+	if i != -1: l.remove(i)
+	l.append(self)
+	while l.size() > keep:
+		var old = l.pop_front()
+		if old and is_instance_valid(old) and old != self:
+			old.set(field, null)
+			if field == "cover": old.cover_made = false
+
+# the full cover if it's already loaded, else null (never loads anything)
+func loaded_cover():
+	return cover if has_cover and is_instance_valid(cover) else null
+
+# small cover for lists: decode + shrink only (no GPU work, any thread). Image, the "invalid"
+# texture, or null.
+func thumb_image(size:int):
+	if !has_cover: return null
+	var img = _cover_image()
+	if !(img is Image): return img
+	if img.is_empty(): return null
+	if img.is_compressed() and img.decompress() != OK: return null
+	img.clear_mipmaps()
+	var w = img.get_width()
+	var h = img.get_height()
+	var k = float(size) / max(w, h)
+	if k < 1.0: img.resize(max(1, int(w * k)), max(1, int(h * k)), Image.INTERPOLATE_BILINEAR)
+	return img
+
+# main thread: keep a thumbnail made from thumb_image
+func set_thumb(img):
+	if img is Texture: thumb = img
+	elif img is Image and !img.is_empty():
+		var t = ImageTexture.new()
+		t.create_from_image(img, Texture.FLAG_FILTER) # (no mipmaps: a third less memory)
+		thumb = t
+	else: return
+	_lru("rr_thumb_lru", THUMBS_KEPT, "thumb")
 
 # background thread: decode only, hand the image to the main thread
 func preload_cover():
@@ -104,6 +160,7 @@ func _set_cover_image(img:Image):
 	imgtex.create_from_image(img)
 	cover = imgtex
 	cover_made = true
+	_cover_used()
 
 # the cover as an Image (no GPU work, any thread), the "invalid" texture for unknown formats, or null
 func _cover_image():
@@ -1716,6 +1773,12 @@ func load_from_cache(cache:Dictionary):
 	# as playable and showed up in the list once the cache worked. Older entries without the
 	# flag are rejected, which makes the registry re-read that map from its file once.
 	if !cache.has("broken"): return "cache entry has no broken flag"
+	# mod: like Rhythia 0.2.0's map cache, an entry is only trusted while the file's modified
+	# time matches; a map replaced under the same name (re-download, editor save) is re-read
+	# instead of loading stale offsets. Entries from before this check adopt the current time.
+	var mt = File.new().get_modified_time(str(cache.get("path", "")))
+	if cache.has("mtime") and int(cache.mtime) != mt: return "map file changed since it was cached"
+	file_mtime = mt
 	is_broken = cache.get("broken")
 	warning = cache.get("warning", "")
 	songType = cache.get("version")
@@ -1738,8 +1801,11 @@ func load_from_cache(cache:Dictionary):
 	if songType == Globals.MAP_SSPM2:
 		marker_types = cache.get("marker_types")
 		marker_count = cache.get("marker_count")
+var file_mtime:int = 0
 func make_cache():
+	if file_mtime == 0 and filePath != "": file_mtime = File.new().get_modified_time(filePath)
 	var cache = {
+		mtime = file_mtime,
 		version = songType,
 		path = filePath,
 		id = id,

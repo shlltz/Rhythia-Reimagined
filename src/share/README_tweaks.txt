@@ -41,6 +41,9 @@ WHAT YOU GET
                 collection under Filters; sort the map list by stars / name / mapper
               - hide the "Default hitboxes, default hitwindow" line and the in-game HIT WINDOW /
                 HITBOX panel (on by default)
+              - storage (Windows): move your user folder (maps, replays, scores, settings) to
+                another drive; the game closes, copies, checks the copy, links the old place
+                to the new one and starts again
   Settings    redesigned settings page (tab column + big card, like Customize); ESC = title screen;
               "Half Ghost Fade" (25-300%) right under Fade Length in the Notes tab
   Map FX      the cover art is a visualizer: hits on the map's beats, spectrum bars around it;
