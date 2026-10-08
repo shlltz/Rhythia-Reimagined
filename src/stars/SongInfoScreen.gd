@@ -356,14 +356,26 @@ func _rr_actions_pressed(id:int):
 		coll_popup.set_item_metadata(i, names[i])
 	if names.size() > 0: coll_popup.add_separator()
 	coll_popup.add_item("New collection...", 9999)
-	coll_popup.rect_position = get_viewport().get_mouse_position()
-	coll_popup.popup()
+	_popup_on_screen(coll_popup)
+
+# "Add to collection..." is the last row of the ... menu, near the screen bottom: popping the list
+# up at the mouse put it mostly below the screen, so it looked like the menu just vanished.
+# Open at the pointer but kept fully on screen, and drawn above the map page's raised layers.
+func _popup_on_screen(p:Popup):
+	VisualServer.canvas_item_set_z_as_relative_to_parent(p.get_canvas_item(), false)
+	VisualServer.canvas_item_set_z_index(p.get_canvas_item(), 20)
+	p.rect_size = Vector2.ZERO
+	p.rect_size = p.get_combined_minimum_size()
+	var vp = get_viewport().get_visible_rect().size
+	var at = get_viewport().get_mouse_position()
+	at.x = clamp(at.x, 8, vp.x - p.rect_size.x - 8)
+	at.y = clamp(at.y, 8, vp.y - p.rect_size.y - 8)
+	p.popup(Rect2(at, p.rect_size))
 
 func _rr_coll_pressed(id:int):
 	var R = load("res://mods/replay/Reimagined.gd")
 	if id == 9999:
-		coll_new.rect_position = get_viewport().get_mouse_position()
-		coll_new.popup()
+		_popup_on_screen(coll_new)
 		coll_new.get_child(0).text = ""
 		coll_new.get_child(0).grab_focus()
 		return

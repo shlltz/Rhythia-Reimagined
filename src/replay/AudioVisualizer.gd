@@ -14,6 +14,8 @@ const COLOR_BACK = Color(1, 0.7921569, 0.8039216, 0.74509805)
 const HEIGHT = 140.0 # bar strip height (was 64)
 const FADE = 64.0 # soft fade above the strip so the map list melts into the bars
 const FADE_COLOR = Color(0, 0, 0, 0.85)
+const BOTTOM_GAP = 22.0 # bars float above the screen edge (phones round / cut the bottom corners)
+const SCROLL_COL = "Main/Maps/ScrollControl" # map list UP / DOWN buttons: the strip stops left of them
 const PREVIEW = "Main/Maps/Results/Results/RS/H1/Info/Control/PreviewMusic"
 
 var bus:int = -1
@@ -31,10 +33,10 @@ func _ready():
 	anchor_top = 1
 	anchor_right = 1
 	anchor_bottom = 1
-	margin_top = -(HEIGHT + 8)
+	margin_top = -(HEIGHT + BOTTOM_GAP)
 	margin_left = 8
 	margin_right = -8
-	margin_bottom = -8
+	margin_bottom = -BOTTOM_GAP
 	bus = AudioServer.get_bus_index("Music")
 	if bus < 0: return
 	effect = AudioEffectSpectrumAnalyzer.new()
@@ -49,8 +51,13 @@ func _exit_tree():
 			AudioServer.remove_bus_effect(bus, i)
 			break
 
+var fit_t:float = 0.0
 func _process(delta):
 	if !analyzer or !is_visible_in_tree(): return
+	fit_t -= delta
+	if fit_t <= 0:
+		fit_t = 0.3
+		_fit_right()
 	var count = int(round((rect_size.x - BAR_SIZE) / (BAR_SIZE + BAR_GAP)))
 	if count < 2: return
 	if mags.size() != count:
@@ -70,6 +77,15 @@ func _process(delta):
 	ceiling = lerp(ceiling, target_ceiling, min(1.0, delta * 6))
 	progress = _song_progress()
 	update()
+
+# end the strip before the map list's UP / DOWN column while it's on screen (it used to run under DOWN)
+func _fit_right():
+	if !menu: menu = owner if owner else get_parent()
+	var sc = menu.get_node_or_null(SCROLL_COL) if menu else null
+	var right = 8.0
+	if sc and sc is Control and sc.is_visible_in_tree():
+		right = max(8.0, get_viewport_rect().size.x - sc.get_global_rect().position.x + 10)
+	if abs(margin_right + right) > 0.5: margin_right = -right
 
 func _song_progress() -> float:
 	if !menu: menu = owner if owner else get_parent()

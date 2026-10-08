@@ -181,6 +181,13 @@ func _process(delta):
 	if run:
 		run.rect_pivot_offset = run.rect_size / 2
 		_shake(run, (1.5 + bass * 2.0 + kick * 3.0 + dim * 2.5) if hype else 0.0, false)
+		if hype: # a little zoom while hovered (follows the dim; UIJuice's hover spring is skipped on hype maps)
+			if !run.has_meta("rr_no_juice"): run.set_meta("rr_no_juice", true)
+			var z = 1.0 + 0.07 * dim + 0.015 * punch * dim
+			run.rect_scale = Vector2(z, z)
+		elif run.has_meta("rr_no_juice"):
+			run.remove_meta("rr_no_juice")
+			run.rect_scale = Vector2.ONE
 	update()
 
 # random offset on top of wherever the container put the node

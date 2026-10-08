@@ -8,7 +8,8 @@ extends CanvasLayer
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
 const OsuSfx = preload("res://mods/replay/OsuSfx.gd")
 const W = 1180.0
-const H = 600.0
+const H = 660.0
+const ACCENT = Color("#8a6cff")
 const DIFFS = ["Easy", "Medium", "Hard", "Logic", "Tasukete"]
 const MODS = [["mod_nofail", "NoFail"], ["mod_sudden_death", "SuddenDeath"], ["mod_hardrock", "HardRock"],
 	["mod_flashlight", "Flashlight"], ["mod_ghost", "Ghost"], ["mod_nearsighted", "Nearsighted"],
@@ -67,10 +68,14 @@ func _ready():
 	holder = Panel.new()
 	if ResourceLoader.exists("res://uitheme.tres"): holder.theme = load("res://uitheme.tres") # game font (modded font if installed)
 	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(0.06, 0.06, 0.08, 0.82)
-	sb.set_corner_radius_all(12)
-	sb.border_color = Color(1, 1, 1, 0.08)
-	sb.set_border_width_all(1)
+	sb.bg_color = Color(0.04, 0.04, 0.055, 0.86)
+	sb.set_corner_radius_all(16)
+	sb.corner_detail = 8
+	sb.anti_aliasing = true
+	sb.border_color = Color(1, 1, 1, 0.2)
+	sb.set_border_width_all(2)
+	sb.shadow_color = Color(0, 0, 0, 0.45)
+	sb.shadow_size = 24
 	holder.add_stylebox_override("panel", sb)
 	root.add_child(holder)
 	holder.rect_size = Vector2(W, H)
@@ -81,20 +86,30 @@ func _ready():
 	c.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	holder.add_child(c)
 	c.rect_position = Vector2(32, 32); c.rect_size = Vector2(150, 150)
+	_tile(Rect2(30, 30, 154, 154), Color(1, 1, 1, 0.35), 8, false) # cover frame
 	var title = ("[REPLAY] " if run.replay else "") + (song.name if song else "?")
 	_label(title, Vector2(206, 34), 1.5, Color(1, 1, 1), 640)
 	var diff = song.custom_data.get("difficulty_name", "") if song else ""
 	if diff == "" and song and song.difficulty >= 0 and song.difficulty < DIFFS.size(): diff = DIFFS[song.difficulty]
 	_label(("by " + song.creator if song else "") + ("   ·   " + diff if diff != "" else ""), Vector2(206, 84), 1.0, Color(1, 1, 1, 0.6), 640)
 	var st = _status()
-	_label(st[0], Vector2(206, 122), 1.3, st[1], 640)
+	var pill = _label(st[0], Vector2(220, 124), 1.1, st[1], 0)
+	var pw = pill.get_font("font").get_string_size(st[0]).x if pill.get_font("font") else 120.0
+	_tile(Rect2(206, 120, pw + 30, 34), st[1], 17, false, true)
+	holder.move_child(pill, holder.get_child_count() - 1)
 	best_label = _label("", Vector2(206, 158), 1.0, Color("#ffd75e"), 640)
 	if run.get("when"):
 		best_label.text = "played " + run.when
 		best_label.modulate = Color(1, 1, 1, 0.5)
 
-	_label("SCORE", Vector2(32, 214), 0.9, Color(1, 1, 1, 0.5))
-	score_label = _label("0", Vector2(32, 236), 3.2, Color(1, 1, 1))
+	var line = ColorRect.new() # divider under the header
+	line.color = Color(1, 1, 1, 0.1)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(line)
+	line.rect_position = Vector2(32, 204); line.rect_size = Vector2(W - 470, 1) # (stops before the grade ring)
+	_tile(Rect2(32, 222, 572, 116), Color(1, 1, 1, 0.16), 12)
+	_label("SCORE", Vector2(50, 232), 0.85, Color(1, 1, 1, 0.5))
+	score_label = _label("0", Vector2(48, 250), 3.2, Color(1, 1, 1))
 	var acc = float(run.hits) / max(1.0, float(run.total))
 	var rows = [
 		["Accuracy", "%.2f%%" % (acc * 100)],
@@ -108,23 +123,32 @@ func _ready():
 		rows.append(["Progress", "%.1f%%" % (clamp(run.position / max(1.0, run.length), 0, 1) * 100)])
 	var stars = _stars(song)
 	if stars > 0: rows.append(["Stars", "%.2f" % stars])
-	for i in rows.size():
-		var x = 32 + (i % 2) * 300
-		var y = 360 + int(i / 2) * 52
-		_label(rows[i][0], Vector2(x, y), 0.9, Color(1, 1, 1, 0.5))
-		_label(rows[i][1], Vector2(x, y + 18), 1.3, Color(1, 1, 1))
+	for i in rows.size(): # one outlined tile per stat, two columns
+		var x = 32 + (i % 2) * 290
+		var y = 354 + int(i / 2) * 60
+		_tile(Rect2(x, y, 282, 52), Color(1, 1, 1, 0.14), 10)
+		_label(rows[i][0].to_upper(), Vector2(x + 16, y + 6), 0.7, Color(1, 1, 1, 0.5))
+		_label(rows[i][1], Vector2(x + 16, y + 20), 1.2, Color(1, 1, 1))
 	var mods = run.get("mods", null)
 	if mods == null:
 		mods = []
 		for m in MODS:
 			if Rhythia.get(m[0]): mods.append(m[1])
-	if mods.size() > 0: _label("Mods: " + PoolStringArray(mods).join(", "), Vector2(32, H - 40), 0.9, Color(1, 1, 1, 0.6), 640)
+	if mods.size() > 0: _label("Mods   " + PoolStringArray(mods).join("  ·  "), Vector2(34, H - 40), 0.9, Color(1, 1, 1, 0.6), 640)
 
 	var g = _grade(acc)
 	grade_text = _label(g[0], Vector2(W - 420, 120), 15.0, g[2], 380)
 	grade_text.align = Label.ALIGN_CENTER
 	grade_text.rect_pivot_offset = grade_text.rect_size / 2
 	grade_text.modulate.a = 0
+	var ring = GradeRing.new() # thin ring in the grade colour behind the letter
+	ring.col = g[2]
+	ring.center = Vector2(W - 230, 352)
+	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(ring)
+	holder.move_child(ring, grade_text.get_index())
+	ring.rect_size = Vector2(W, H)
+	grade_ring = ring
 
 	var bar = HBoxContainer.new()
 	bar.anchor_left = 0.5; bar.anchor_right = 0.5; bar.anchor_top = 1; bar.anchor_bottom = 1
@@ -170,12 +194,55 @@ func _font(size:int):
 	fonts[size] = f
 	return f
 
+class GradeRing extends Control:
+	var col:Color = Color(1, 1, 1)
+	var center:Vector2
+	var k:float = 0.0
+	func _draw():
+		if k <= 0: return
+		draw_arc(center, 168, -PI / 2, -PI / 2 + TAU * k, 96, Color(col.r, col.g, col.b, 0.55), 3.0, true)
+		draw_arc(center, 182, 0, TAU, 96, Color(col.r, col.g, col.b, 0.12 * k), 1.5, true)
+
+var grade_ring = null
+
+static func _sbox(bg:Color, border:Color, w:int, r:int) -> StyleBoxFlat:
+	var sb = StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.set_border_width_all(w)
+	sb.set_corner_radius_all(r)
+	sb.corner_detail = 6
+	sb.anti_aliasing = true
+	sb.draw_center = bg.a > 0
+	return sb
+
+# outlined, rounded box on the panel (stat tiles, frames, the status pill)
+func _tile(r:Rect2, border:Color, radius:int, fill:bool = true, tint:bool = false) -> Panel:
+	var p = Panel.new()
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bg = Color(border.r, border.g, border.b, 0.1) if tint else (Color(1, 1, 1, 0.03) if fill else Color(0, 0, 0, 0))
+	p.add_stylebox_override("panel", _sbox(bg, border, 2 if tint else 1, radius))
+	holder.add_child(p)
+	p.rect_position = r.position
+	p.rect_size = r.size
+	return p
+
 func _button(bar:Control, text:String, cb:String):
 	var b = Button.new()
 	b.text = text
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.focus_mode = Control.FOCUS_NONE
+	b.rect_min_size = Vector2(0, 50)
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	if ResourceLoader.exists("res://uitheme.tres"): b.theme = load("res://uitheme.tres")
+	var main = cb == "_retry"
+	var n = _sbox(Color(0, 0, 0, 0.45), ACCENT if main else Color(1, 1, 1, 0.4), 2, 12)
+	var h = _sbox(Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.18), ACCENT.lightened(0.3), 2, 12)
+	var pr = _sbox(Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.32), ACCENT.lightened(0.3), 2, 12)
+	for s in ["normal", "focus", "disabled"]: b.add_stylebox_override(s, n)
+	b.add_stylebox_override("hover", h)
+	b.add_stylebox_override("pressed", pr)
+	for k in ["font_color", "font_color_hover", "font_color_pressed", "font_color_focus"]: b.add_color_override(k, Color(1, 1, 1))
 	b.connect("mouse_entered", sfx, "play", ["click-short.ogg", -10.0])
 	b.connect("pressed", self, cb)
 	bar.add_child(b)
@@ -229,6 +296,10 @@ func _layout():
 	var target = (size - Vector2(W, H)) / 2 + (size / 2 - mouse) * (8.0 / size.y) - Vector2(0, 30)
 	holder.rect_position = holder.rect_position.linear_interpolate(target, 0.2) if t > 0.05 else target
 	grade_text.rect_scale = grade_text.rect_scale.linear_interpolate(Vector2.ONE, 0.18)
+	if grade_ring and stamped and grade_ring.k < 1.0: # ring sweeps in after the grade stamp
+		grade_ring.center = grade_text.rect_position + grade_text.rect_size / 2
+		grade_ring.k = min(1.0, grade_ring.k + get_process_delta_time() / 0.5)
+		grade_ring.update()
 
 # ------------------------------------------------------------------ actions
 func _input(ev):

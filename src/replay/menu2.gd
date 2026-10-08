@@ -51,6 +51,7 @@ func _ready():
 	call_deferred("_add_topo_background")
 	call_deferred("_add_animations")
 	call_deferred("_add_visualizer")
+	call_deferred("_add_rr_credits")
 	call_deferred("_add_music_pause")
 	add_child(load("res://mods/replay/UIJuice.gd").new()) # osu-style hover/press springs
 	call_deferred("_add_osu_screens")
@@ -234,6 +235,36 @@ func _add_replay_button():
 	ic.anchor_bottom = 1
 	tex.add_child(ic)
 	load("res://mods/replay/Reimagined.gd").apply_sidebar_icons(self)
+
+# Rhythia-reimagined credits at the top of the Credits page, built from the page's own "Owner"
+# block so it matches its fonts and spacing
+const RR_CREDITS = [
+	["@acetinium1", "owner / vibecoder"],
+	["Claude Opus 5.5", "MVP"],
+	["WorstGhostPlayer, Naki, Starlie", "testers"],
+	["@starlieu", "mobile tester / bug hunter"],
+]
+func _add_rr_credits():
+	var l = get_node_or_null("Main/Credits/C/S/L")
+	if !l or l.has_node("RRCredits") or !l.has_node("Owner/C"): return
+	var sec = l.get_node("Owner").duplicate()
+	sec.name = "RRCredits"
+	var tmpl = sec.get_node("C")
+	sec.remove_child(tmpl)
+	for c in sec.get_children():
+		if c is Label:
+			c.text = "-- Rhythia|Reimagined --"
+			c.add_color_override("font_color", Color("#8a6cff"))
+	for e in RR_CREDITS:
+		var row = tmpl.duplicate()
+		if row.has_node("Name"): row.get_node("Name").text = e[0]
+		if row.has_node("Credit"):
+			row.get_node("Credit").text = e[1]
+			row.get_node("Credit").add_color_override("font_color", Color(1, 1, 1, 0.55))
+		sec.add_child(row)
+	tmpl.free()
+	l.add_child(sec)
+	l.move_child(sec, l.get_node("Logo").get_index() + 1 if l.has_node("Logo") else 0)
 
 # copy of the Credits button without its signals (so it doesn't switch pages)
 func _sidebar_button(l:Node, label:String, icon:String, after:String, method:String) -> Button:

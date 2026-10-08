@@ -51,6 +51,12 @@ Run `py -3 ssp_mod.py --help` to see every command.
 
 ## Credits
 
+**Rhythia|Reimagined**
+- Owner / vibecoder: @acetinium1
+- MVP: Claude Opus 5.5
+- Testers: WorstGhostPlayer, Naki, Starlie
+- Mobile tester / bug hunter: @starlieu
+
 - **Sound Space Plus**: MIT License, [Rhythia/sound-space-plus](https://github.com/Rhythia/sound-space-plus).
 - **Icons**: [Uicons by Flaticon](https://www.flaticon.com/uicons).
 - **Font** (share look): Exo 2, SIL Open Font License.

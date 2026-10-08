@@ -63,5 +63,10 @@ WHAT YOU GET
   FPS         small performance tweaks (visuals unchanged)
 
 CREDITS
+  Rhythia|Reimagined
+    Owner / vibecoder: @acetinium1
+    MVP: Claude Opus 5.5
+    Testers: WorstGhostPlayer, Naki, Starlie
+    Mobile tester / bug hunter: @starlieu
   Icons: Uicons by Flaticon (www.flaticon.com) - Flaticon-license.txt
   Font: Exo 2 (SIL Open Font License) - Exo2-font-license.txt

@@ -36,12 +36,12 @@ func _state(b:Control) -> Array:
 	return anim[b]
 
 func _aim(b:Control, target:float):
-	if !is_instance_valid(b) or (b is BaseButton and b.disabled): return
+	if !is_instance_valid(b) or (b is BaseButton and b.disabled) or b.has_meta("rr_no_juice"): return # (another script scales it)
 	_state(b)[2] = target
 	set_process(true)
 
 func _release(b:Control):
-	if !is_instance_valid(b): return
+	if !is_instance_valid(b) or b.has_meta("rr_no_juice"): return
 	var st = _state(b)
 	st[2] = HOVER if b.get_global_rect().has_point(b.get_global_mouse_position()) else 1.0
 	st[1] += KICK

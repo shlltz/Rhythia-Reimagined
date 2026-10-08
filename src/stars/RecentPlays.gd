@@ -24,7 +24,7 @@ func set_open(v = null):
 	set_process(true)
 
 func _label():
-	toggle.text = ("[-] " if open else "[+] ") + "OTHER PLAYS (%d)" % count
+	toggle.text = ("▾  " if open else "▸  ") + "Other plays   %d" % count
 
 func _process(delta):
 	k = lerp(k, 1.0 if open else 0.0, 1.0 - exp(-delta * 12.0))
@@ -85,21 +85,30 @@ static func _better(a, b) -> bool:
 # ------------------------------------------------------------------ UI
 func _ready():
 	add_constant_override("separation", 6)
+	# outlined pill (the share theme's flat-button text was invisible, so colours are explicit)
 	toggle = Button.new()
-	toggle.flat = true
 	toggle.focus_mode = FOCUS_NONE
 	toggle.align = Button.ALIGN_LEFT
 	toggle.size_flags_horizontal = 0
-	toggle.modulate = Color(1, 1, 1, 0.75)
-	for k in ["font_color", "font_color_hover", "font_color_pressed", "font_color_focus"]: # (the share theme's flat-button text was invisible)
-		toggle.add_color_override(k, Color(1, 1, 1, 1.0 if k == "font_color_hover" else 0.85))
+	toggle.mouse_default_cursor_shape = CURSOR_POINTING_HAND
+	var n = _box(Color(0, 0, 0, 0.25), Color(1, 1, 1, 0.3), 1, 14)
+	n.content_margin_left = 14; n.content_margin_right = 16
+	n.content_margin_top = 5; n.content_margin_bottom = 5
+	var h = n.duplicate()
+	h.bg_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.14)
+	h.border_color = ACCENT
+	for s in ["normal", "pressed", "focus", "disabled"]: toggle.add_stylebox_override(s, n)
+	toggle.add_stylebox_override("hover", h)
+	for k in ["font_color", "font_color_hover", "font_color_pressed", "font_color_focus"]:
+		toggle.add_color_override(k, Color(1, 1, 1, 1.0 if k == "font_color_hover" else 0.88))
 	toggle.connect("pressed", self, "set_open", [null])
 	add_child(toggle)
 	body = VBoxContainer.new()
 	body.add_constant_override("separation", 4)
 	add_child(body)
 	empty = Label.new()
-	empty.modulate = Color(1, 1, 1, 0.35)
+	empty.modulate = Color(1, 1, 1, 0.5)
+	empty.autowrap = true
 	body.add_child(empty)
 	list = VBoxContainer.new()
 	list.add_constant_override("separation", 4)
@@ -120,42 +129,68 @@ func refresh(_s = null):
 	var plays:Array = _load().get(song.id, []) if song else []
 	plays.sort_custom(self, "_better")
 	# the best play is already the personal-best panel below: list the 2nd best to the worst
-	empty.text = "No plays yet" if plays.empty() else "Only your best play so far"
+	empty.text = "No plays on this map yet - finish a run and it shows up here." if plays.empty() else "Only one play so far - it's your best, shown below. Play again to compare runs."
 	empty.visible = plays.size() < 2
 	for i in range(1, min(plays.size(), SHOWN + 1)): list.add_child(_row(plays[i], false))
 	count = max(0, plays.size() - 1)
 	_label()
 	set_process(true)
 
-func _row(p:Dictionary, top:bool) -> Control:
-	var b = Button.new()
-	b.rect_min_size = Vector2(0, 40)
-	b.focus_mode = FOCUS_NONE
-	b.flat = true
+const ACCENT = Color("#8a6cff")
+
+static func _box(bg:Color, border:Color, w:int, r:int) -> StyleBoxFlat:
 	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(1, 1, 1, 0.07 if top else 0.035)
-	sb.border_color = grade(p)[1]
-	sb.border_width_left = 4
-	var sh = sb.duplicate()
-	sh.bg_color = Color(1, 1, 1, 0.12)
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.set_border_width_all(w)
+	sb.set_corner_radius_all(r)
+	sb.corner_detail = 6
+	sb.anti_aliasing = true
+	return sb
+
+# one play: outlined card - grade badge, score, accuracy / misses / speed, how long ago, replay mark
+func _row(p:Dictionary, top:bool) -> Control:
+	var g = grade(p)
+	var b = Button.new()
+	b.rect_min_size = Vector2(0, 56)
+	b.focus_mode = FOCUS_NONE
+	b.mouse_default_cursor_shape = CURSOR_POINTING_HAND
+	var sb = _box(Color(0, 0, 0, 0.3), Color(1, 1, 1, 0.16), 1, 8)
+	var sh = _box(Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.1), Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.9), 1, 8)
 	for s in ["normal", "pressed", "disabled", "focus"]: b.add_stylebox_override(s, sb)
 	b.add_stylebox_override("hover", sh)
 	var has_replay = str(p.get("replay", "")) != "" and File.new().file_exists(str(p.replay))
+	b.hint_tooltip = "Open this play" + (" (replay saved)" if has_replay else "")
 	b.connect("pressed", self, "_open", [p])
-	var g = grade(p)
-	_cell(b, g[0], 12, 44, g[1])
-	_cell(b, Globals.comma_sep(int(p.score)), 52, 118, Color(1, 1, 1))
+	# grade badge: outlined in the grade colour
+	var badge = Panel.new()
+	badge.mouse_filter = MOUSE_FILTER_IGNORE
+	badge.add_stylebox_override("panel", _box(Color(g[1].r, g[1].g, g[1].b, 0.1), g[1], 2, 6))
+	badge.anchor_top = 0.5; badge.anchor_bottom = 0.5
+	badge.margin_left = 8; badge.margin_right = 46
+	badge.margin_top = -17; badge.margin_bottom = 17
+	b.add_child(badge)
+	var gl = _cell(badge, g[0], 0, 0, g[1])
+	gl.anchor_right = 1
+	gl.align = Label.ALIGN_CENTER
+	# two lines (the column is narrow): score + when on top, details below
+	var sc = _cell(b, Globals.comma_sep(int(p.score)), 58, 0, Color(1, 1, 1))
+	sc.anchor_bottom = 0.55; sc.anchor_right = 1; sc.margin_right = -96; sc.margin_top = 4
 	var acc = "%.2f%%" % (float(p.acc) * 100)
-	var extra = "FC" if p.passed and int(p.misses) == 0 else "%d miss" % int(p.misses)
-	if float(p.speed) != 1.0: extra += "  %.2fx" % float(p.speed)
-	if int(p.pauses) > 0: extra += "  paused"
-	var mid = _cell(b, acc + "  " + extra, 172, 0, Color(1, 1, 1, 0.75))
-	mid.anchor_right = 1
-	mid.margin_right = -112
-	var a = _cell(b, ago(int(p.t)), -112, 104, Color(1, 1, 1, 0.45))
-	a.anchor_left = 1; a.anchor_right = 1
+	var bits = [acc, "FC" if p.passed and int(p.misses) == 0 else ("%d miss" % int(p.misses) if int(p.misses) == 1 else "%d misses" % int(p.misses))]
+	if !p.passed: bits.append("failed")
+	if float(p.speed) != 1.0: bits.append("%.2fx" % float(p.speed))
+	if int(p.pauses) > 0: bits.append("paused")
+	var mid = _cell(b, PoolStringArray(bits).join("  ·  "), 58, 0, Color(1, 1, 1, 0.65))
+	mid.anchor_top = 0.45; mid.anchor_right = 1; mid.margin_right = -96; mid.margin_bottom = -4
+	var a = _cell(b, ago(int(p.t)), -96, 86, Color(1, 1, 1, 0.5))
+	a.anchor_left = 1; a.anchor_right = 1; a.anchor_bottom = 0.55; a.margin_top = 4
 	a.align = Label.ALIGN_RIGHT
-	if !p.passed or int(p.pauses) > 0: b.modulate = Color(1, 1, 1, 0.6)
+	if has_replay:
+		var rl = _cell(b, "replay", -96, 86, ACCENT.lightened(0.35))
+		rl.anchor_left = 1; rl.anchor_right = 1; rl.anchor_top = 0.45; rl.margin_bottom = -4
+		rl.align = Label.ALIGN_RIGHT
+	if !p.passed or int(p.pauses) > 0: b.modulate = Color(1, 1, 1, 0.65)
 	return b
 
 func _cell(parent:Control, text:String, x:float, w:float, col:Color) -> Label:
