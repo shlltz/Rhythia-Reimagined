@@ -844,17 +844,22 @@ func _process(delta:float):
 				get_parent().combo_level = 1
 				get_parent().lvl_progress = 0
 				get_parent().update_hud()
-			elif just_started_unpause:
+			# (was elif: a quick pause + continue landing in the same frame paused the replay and
+			# never restarted the music - Rhythia-reimagined)
+			if just_started_unpause and !just_cancelled_unpause:
 	#				print("YEAH baby that's what i've been waiting for")
 	#				print(pause_ms)
 				pause_state = 1
 				ms = pause_ms - (pause_state * (750 * speed_multi))
 				emit_signal("ms_change",ms)
-				$Music.volume_db = -30
+				$Music.volume_db = Rhythia.music_volume_db - 30
 				$Music.play((ms + Rhythia.music_offset)/1000)
+				music_started = true
 			if replay_unpause and pause_state >= 0:
 				pause_state = max(pause_state - (delta/0.75), 0)
-				$Music.volume_db = min($Music.volume_db + (delta * 30), 0)
+				# fade back to the player's music volume (stock faded to 0 dB, and stayed off from it
+				# if the replay had no finish-unpause signal)
+				$Music.volume_db = min($Music.volume_db + (delta * 30), Rhythia.music_volume_db)
 				if should_end_unpause:
 		#				print("YEAH baby that's what i've been waiting for")
 					$Music.volume_db = Rhythia.music_volume_db
@@ -873,6 +878,7 @@ func _process(delta:float):
 		
 		if Rhythia.replaying:
 			replay_sig = Rhythia.replay.get_signals(rms)
+			_replay_music_watch()
 		
 		emit_signal("timer_update",ms,can_skip)
 		
@@ -901,6 +907,24 @@ func _process(delta:float):
 			$Inner.get("material/0").albedo_color = Color.from_hsv(Rhythia.rainbow_t*0.1,0.65,1)
 			$Outer.get("material/0").albedo_color = Color.from_hsv(Rhythia.rainbow_t*0.1,0.65,1)
 
+
+# Replays sometimes played without music (Rhythia-reimagined): a play() that didn't take (seek
+# right after the scene loaded, a decoder restart that stopped, a pause/unpause pair in one frame)
+# was never retried, because the desync check only looks at music that is already playing.
+# While the replay runs, music that should be playing but isn't gets restarted at the right spot.
+var music_watch_t:float = 0.0
+func _replay_music_watch():
+	if pause_state != 0 or replay_paused or !music_started or get_parent().ending: return
+	var m = $Music
+	if m.playing or !m.stream: return
+	var pos = (ms + Rhythia.music_offset) / 1000.0
+	if pos < 0.0 or pos > m.stream.get_length() - 0.25: return
+	var now = OS.get_ticks_msec() / 1000.0
+	if now - music_watch_t < 0.5: return # at most twice a second
+	music_watch_t = now
+	print("Rhythia-reimagined: replay music wasn't playing at %.2f s, restarting it" % pos)
+	m.volume_db = Rhythia.music_volume_db
+	m.play(pos)
 
 # ---------- replay viewer mod ----------
 func set_replay_rate(r:float):

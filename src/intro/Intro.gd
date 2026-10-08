@@ -184,3 +184,7 @@ func _input(ev):
 func finish():
 	if music_bus >= 0 and outro_t < 0: AudioServer.set_bus_mute(music_bus, music_was_muted)
 	queue_free()
+
+# never leave the music bus muted, however the intro goes away
+func _exit_tree():
+	if music_bus >= 0 and outro_t < 0: AudioServer.set_bus_mute(music_bus, music_was_muted)
