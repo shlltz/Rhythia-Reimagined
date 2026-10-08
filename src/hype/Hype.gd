@@ -5,6 +5,8 @@ extends Control
 # - maps above 10 stars: cover + Start quake, lightning strikes the cover when the map is
 #   selected / Start is clicked (soft: no flicker, no screen flash); hovering Start dims everything
 #   else while Start shakes and glows
+# - maps above 10 stars: chromatic aberration over the whole screen (stronger on the beat and
+#   while Start is hovered) and glitch bursts on the cover art and the selected map's card
 # - maps from 7 stars: glow along the left and right screen edges in the star colour, pulsing
 #   with the bass (full strength at 10+)
 # Lives as a full-screen top-level overlay child of SongInfoScreen (mouse ignored).
@@ -110,6 +112,7 @@ func _process(delta):
 	var shown = page.is_visible_in_tree()
 	if !shown:
 		visible = false
+		_fx_off()
 		return
 	visible = true
 	if song != Rhythia.selected_song: _on_song()
@@ -178,6 +181,7 @@ func _process(delta):
 		cover.rect_rotation += tilt_dir * 1.4 * punch * punch # alternating little tilt per beat
 		var f = 1.0 + 0.45 * punch # flash brighter on the beat
 		cover.modulate = Color(f, f, f, cover.modulate.a)
+	_fx(delta, cover)
 	if run:
 		run.rect_pivot_offset = run.rect_size / 2
 		_shake(run, (1.5 + bass * 2.0 + kick * 3.0 + dim * 2.5) if hype else 0.0, false)
@@ -189,6 +193,142 @@ func _process(delta):
 			run.remove_meta("rr_no_juice")
 			run.rect_scale = Vector2.ONE
 	update()
+
+# ------------------------------------------------------------------ 10+ star screen fx
+# Chromatic aberration: a CanvasLayer above the menu with a full-screen SCREEN_TEXTURE shader that
+# pulls red / blue apart (more at the screen edges). Glitch: an overlay on the cover and on the
+# selected map card that slices the picture into shifted bands with an RGB split, in short random
+# bursts and on strong beats. Each overlay sits after a BackBufferCopy so it reads the screen as
+# it is right there (one shared screen copy would miss whatever drew after it).
+const CHROMA_SHADER = """shader_type canvas_item;
+uniform float amount = 0.0; // px at the screen edge
+uniform float tear = 0.0;   // 0..1 horizontal tearing during glitch bursts
+float hash(float n) { return fract(sin(n) * 43758.5453); }
+void fragment() {
+	vec2 uv = SCREEN_UV;
+	float line = floor(uv.y * 90.0);
+	uv.x += (hash(line + floor(TIME * 24.0)) - 0.5) * tear * 0.012 * step(0.82, hash(line * 3.7 + floor(TIME * 24.0)));
+	vec2 d = uv - vec2(0.5);
+	vec2 dir = d / max(length(d), 0.0001);
+	vec2 off = dir * SCREEN_PIXEL_SIZE * amount * (0.25 + length(d) * 1.5);
+	vec4 c = textureLod(SCREEN_TEXTURE, uv, 0.0);
+	c.r = textureLod(SCREEN_TEXTURE, uv + off, 0.0).r;
+	c.b = textureLod(SCREEN_TEXTURE, uv - off, 0.0).b;
+	COLOR = vec4(c.rgb, 1.0);
+}"""
+const GLITCH_SHADER = """shader_type canvas_item;
+uniform float power = 0.0; // 0..1
+uniform vec2 size = vec2(300.0, 300.0); // overlay size in px (shifts are a share of the width)
+uniform float seed = 0.0;
+float hash(float n) { return fract(sin(n) * 43758.5453); }
+void fragment() {
+	float tick = floor(TIME * 20.0) + seed;
+	float band = floor(UV.y * 16.0 + hash(tick) * 3.0);
+	float on = step(1.0 - power * 0.55, hash(band * 7.13 + tick));
+	float shift = (hash(band * 1.7 + tick * 3.1) - 0.5) * 0.14 * on * power;
+	vec2 uv = SCREEN_UV + vec2(shift * size.x * SCREEN_PIXEL_SIZE.x, 0.0);
+	vec2 split = vec2((3.0 + 6.0 * on) * power * SCREEN_PIXEL_SIZE.x, 0.0);
+	vec4 c = textureLod(SCREEN_TEXTURE, uv, 0.0);
+	c.r = textureLod(SCREEN_TEXTURE, uv + split, 0.0).r;
+	c.b = textureLod(SCREEN_TEXTURE, uv - split, 0.0).b;
+	float blk = step(1.0 - power * 0.12, hash(floor(UV.x * 9.0) + floor(UV.y * 7.0) * 13.0 + tick * 1.7));
+	c.rgb = mix(c.rgb, vec3(1.0) - c.rgb, blk * 0.65);
+	float scan = 1.0 - power * 0.18 * step(0.5, fract(UV.y * size.y * 0.25));
+	COLOR = vec4(c.rgb * scan, 1.0);
+}"""
+var fx_layer:CanvasLayer = null
+var chroma:ColorRect = null
+var fx_k:float = 0.0        # 0..1, fades in on hype maps
+var glitch:float = 0.0      # current burst strength
+var glitch_next:float = 1.0 # seconds to the next random burst
+var glitch_left:float = 0.0
+var fx_cover = null         # [BackBufferCopy, overlay] on the cover
+var fx_card = null          # [BackBufferCopy, overlay, card] on the selected map card
+
+func _fx_overlay(parent:Control, sd:float) -> Array:
+	var bb = BackBufferCopy.new()
+	bb.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	parent.add_child(bb)
+	var o = ColorRect.new()
+	o.mouse_filter = MOUSE_FILTER_IGNORE
+	o.anchor_right = 1
+	o.anchor_bottom = 1
+	o.material = ShaderMaterial.new()
+	o.material.shader = Shader.new()
+	o.material.shader.code = GLITCH_SHADER
+	o.material.set_shader_param("seed", sd)
+	parent.add_child(o)
+	return [bb, o]
+
+func _fx_free(a):
+	if a == null: return
+	for n in a:
+		if n is Node and is_instance_valid(n) and n.get_parent() and (n is BackBufferCopy or n is ColorRect): n.queue_free()
+
+func _fx_off():
+	fx_k = 0.0
+	if chroma: chroma.visible = false
+	_fx_free(fx_cover); fx_cover = null
+	_fx_free(fx_card); fx_card = null
+
+func _map_card():
+	var ml = get_tree().root.get_node_or_null("Menu/Main/Maps/MapRegistry/S/VBoxContainer")
+	if !ml or !ml.is_visible_in_tree(): return null
+	for b in ml.get("btns") if ml.get("btns") != null else []:
+		if is_instance_valid(b) and b.get("song") == song and b.is_visible_in_tree(): return b
+	return null
+
+func _fx(delta:float, cover):
+	fx_k = move_toward(fx_k, 1.0 if hype else 0.0, delta / (0.5 if hype else 0.3))
+	if fx_k <= 0.0:
+		_fx_off()
+		return
+	# glitch bursts: random ones every 0.7-2.6 s, and one on every strong beat
+	glitch_next -= delta
+	if glitch_next <= 0.0:
+		glitch_next = rand_range(0.7, 2.6)
+		glitch_left = rand_range(0.07, 0.22)
+	if punch > 0.85 and glitch_left <= 0.0: glitch_left = 0.09
+	glitch_left -= delta
+	glitch = (rand_range(0.55, 1.0) if glitch_left > 0.0 else max(0.0, glitch - delta * 8.0)) * fx_k
+	if !fx_layer:
+		fx_layer = CanvasLayer.new()
+		fx_layer.layer = 100 # over the menu and its overlays, under the volume overlay (128)
+		add_child(fx_layer)
+		chroma = ColorRect.new()
+		chroma.anchor_right = 1
+		chroma.anchor_bottom = 1
+		chroma.mouse_filter = MOUSE_FILTER_IGNORE
+		chroma.material = ShaderMaterial.new()
+		chroma.material.shader = Shader.new()
+		chroma.material.shader.code = CHROMA_SHADER
+		fx_layer.add_child(chroma)
+	chroma.visible = true
+	chroma.material.set_shader_param("amount", fx_k * (2.0 + 4.0 * punch + 3.0 * dim + 5.0 * glitch))
+	chroma.material.set_shader_param("tear", glitch)
+	# cover
+	if cover and (fx_cover == null or !is_instance_valid(fx_cover[1]) or fx_cover[1].get_parent() != cover):
+		_fx_free(fx_cover)
+		fx_cover = _fx_overlay(cover, 3.1)
+	if fx_cover:
+		fx_cover[1].material.set_shader_param("power", glitch)
+		fx_cover[1].material.set_shader_param("size", cover.rect_size)
+		fx_cover[1].visible = glitch > 0.01
+		fx_cover[0].visible = fx_cover[1].visible
+	# selected map card (the list rebuilds its cards on every page change)
+	var card = _map_card()
+	if fx_card and (!is_instance_valid(fx_card[2]) or fx_card[2] != card):
+		_fx_free(fx_card); fx_card = null
+	if card and fx_card == null:
+		fx_card = _fx_overlay(card, 11.7) + [card]
+	if fx_card:
+		fx_card[1].material.set_shader_param("power", glitch * 0.8)
+		fx_card[1].material.set_shader_param("size", card.rect_size)
+		fx_card[1].visible = glitch > 0.01
+		fx_card[0].visible = fx_card[1].visible
+
+func _exit_tree():
+	_fx_off()
 
 # shake offset on top of wherever the container put the node: a new random jolt QUAKE_HZ times a
 # second, held in between - choppy like a real quake, and the same at any frame rate (a new jump

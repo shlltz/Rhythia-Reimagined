@@ -17,7 +17,7 @@ A mod pack for **Rhythia Legacy / Sound Space Plus nightly** (the Godot 3.6.2 bu
 |---|---|
 | **Title menu** | osu!-style main menu with a beating logo and spectrum ring. The background is rain, snow or topographic waves. ESC opens it. |
 | **Maps** | Star rating that matches rhythia.com, and an estimated BPM (a range when the tempo changes). Speed mods raise or lower both, with a count-up animation. Sort by stars, name or mapper. Collections (map packs). |
-| **Map page** | The cover art works as a visualizer: it hits on the map's own notes and has spectrum bars around it. Maps over 7★ get glowing screen sides. Maps over 10★ make the cover and Start quake, a lightning bolt strikes when you select one, and hovering Start dims everything else. The mods menu wipes up. |
+| **Map page** | The cover art works as a visualizer: it hits on the map's own notes and has spectrum bars around it. Maps over 7★ get glowing screen sides. Maps over 10★ add chromatic aberration over the whole screen and glitch bursts on the cover and map card, make the cover and Start quake, a lightning bolt strikes when you select one, and hovering Start dims everything else. The mods menu wipes up. |
 | **Browse** | Search and download maps from rhythia.com inside the game, in a panel that slides up. |
 | **Replays** | A replay browser and viewer. You can seek, change speed, pause, step frame by frame and hide the UI. Misses show as red ticks on the timeline. |
 | **Customize** (F1) | Cursor trail: the game's own trail, an osu!-style trail, or off, with colour, opacity, length and size. A drag-and-drop HUD layout editor. Skins for the border, grid, trail, logo and sidebar icons. Interface toggles. Storage: move your user folder (maps, replays, scores) to another drive (Windows). |
