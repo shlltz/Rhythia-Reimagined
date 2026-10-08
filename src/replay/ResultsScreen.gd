@@ -315,7 +315,6 @@ func _input(ev):
 	get_tree().set_input_as_handled()
 
 func _back():
-	print("DBG %d results _back closing %s" % [OS.get_ticks_msec(), closing])
 	if closing: return
 	closing = true
 	sfx.play("menuback.wav", -6.0)
@@ -357,6 +356,5 @@ func _cover(on:bool):
 		covered = []
 
 func _exit_tree():
-	print("DBG %d results exit, restoring %d" % [OS.get_ticks_msec(), covered.size()])
 	_cover(false)
 	if Rhythia.has_meta("last_run_best"): Rhythia.remove_meta("last_run_best")

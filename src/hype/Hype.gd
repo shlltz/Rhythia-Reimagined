@@ -279,7 +279,8 @@ func _map_card():
 	return null
 
 func _fx(delta:float, cover):
-	fx_k = move_toward(fx_k, 1.0 if hype else 0.0, delta / (0.5 if hype else 0.3))
+	var on = hype and bool(load("res://mods/replay/Reimagined.gd").val("glitch_fx")) # (Customize > Interface)
+	fx_k = move_toward(fx_k, 1.0 if on else 0.0, delta / (0.5 if on else 0.3))
 	if fx_k <= 0.0:
 		_fx_off()
 		return

@@ -507,7 +507,9 @@ func _ready():
 			Globals.SPEED_PP: modicons.get_node("SpeedPP").visible = true
 			Globals.SPEED_PPP: modicons.get_node("SpeedPPP").visible = true
 			Globals.SPEED_PPPP: modicons.get_node("SpeedPPPP").visible = true
-			Globals.SPEED_CUSTOM: mods.append("S%s" % [Globals.speed_multi[Globals.SPEED_CUSTOM] * 100])
+			Globals.SPEED_CUSTOM:
+				if abs(Globals.speed_multi[Globals.SPEED_CUSTOM] - 1.0 / 1.45) < 0.002: mods.append("S----") # (Rhythia-reimagined S---- button)
+				else: mods.append("S%s" % [Globals.speed_multi[Globals.SPEED_CUSTOM] * 100])
 	if Rhythia.mod_sudden_death: mods.append("SuddenDeath")
 	if Rhythia.mod_extra_energy: mods.append("Energy+")
 	if Rhythia.mod_no_regen: mods.append("NoRegen")

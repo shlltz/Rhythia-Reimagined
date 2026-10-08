@@ -397,7 +397,7 @@ SCRIPT_MODS = {
                         'v3MapList.gd': 'res://scripts/ui/menu/buttons/v3MapList.gd',
                         'StartOffset.gd': 'res://scripts/ui/menu/StartOffset.gd',
                         'contentmgr.gd': 'res://scripts/ui/cmgr/contentmgr.gd'},
-              ['StarRating.gd', 'StarCache.gd', 'StarBadge.gd', 'CMIcon.gd', 'CMStyle.gd', 'RecentPlays.gd', 'IconGlyph.gd']),
+              ['StarRating.gd', 'StarCache.gd', 'StarBadge.gd', 'CMIcon.gd', 'CMStyle.gd', 'RecentPlays.gd', 'IconGlyph.gd', 'SpeedSlowest.gd']),
     'replay': ('replay', {'Replay.gd': 'res://scripts/content/game/Replay.gd', 'NoteManager.gd': 'res://scripts/game/NoteManager.gd',
                           'Game.gd': 'res://scripts/game/Game.gd', 'menu2.gd': 'res://scripts/ui/menu/menu2.gd',
                           'HUD.gd': 'res://scripts/game/HUD.gd', 'CursorTrail.gd': 'res://scripts/game/CursorTrail.gd',

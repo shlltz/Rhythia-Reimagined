@@ -478,7 +478,7 @@ func _logo_fx_step(delta:float):
 	if !logo_fx: return
 	var RI = load("res://mods/replay/Reimagined.gd")
 	RI.fps_watch(delta)
-	var on = !RI.lite()
+	var on = !RI.lite() and bool(RI.val("glitch_fx"))
 	logo_fx.visible = on
 	logo.get_node("FxCopy").visible = on
 	if !on: return

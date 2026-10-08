@@ -31,7 +31,6 @@ var rows_box:GridContainer
 var page_label:Label
 var prev_btn:Button
 var next_btn:Button
-var api:HTTPRequest
 var dl_http:HTTPRequest
 var debounce:Timer
 var star_script = null
@@ -40,8 +39,23 @@ var maps:Array = []          # results of the current search (API dictionaries)
 var total:int = 0
 var ui_page:int = 0
 var query_id:int = 0
-var pending:Array = [0, 0]   # [page, query id] of the request in flight
 var loading:bool = false
+# Loading speed (Rhythia-reimagined): rhythia.com takes ~4 s per page of 50 maps, and the pages
+# were fetched one after another (~25 pages = over a minute). Now page 1 comes first (it shows the
+# total), then the rest load FETCHERS at a time; each search's results are also kept for the
+# session (CACHE_MIN minutes), so reopening the browser or going back to a search is instant.
+# The last searches are also saved to CACHE_FILE: the next session shows them straight away
+# while fresh results load in the background.
+const FETCHERS = 6
+const CACHE_MIN = 10
+const CACHE_FILE = "user://cache/rhythia_browse.json"
+const CACHE_KEEP = 6         # searches kept on disk
+var incoming:Array = []      # results arriving for the current search
+var showing_cached:bool = false
+var fetchers:Array = []      # HTTPRequests
+var page_todo:Array = []     # pages still to request for the current search
+var page_busy:int = 0        # requests in flight
+var retry:Dictionary = {}    # page -> try number (failed pages are tried again)
 var record:Dictionary = {}
 var state:Dictionary = {}    # online id -> "queued" / "downloading" / "installing" / "failed"
 var queue:Array = []         # maps waiting to download
@@ -57,7 +71,7 @@ func _ready():
 	record = _load_json(RECORD)
 	_clear_tmp()
 	_build_ui()
-	api = _http("_on_api")
+	for i in FETCHERS: fetchers.append(_http("_on_api", true))
 	dl_http = _http("_on_download")
 	_start_covers()
 	debounce = Timer.new()
@@ -69,11 +83,11 @@ func _ready():
 	search.grab_focus()
 	show_browser()
 
-func _http(cb:String) -> HTTPRequest:
+func _http(cb:String, pass_self:bool = false) -> HTTPRequest:
 	var h = HTTPRequest.new()
 	h.use_threads = true
 	h.timeout = 60
-	h.connect("request_completed", self, cb)
+	h.connect("request_completed", self, cb, [h] if pass_self else [])
 	add_child(h)
 	return h
 
@@ -275,54 +289,131 @@ func _on_sort(i:int):
 	ui_page = 0
 	_render()
 
+func _cache_key() -> String:
+	return "%s|%s" % [STATUSES[status_i][1], search.text.strip_edges().to_lower()]
+
 func new_query():
 	query_id += 1
 	maps = []
 	total = 0
 	ui_page = 0
+	page_todo = []
+	page_busy = 0
+	retry = {}
+	for h in fetchers:
+		h.cancel_request()
+		if h.has_meta("busy"): h.remove_meta("busy")
+	var c = _cache().get(_cache_key())
+	showing_cached = c is Dictionary and c.get("maps") is Array
+	incoming = []
+	if showing_cached:
+		maps = c.maps.duplicate()
+		total = int(c.get("total", maps.size()))
+		_sort()
+		if OS.get_unix_time() - int(c.get("t", 0)) < CACHE_MIN * 60: # fresh enough
+			loading = false
+			_render()
+			return
+	else:
+		maps = incoming
 	loading = true
-	api.cancel_request()
 	_render()
 	_fetch(1, query_id)
 
-func _fetch(page:int, qid:int):
-	pending = [page, qid]
+func _cache() -> Dictionary:
+	if !Engine.has_meta("rr_browse_cache"):
+		var d = _load_json(CACHE_FILE)
+		Engine.set_meta("rr_browse_cache", d if d is Dictionary else {})
+	return Engine.get_meta("rr_browse_cache")
+
+func _cache_store():
+	var cache = _cache()
+	cache[_cache_key()] = {"t": OS.get_unix_time(), "total": total, "maps": incoming.duplicate()}
+	var keys = cache.keys()
+	keys.sort_custom(self, "_cache_older")
+	while keys.size() > CACHE_KEEP:
+		cache.erase(keys.pop_front())
+	Directory.new().make_dir_recursive(Globals.p(CACHE_FILE.get_base_dir()))
+	_save_json(CACHE_FILE, cache)
+
+func _cache_older(a, b): return int(_cache()[a].get("t", 0)) < int(_cache()[b].get("t", 0))
+
+func _fetch(page:int, qid:int) -> bool:
+	var h:HTTPRequest = null
+	for f in fetchers:
+		if !f.has_meta("busy"):
+			h = f
+			break
+	if !h: return false
 	var q = {"session": "", "page": page}
 	var t = search.text.strip_edges()
 	if t != "": q["textFilter"] = t
 	var st = STATUSES[status_i][1]
 	if st != "": q["status"] = st
-	var err = api.request(API, PoolStringArray([UA, "Content-Type: application/json"]), true, HTTPClient.METHOD_POST, to_json(q))
+	h.set_meta("busy", [page, qid, retry.get(page, 1)])
+	page_busy += 1
+	var err = h.request(API, PoolStringArray([UA, "Content-Type: application/json"]), true, HTTPClient.METHOD_POST, to_json(q))
 	if err != OK:
+		h.remove_meta("busy")
+		page_busy -= 1
 		loading = false
 		info.text = "Couldn't reach rhythia.com (error %d)" % err
+	return true
 
-func _on_api(result, code, _headers, body):
-	var page = pending[0]
-	if pending[1] != query_id: return
+func _fetch_more():
+	while !page_todo.empty() and page_busy < FETCHERS:
+		if !_fetch(page_todo[0], query_id): break
+		page_todo.pop_front()
+
+func _on_api(result, code, _headers, body, h:HTTPRequest):
+	if !h.has_meta("busy"): return
+	var m = h.get_meta("busy")
+	h.remove_meta("busy")
+	if m[1] != query_id: return # (an older search)
+	page_busy -= 1
+	var page = m[0]
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
-		loading = false
+		print("[browser] page %d failed (result %d, HTTP %d), try %d" % [page, result, code, m[2]])
+		if m[2] < 3: # each page is tried up to 3 times
+			retry[page] = m[2] + 1
+			page_todo.push_front(page)
+			_fetch_more()
+			return
 		info.text = "rhythia.com didn't answer (result %d, HTTP %d) - check your connection" % [result, code]
+		_fetch_more()
+		loading = page_busy > 0 or !page_todo.empty()
+		if maps.size() > 0 and !loading: _render()
 		return
 	var d = parse_json(body.get_string_from_utf8())
 	if typeof(d) != TYPE_DICTIONARY:
-		loading = false
+		if page_busy == 0: loading = false
 		info.text = "Unexpected answer from rhythia.com"
 		return
-	total = int(d.get("total", 0))
 	var got = d.get("beatmaps")
 	if got is Array:
 		for b in got:
-			if b is Dictionary and b.get("beatmapFile"): maps.append(b)
-	var pages = min(ceil(total / float(PER_PAGE)), MAX_PAGES)
-	loading = page < pages and got is Array and got.size() > 0
-	_sort()
-	if loading:
-		_fetch(page + 1, query_id)
+			if b is Dictionary and b.get("beatmapFile"): incoming.append(b)
+	if page == 1:
+		total = int(d.get("total", 0))
+		var pages = int(min(ceil(total / float(PER_PAGE)), MAX_PAGES))
+		if got is Array and got.size() > 0:
+			for p in range(2, pages + 1): page_todo.append(p)
+		_fetch_more()
+	else:
+		_fetch_more()
+	loading = page_busy > 0 or !page_todo.empty()
+	if !loading: # all in: show the fresh list (replacing saved results) and keep it
+		maps = incoming
+		showing_cached = false
+		_sort()
+		_render()
+		_cache_store()
+	elif !showing_cached:
+		_sort()
 		if page == 1: _render()
 		else: _update_info()
 	else:
-		_render()
+		_update_info()
 
 func _num(b:Dictionary, k:String) -> float:
 	var v = b.get(k)
@@ -344,7 +435,7 @@ func _update_info():
 		t = "Searching rhythia.com..." if loading else "No maps found"
 	else:
 		t = "%d maps on rhythia.com" % total
-		if loading: t += "  ·  loading %d..." % maps.size()
+		if loading: t += "  ·  %s %d..." % ["updating" if showing_cached else "loading", incoming.size()]
 		elif total > maps.size(): t += "  ·  showing the newest %d (search to narrow it down)" % maps.size()
 		t += "  ·  sorted by " + SORTS[sort_i].to_lower()
 	info.text = t
@@ -474,7 +565,7 @@ func _make_row(b:Dictionary) -> Control:
 	btn.add_font_override("font", _font(14))
 	btn.anchor_left = 1; btn.anchor_right = 1
 	btn.margin_left = -140; btn.margin_right = -12; btn.margin_top = 12; btn.margin_bottom = 42
-	btn.connect("pressed", self, "_download", [b])
+	btn.connect("pressed", self, "_get_pressed", [b])
 	card.add_child(btn)
 	rows[oid] = card
 	_refresh_row(oid)
@@ -537,8 +628,9 @@ func _refresh_row(oid:int):
 	btn.disabled = true
 	var col = Color(1, 1, 1, 0.12)
 	if _installed(oid):
-		btn.text = "Installed"
-		col = Color(0.45, 0.85, 0.45, 0.25)
+		btn.disabled = false
+		btn.text = "Go to map"
+		col = Color(0.45, 0.85, 0.45, 0.35)
 	elif st == "queued": btn.text = "Queued"
 	elif st == "downloading": btn.text = "Downloading"
 	elif st == "installing": btn.text = "Installing..."
@@ -554,20 +646,42 @@ func _refresh_row(oid:int):
 	btn.add_color_override("font_color_disabled", Color(1, 1, 1, 0.75))
 
 func _installed(oid:int) -> bool:
+	return _installed_song(oid) != null
+
+# the library's copy of an online map (downloaded here, or found by name), or null
+func _installed_song(oid:int):
 	var reg = Rhythia.registry_song
-	if !reg: return false
+	if !reg: return null
 	var sid = record.get(str(oid))
-	if sid != null and reg.get_item(str(sid)): return true # get_item returns false when missing
-	if reg.get_item("rhythia_%d" % oid): return true
+	if sid != null and reg.get_item(str(sid)): return reg.get_item(str(sid)) # (false when missing)
+	if reg.get_item("rhythia_%d" % oid): return reg.get_item("rhythia_%d" % oid)
 	var b = online.get(oid)
-	return b != null and _in_library(b)
+	if b == null: return null
+	var id = _in_library(b)
+	return reg.get_item(id) if id != "" and reg.get_item(id) else null
+
+# Download, or for a map that's already there: "Go to map" - selects it and opens map selection
+# with the list scrolled to it (filters are reset if they hide it)
+func _get_pressed(b:Dictionary):
+	if hidden: return # (closing: a second click does nothing)
+	var s = _installed_song(int(b.id))
+	if s == null:
+		_download(b)
+		return
+	var ml = get_tree().root.get_node_or_null("Menu/Main/Maps/MapRegistry/S/VBoxContainer")
+	if !ml or !ml.has_method("switch_to_play_screen") or !is_instance_valid(s) or !(s is Song): return
+	Rhythia.select_song(s)
+	var tm = get_tree().root.get_node_or_null("Menu/TitleMenu")
+	if tm and tm.visible and tm.has_method("_close"): tm._close("") # (browser opened over the title screen)
+	ml.switch_to_play_screen()
+	close() # (keeps downloading in the background if anything is queued)
 
 # ------------------------------------------------------------------ maps already in the library
 # Maps imported some other way (sspm from Discord, old downloads...) are found by their name:
 # same title once case/spaces/punctuation are ignored, and the same length (±3 s) when both know it.
 const LEN_SLACK = 3000
 var online:Dictionary = {}   # online id -> API dictionary (for the rows on screen)
-var library:Dictionary = {}  # normalized name -> [last_ms, ...]
+var library:Dictionary = {}  # normalized name -> [[last_ms, song id], ...]
 var _norm_re:RegEx
 
 func _norm(t:String) -> String:
@@ -586,16 +700,16 @@ func _index_library():
 			var k = _norm(str(n))
 			if k.length() < 2: continue
 			if !library.has(k): library[k] = []
-			library[k].append(float(s.last_ms))
+			library[k].append([float(s.last_ms), str(s.id)])
 
-func _in_library(b:Dictionary) -> bool:
+# id of the library map with the same name (and length), or ""
+func _in_library(b:Dictionary) -> String:
 	var k = _norm(str(b.get("title", "")))
-	if !library.has(k): return false
+	if !library.has(k): return ""
 	var ms = _num(b, "length")
-	if ms <= 0: return true
 	for l in library[k]:
-		if l <= 0 or abs(l - ms) <= LEN_SLACK: return true
-	return false
+		if ms <= 0 or l[0] <= 0 or abs(l[0] - ms) <= LEN_SLACK: return l[1]
+	return ""
 
 class SearchIcon extends Control:
 	func _draw():

@@ -402,6 +402,7 @@ var mods_toggle:Button
 func _relayout_mods():
 	var mods = get_node_or_null("RS/H2/Mods")
 	if !mods or mods.has_node("ModsToggle") or !mods.has_node("NoFail") or !mods.has_node("SuddenDeath"): return
+	_add_slowest_speed(mods)
 	var col_a = mods.get_node("NoFail").rect_position.x
 	var col_b = mods.get_node("SuddenDeath").rect_position.x
 	var top = 0.0
@@ -606,3 +607,15 @@ func _update_stars(map):
 	if Rhythia.mod_speed_level != Globals.SPEED_NORMAL:
 		speed = Globals.speed_multi[Rhythia.mod_speed_level]
 	star_badge.set_song(map, _i("/Data/Data").get_font("font"), speed)
+
+# S---- (x0.69) button left of the stock <<< one (SpeedSlowest.gd)
+func _add_slowest_speed(mods:Control):
+	var c = mods.get_node_or_null("SpeedMod/C")
+	if !c or c.has_node("MMMM") or !c.has_node("CustomSpeed") or !c.has_node("Custom"): return
+	if !ResourceLoader.exists("res://mods/replay/Ring.gd"): return
+	var b = Button.new()
+	b.set_script(load("res://mods/stars/SpeedSlowest.gd"))
+	b.c = c
+	c.add_child(b)
+	c.move_child(b, 0)
+	c.get_node("CustomSpeed").rect_min_size.x = max(c.get_node("CustomSpeed").rect_min_size.x, 84) # (cut "68.97 %" / "107.5 %")

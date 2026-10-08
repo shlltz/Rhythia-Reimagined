@@ -22,13 +22,15 @@ WHAT YOU GET
               Alt + mouse wheel volume rings (hover Music/Effects; SHIFT = 1%)
   Maps        star rating + estimated BPM on every map (a range like 150-180 when the tempo changes;
               speed mods raise / lower both, animated), Start + buttons under the MODS bar,
+              S---- speed (x0.69, the reverse of S++++) left of the <<< button,
               mods menu that wipes up, star sort, restyled Content Manager,
               imported map files go to the Recycle Bin after a successful import,
               map cache fix (faster library loading)
   Browse      "Browse" (sidebar or title screen): online map browser that slides up
               from the bottom - search rhythia.com, Any / Ranked / Approved / Unranked, sort
               by stars / newest / plays / length, cards with cover, artist, mapper, status,
-              stars and difficulty, one-click download; maps you have show as "Installed"
+              stars and difficulty, one-click download; maps you have get "Go to map" (selects it);
+              pages load in parallel and results are remembered (reopening is instant)
   Title menu  osu!-style main menu (beating logo + spectrum ring, rain / snow / wavey background (Customize > Interface),
               Play / Settings / Browse / Exit); ESC on map selection opens it
   Customize   F1, the sliders sidebar button or Customize on the settings page:
@@ -48,7 +50,8 @@ WHAT YOU GET
               "Half Ghost Fade" (25-300%) right under Fade Length in the Notes tab
   Map FX      the cover art is a visualizer: hits on the map's beats, spectrum bars around it;
               7+ stars: glowing screen sides, 10+ stars: cover and Start quake, lightning on
-              select, hovering Start dims everything else; speed mods count the stars up
+              select, hovering Start dims everything else; speed mods count the stars up;
+              10+ stars also get glitch + chromatic aberration (toggle: Customize > Interface)
   Pass        green glow around the screen once every note is done, zoom into the results
   Results     osu!-style results screen (layout from Rhythia's rewrite): counting score, grade,
               PASSED / DISQUALIFIED / FAILED, Back / Retry (`) / Watch replay
