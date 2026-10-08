@@ -164,6 +164,7 @@ func _ready():
 	logo.connect("gui_input", self, "_logo_input")
 	tilt = _measure_tilt(logo.texture)
 	root.add_child(logo)
+	_logo_fx()
 	hint = Label.new()
 	hint.text = "click the logo"
 	hint.align = Label.ALIGN_CENTER
@@ -404,6 +405,7 @@ func _process(delta):
 			c.update()
 	ring.rect_position = centre
 	ring.update()
+	_logo_fx_step(delta)
 
 func _draw_ring():
 	var vis = menu.get_node_or_null("AudioVisualizer")
@@ -427,6 +429,59 @@ func _draw_glow():
 	var a = 0.04 * beat + 0.1 * punch
 	for k in 6: # stacked soft discs = a cheap radial glow
 		R.disc(glow, c, r * (1.0 + 0.22 * k), Color(1, 1, 1, a * (1.0 - k / 6.0) * 0.5))
+
+# ------------------------------------------------------------------ logo fx
+# Rhythia-reimagined touch: the logo always has a slight red / blue split and glitches in short
+# bursts every few seconds (and a little on strong kicks). Overlay after a BackBufferCopy, so it
+# reads the logo (and ring) exactly as drawn under it.
+const LOGO_FX_SHADER = """shader_type canvas_item;
+uniform float power = 0.0;  // glitch burst 0..1
+uniform float split = 1.5;  // constant colour split, px
+uniform vec2 size = vec2(400.0, 400.0);
+float hash(float n) { return fract(sin(n) * 43758.5453); }
+void fragment() {
+	float tick = floor(TIME * 20.0);
+	float band = floor(UV.y * 12.0 + hash(tick) * 3.0);
+	float on = step(1.0 - power * 0.5, hash(band * 7.13 + tick));
+	float shift = (hash(band * 1.7 + tick * 3.1) - 0.5) * 0.1 * on * power;
+	vec2 uv = SCREEN_UV + vec2(shift * size.x * SCREEN_PIXEL_SIZE.x, 0.0);
+	vec2 sp = vec2((split + (2.0 + 5.0 * on) * power) * SCREEN_PIXEL_SIZE.x, 0.0);
+	vec4 c = textureLod(SCREEN_TEXTURE, uv, 0.0);
+	c.r = textureLod(SCREEN_TEXTURE, uv + sp, 0.0).r;
+	c.b = textureLod(SCREEN_TEXTURE, uv - sp, 0.0).b;
+	float scan = 1.0 - power * 0.15 * step(0.5, fract(UV.y * size.y * 0.25));
+	COLOR = vec4(c.rgb * scan, 1.0);
+}"""
+var logo_fx:ColorRect
+var logo_glitch:float = 0.0
+var logo_glitch_next:float = 2.0
+var logo_glitch_left:float = 0.0
+
+func _logo_fx():
+	var bb = BackBufferCopy.new()
+	bb.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	logo.add_child(bb)
+	logo_fx = ColorRect.new()
+	logo_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	logo_fx.anchor_right = 1
+	logo_fx.anchor_bottom = 1
+	logo_fx.material = ShaderMaterial.new()
+	logo_fx.material.shader = Shader.new()
+	logo_fx.material.shader.code = LOGO_FX_SHADER
+	logo.add_child(logo_fx)
+
+func _logo_fx_step(delta:float):
+	if !logo_fx: return
+	logo_glitch_next -= delta
+	if logo_glitch_next <= 0.0:
+		logo_glitch_next = rand_range(1.8, 4.5)
+		logo_glitch_left = rand_range(0.08, 0.2)
+	if punch > 0.95 and logo_glitch_left <= 0.0 and randf() < 0.25: logo_glitch_left = 0.07
+	logo_glitch_left -= delta
+	logo_glitch = rand_range(0.45, 0.8) if logo_glitch_left > 0.0 else max(0.0, logo_glitch - delta * 8.0)
+	logo_fx.material.set_shader_param("power", logo_glitch)
+	logo_fx.material.set_shader_param("split", 1.2 + 1.5 * punch)
+	logo_fx.material.set_shader_param("size", logo.rect_size * logo.rect_scale)
 
 # ------------------------------------------------------------------ card
 # outlined card on a see-through black fill: accent bar (grows on hover), title + subtitle,

@@ -304,8 +304,9 @@ func _fx(delta:float, cover):
 		chroma.material.shader.code = CHROMA_SHADER
 		fx_layer.add_child(chroma)
 	chroma.visible = true
-	chroma.material.set_shader_param("amount", fx_k * (2.0 + 4.0 * punch + 3.0 * dim + 5.0 * glitch))
-	chroma.material.set_shader_param("tear", glitch)
+	# (kept gentle: the real glitching is on the cover and the map card only)
+	chroma.material.set_shader_param("amount", fx_k * (1.0 + 2.0 * punch + 1.5 * dim + 1.0 * glitch))
+	chroma.material.set_shader_param("tear", 0.0)
 	# cover
 	if cover and (fx_cover == null or !is_instance_valid(fx_cover[1]) or fx_cover[1].get_parent() != cover):
 		_fx_free(fx_cover)

@@ -15,7 +15,7 @@ A mod pack for **Rhythia Legacy / Sound Space Plus nightly** (the Godot 3.6.2 bu
 
 | | |
 |---|---|
-| **Title menu** | osu!-style main menu with a beating logo and spectrum ring. The background is rain, snow or topographic waves. ESC opens it. |
+| **Title menu** | osu!-style main menu with a beating logo (with a little glitch and colour split, the modded touch) and spectrum ring. The background is rain, snow or topographic waves. ESC opens it. |
 | **Maps** | Star rating that matches rhythia.com, and an estimated BPM (a range when the tempo changes). Speed mods raise or lower both, with a count-up animation. Sort by stars, name or mapper. Collections (map packs). |
 | **Map page** | The cover art works as a visualizer: it hits on the map's own notes and has spectrum bars around it. Maps over 7★ get glowing screen sides. Maps over 10★ add chromatic aberration over the whole screen and glitch bursts on the cover and map card, make the cover and Start quake, a lightning bolt strikes when you select one, and hovering Start dims everything else. The mods menu wipes up. |
 | **Browse** | Search and download maps from rhythia.com inside the game, in a panel that slides up. |
