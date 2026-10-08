@@ -112,7 +112,7 @@ func _ready():
 	# (a wrapping label is as tall as its width allows: while the column is briefly 0 px wide -
 	# e.g. the map page laid out behind the results screen after a fail - it wrapped one letter
 	# per line, ~2000 px tall, and pushed the whole map page down off the screen)
-	empty.rect_min_size.x = 360
+	empty.rect_min_size.x = 240 # (small enough for the narrow column on phones)
 	body.add_child(empty)
 	list = VBoxContainer.new()
 	list.add_constant_override("separation", 4)
