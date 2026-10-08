@@ -114,8 +114,9 @@ func get_stars_at_now(song, speed:float) -> float:
 	return speed_memo[mk]
 
 # The map's rhythm for visuals: [time ms, strength, time, strength, ...] - one entry per note
-# onset (chords merged) at least ~half a beat after the previous kept one; strength 1 on beat-length
-# gaps or more, 0.45 for half beats (so streams don't turn into a constant buzz). null while the
+# onset (chords merged) at least ~half a beat after the previous kept one; strength 1 on the beat
+# (after a pause, or on the beat grid of the last full hit), 0.45 for the notes in between (so
+# streams don't turn into a constant buzz). null while the
 # worker computes it (listen to "onsets_ready").
 func get_onsets(song):
 	if song == null or song.is_online: return []
@@ -145,11 +146,18 @@ static func accent_times(notes:Array) -> PoolRealArray:
 	var period = 60000.0 / bpm if bpm > 0 else 400.0
 	var out = PoolRealArray()
 	var last = -100000.0
+	var anchor = -100000.0 # last full hit: the beat grid runs on from it
 	for t in times:
 		var gap = t - last
 		if gap < period * 0.45: continue
+		# full hit after a pause (>= ~1 beat), or on the beat grid of the last full hit; the notes
+		# in between are half hits. (Gap alone made every note of a stream a half hit - dense maps
+		# never got a real beat.)
+		var d = (t - anchor) / period
+		var strong = gap >= period * 0.9 or (round(d) >= 1 and abs(d - round(d)) < 0.15)
+		if strong: anchor = t
 		out.append(t)
-		out.append(1.0 if gap >= period * 0.9 else 0.45)
+		out.append(1.0 if strong else 0.45)
 		last = t
 	return out
 

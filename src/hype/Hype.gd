@@ -147,7 +147,7 @@ func _process(delta):
 		punch = 1.0
 		beat_cd = 0.15
 		tilt_dir = -tilt_dir
-	punch *= exp(-delta * 9.0)
+	punch *= exp(-delta * 11.0) # (short and sharp: a hit, not a swell)
 	side = max(max(e, punch * 0.9), side - delta * 1.6)
 	var cover = _cover()
 	var run = _run()
@@ -172,11 +172,11 @@ func _process(delta):
 	if cover:
 		cover.rect_pivot_offset = cover.rect_size / 2
 		var s = COVER_SCALE * (1.0 + bass * 0.012 + 0.08 * surge * surge) # (steady bob kept small: the hits carry the beat)
-		s *= 1.0 + 0.075 * punch # the hit
+		s *= 1.0 + 0.11 * punch # the hit
 		cover.rect_scale = Vector2(s, s)
 		_shake(cover, (2.0 + bass * 3.0 + kick * 5.0) if hype else 0.0)
 		cover.rect_rotation += tilt_dir * 1.4 * punch * punch # alternating little tilt per beat
-		var f = 1.0 + 0.3 * punch # flash brighter on the beat
+		var f = 1.0 + 0.45 * punch # flash brighter on the beat
 		cover.modulate = Color(f, f, f, cover.modulate.a)
 	if run:
 		run.rect_pivot_offset = run.rect_size / 2
@@ -320,13 +320,16 @@ class CoverViz extends Control:
 			for i in BARS:
 				var f = abs((i + 0.5) / BARS * 2.0 - 1.0) # side centre = bass, corners = treble
 				var k = int(f * f * n * 0.7)
-				var target = clamp(vis.mags[k] / vis.ceiling * (1.0 + 0.6 * (hype.punch if hype else 0.0)), 0.0, 1.0) * (hype.gate if hype else 1.0)
+				var pu = hype.punch if hype else 0.0
+				# the beat: every bar jumps together on a hit, on top of its own band
+				var target = clamp(vis.mags[k] / vis.ceiling * (1.0 + 0.8 * pu) + 0.32 * pu * pu, 0.0, 1.0) * (hype.gate if hype else 1.0)
 				var j = si * BARS + i
-				# rise fast, fall slower: smooth motion instead of per-frame flicker
-				lv[j] = lerp(lv[j], target, 1.0 - exp(-dt * (30.0 if target > lv[j] else 9.0)))
-				var v = lv[j]
+				# snappy: jumps up at once, drops fast; drawn in steps (LED-meter look, not a smooth glide)
+				lv[j] = target if target > lv[j] else lerp(lv[j], target, 1.0 - exp(-dt * 18.0))
+				var v = floor(lv[j] * 14.0) / 14.0
 				if v < 0.05: continue # quiet: no bar (the resting stubs looked like a dotted frame)
 				var p = a.linear_interpolate(b, (i + 0.5) / BARS)
 				var c = col
 				c.a *= min(1.0, (v - 0.05) * 8.0) * (0.35 + 0.65 * v)
-				draw_line(p + out * 6, p + out * (6 + v * 72), c, 5.0, true)
+				c = c.linear_interpolate(Color(1, 1, 1, c.a), 0.5 * pu) # flash white on the hit
+				draw_line(p + out * 6, p + out * (6 + v * 76), c, 5.0 + 2.0 * pu, true)
