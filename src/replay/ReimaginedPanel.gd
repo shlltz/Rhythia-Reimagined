@@ -643,10 +643,33 @@ func _log_text() -> String:
 		return "LAST SESSION" + (" (crashed)" if load("res://mods/replay/CrashWatch.gd").crashed() else "") + char(10) + _read_log(path)
 	return _read_log(LOG_FILE)
 
+# no log: say where it looked, so a bug report still helps
+static func _no_log(path:String) -> String:
+	var NL = char(10)
+	var t = "(no log file at " + path + ")" + NL + "Rhythia-reimagined v@@VERSION@@ - " + OS.get_name() + " " + OS.get_model_name()
+	t += NL + "user data: " + OS.get_user_data_dir() + NL + "game files: " + str(Globals.p("user://"))
+	t += NL + "file logging: " + str(ProjectSettings.get_setting("logging/file_logging/enable_file_logging"))
+	for dir in ["user://logs"]: # (only the logs folder: the user folder has player names in it)
+		var d = Directory.new()
+		if d.open(dir) != OK:
+			t += NL + dir + ": can't open"
+			continue
+		var names = []
+		d.list_dir_begin(true, true)
+		var n = d.get_next()
+		while n != "" and names.size() < 40:
+			names.append(n)
+			n = d.get_next()
+		d.list_dir_end()
+		t += NL + dir + ": " + PoolStringArray(names).join(", ")
+	return t
+
 static func _read_log(path:String) -> String:
 	var NL = char(10)
 	var f = File.new()
-	if f.open(Globals.p(path) if path.begins_with("user://") else path, File.READ) != OK: return "(no log file - restart the game once after updating)"
+	# (the engine writes its log to its own user:// folder - on Android that isn't where
+	# Globals.p() puts the game's files, so the path is used as it is)
+	if f.open(path, File.READ) != OK: return _no_log(path)
 	var lines = f.get_as_text().split(NL)
 	f.close()
 	var from = max(0, lines.size() - LOG_LINES)

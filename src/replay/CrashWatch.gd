@@ -5,7 +5,7 @@ extends Node
 # the menu offers its log (the game keeps the previous logs, see ssp_mod.py file_logging).
 
 const MARK = "user://.rr_running"
-const LOG_DIR = "user://logs"
+const LOG_DIR = "user://logs" # (the engine's own user:// - NOT Globals.p, which points elsewhere on Android)
 
 static func start(tree:SceneTree):
 	if Engine.has_meta("rr_crashwatch"): return
@@ -22,7 +22,7 @@ static func crashed() -> bool:
 # the newest old log (the session before this one), or ""
 static func previous_log() -> String:
 	var d = Directory.new()
-	if d.open(Globals.p(LOG_DIR)) != OK: return ""
+	if d.open(LOG_DIR) != OK: return ""
 	var best = ""
 	d.list_dir_begin(true, true)
 	var f = d.get_next()
@@ -30,7 +30,7 @@ static func previous_log() -> String:
 		if f.begins_with("godot") and f.ends_with(".log") and f != "godot.log" and f > best: best = f
 		f = d.get_next()
 	d.list_dir_end()
-	return Globals.p(LOG_DIR) + "/" + best if best != "" else ""
+	return LOG_DIR + "/" + best if best != "" else ""
 
 func _ready():
 	pause_mode = PAUSE_MODE_PROCESS
