@@ -516,10 +516,18 @@ class Card extends Control:
 	func _set_inside(v:bool):
 		inside = v
 
+	var held:bool = false # pressed on this card (the release only counts then)
+
 	func _gui_input(ev):
 		if ev is InputEventMouseButton and ev.button_index == BUTTON_LEFT:
-			if ev.pressed: press = 1.0
-			elif inside: emit_signal("pressed")
+			if ev.pressed:
+				press = 1.0
+				held = true
+			elif held:
+				held = false
+				# where the button came up, not the hover flag: mouse_entered can lag behind
+				# (the cards move every frame), and clicks were lost (Rhythia-reimagined)
+				if Rect2(Vector2(), rect_size).has_point(ev.position): emit_signal("pressed")
 
 	func _process(delta):
 		var h = lerp(hover, 1.0 if inside else 0.0, 1.0 - exp(-delta * 14.0))
