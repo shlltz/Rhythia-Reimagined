@@ -414,6 +414,10 @@ SCRIPT_MODS = {
 }
 VERSION_FILE = os.path.join(HERE, 'version.txt')
 def version(): return open(VERSION_FILE).read().strip() if os.path.exists(VERSION_FILE) else '0.0.0'
+# third-party files kept out of the public repo (see .gitignore): a build from a fresh clone
+# skips them - no intro sound, and the mods' drawn icons instead of the Flaticon font
+OPTIONAL_ASSETS = ['intro.mp3', 'icons/uicons-solid-rounded.woff']
+
 def src(*p):
     with open(os.path.join(SRC, *p), 'rb') as f: return f.read()
 def script_mod(pk, name, opts=None):
@@ -428,7 +432,10 @@ def script_mod(pk, name, opts=None):
     for f, orig in swap.items():
         target = 'res://mods/%s/%s' % (pdir, f)
         pk.add(target, data(f)); pk.write(orig + '.remap', ('[remap]\n\npath="%s"\n' % target).encode())
-    for f in extra: pk.add('res://mods/%s/%s' % (pdir, f), data(f))
+    for f in extra:
+        if f in OPTIONAL_ASSETS and not os.path.exists(os.path.join(SRC, name, f)):
+            print('  (no %s/%s - not in the public repo, skipped)' % (name, f)); continue
+        pk.add('res://mods/%s/%s' % (pdir, f), data(f))
 
 # ---------- share look: Exo 2 font + colours matching the logo (share zip only, never your own game) ----------
 SHARE_ACCENT = 'ff3d64'                     # the logo's pink-red
@@ -471,7 +478,10 @@ def sharelook(pk, o):
 INIT = 'res://scenes/init.tscn'
 def intro(pk):
     t = (pk.bak.get(INIT) or pk.read(INIT)).decode('utf-8')
-    for f in ('Intro.gd', 'intro.mp3'): pk.add('res://mods/intro/' + f, src('intro', f))
+    for f in ('Intro.gd', 'intro.mp3'):
+        if f in OPTIONAL_ASSETS and not os.path.exists(os.path.join(SRC, 'intro', f)):
+            print('  (no intro/%s - not in the public repo: the intro plays without sound)' % f); continue
+        pk.add('res://mods/intro/' + f, src('intro', f))
     end = t.index('\n', t.rfind('[ext_resource')) + 1
     t = t[:end] + '[ext_resource path="res://mods/intro/Intro.gd" type="Script" id=90]\n' + t[end:]
     pk.write(INIT, (t.rstrip('\n') + '\n\n[node name="Intro" type="CanvasLayer" parent="."]\nscript = ExtResource( 90 )\n').encode('utf-8'))
