@@ -135,6 +135,7 @@ func _font(size:int):
 	if base is DynamicFont:
 		f = base.duplicate()
 		f.size = size
+	f = load("res://mods/replay/Reimagined.gd").heading_font(f, size)
 	fonts[size] = f
 	return f
 

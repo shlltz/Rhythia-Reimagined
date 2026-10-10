@@ -492,7 +492,12 @@ def load_profile(): return json.load(open(PROFILE, encoding='utf-8')) if os.path
 def save_profile(p): json.dump({k: p[k] for k in ORDER if k in p}, open(PROFILE, 'w', encoding='utf-8'), indent=2)
 def path_arg(p): return p if os.path.isabs(p) else os.path.join(HERE, p)
 def apply(pk, name, o):
-    if name == 'font': font(pk, path_arg(o['file']), o.get('target', 'hud'))
+    if name == 'font':
+        if 'map' in o:                                              # several fonts: [[file, target], ...] (later wins)
+            for f, tg in o['map']: font(pk, path_arg(f), tg)
+        if o.get('headings'):                                       # mod panels: big text (headings) in the bold slot
+            pk.add('res://mods/font/headings.flag', b'1'); print('headings use the bold font')
+        else: font(pk, path_arg(o['file']), o.get('target', 'hud'))
     elif name == 'theme': theme(pk, o.get('width', 2))
     elif name == 'results': results(pk)
     elif name == 'bigsettings': bigsettings(pk, o.get('scale', 1.2), o.get('friendly', True), o.get('hints', False))

@@ -69,6 +69,18 @@ static func fps_watch(delta:float):
 		Engine.set_meta("rr_auto_lite", true)
 		print("Rhythia-reimagined: low fps, lighter effects on for this session")
 
+# Headings in the mods' own panels (settings, customize, title, results, browser): text from
+# HEADING_PX up uses the bold font slot instead of the body font - only when the personal font
+# setup asks for it (ssp_mod.py font "headings": pixel headings over a readable body font).
+const HEADING_PX = 21
+static func heading_font(f, size:int):
+	if !(f is DynamicFont) or size < HEADING_PX: return f
+	if !Engine.has_meta("rr_headings"): Engine.set_meta("rr_headings", ResourceLoader.exists("res://mods/font/headings.flag") or File.new().file_exists("res://mods/font/headings.flag"))
+	if !Engine.get_meta("rr_headings"): return f
+	var bold = load("res://assets/font/Lato/Lato-Bold.ttf")
+	if bold: f.font_data = bold
+	return f
+
 static func set_val(k:String, v):
 	cfg()[k] = v
 	save()
