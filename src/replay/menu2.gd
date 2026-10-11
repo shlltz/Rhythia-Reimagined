@@ -12,8 +12,21 @@ func idle_status():
 	
 	Discord.activity_manager.update_activity(activity)
 
+# The mods' helper scripts that are only used through load(...).func() (static functions, no
+# instances): nothing keeps them alive, so Godot frees each one when the call returns and the next
+# load() reads and compiles it again - ~1 ms a time, and the title screen / map page called
+# Reimagined.gd two times a frame. Held here for the whole session, load() is a cache hit.
+const KEEP_LOADED = ["res://mods/replay/Reimagined.gd", "res://mods/replay/Look.gd", "res://mods/replay/UIAnim.gd",
+	"res://mods/replay/Icons.gd", "res://mods/replay/Ring.gd", "res://mods/stars/RecentPlays.gd",
+	"res://mods/replay/CrashWatch.gd", "res://mods/replay/OsuSfx.gd", "res://mods/stars/StarCache.gd"]
+
 func _ready():
 	get_tree().paused = false
+	if !Engine.has_meta("rr_keep_loaded"):
+		var keep = []
+		for p in KEEP_LOADED:
+			if ResourceLoader.exists(p): keep.append(load(p))
+		Engine.set_meta("rr_keep_loaded", keep)
 	load("res://mods/replay/CrashWatch.gd").start(get_tree())
 	call_deferred("_crash_prompt")
 	if Rhythia.arcw_mode:
