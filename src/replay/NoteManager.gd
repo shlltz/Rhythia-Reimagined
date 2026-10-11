@@ -513,6 +513,8 @@ func _ready():
 		add_child(replay_viewer)
 	elif !Rhythia.replaying and ResourceLoader.exists("res://mods/replay/QuickRetry.gd"):
 		add_child(load("res://mods/replay/QuickRetry.gd").new()) # hold ` to restart the map
+	if ResourceLoader.exists("res://mods/replay/RunFx.gd") and load("res://mods/replay/Look.gd").fx_on() and load("res://mods/replay/Reimagined.gd").val("fx_game"):
+		add_child(load("res://mods/replay/RunFx.gd").new()) # red edge flash when a combo of 20+ breaks
 
 	chaos_rng.seed = hash(Rhythia.selected_song.id)
 	earthquake_rng.seed = hash(Rhythia.selected_song.id)

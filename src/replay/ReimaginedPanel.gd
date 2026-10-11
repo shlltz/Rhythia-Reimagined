@@ -577,10 +577,76 @@ func _build_interface():
 	p.add_child(gap)
 	_check(p, "Glitch + chromatic aberration (10+ star maps, title logo)", R.val("glitch_fx"), "_if_glitch")
 	_check(p, "Lighter effects for low-end PCs (auto when the game slows down)", R.val("lite_fx"), "_if_lite")
+	if mono: _build_atmosphere(p)
 	_heading(p, "Map list", "Also under Filters next to the map list.")
 	var sg = ButtonGroup.new()
 	_row(p, "Sort by", _seg([["stars", "STARS"], ["name", "NAME"], ["mapper", "MAPPER"]], cf.sort, "_if_sort", sg))
 	_row(p, "", _seg([["recent", "PLAYED"], ["added", "ADDED"], ["length", "LENGTH"], ["bpm", "BPM"]], cf.sort, "_if_sort", sg))
+
+# Atmosphere (personal build): presets are values for the sliders below them; moving a slider
+# switches the preset to CUSTOM
+var fx_w:Dictionary = {}
+var fx_lock:bool = false
+func _build_atmosphere(p:Control):
+	var cf = R.cfg()
+	_heading(p, "Atmosphere", "Scanlines, film grain and red marks on menus and result screens. Presets TERMINAL, MACHINE and HELL fill in the settings; changing one makes it CUSTOM.")
+	fx_w.master = _check(p, "Atmosphere effects (off = clean interface)", cf.fx_on, "_fx_master")
+	fx_w.preset = _seg([["terminal", "TERMINAL"], ["machine", "MACHINE"], ["hell", "HELL"], ["custom", "CUSTOM"]], cf.fx_preset, "_fx_preset")
+	_row(p, "Preset", fx_w.preset)
+	var r1 = _row(p, "Red accent", _slider(0.0, 1.0, 0.05, float(cf.fx_red), "_fx_red", "%.2f"))
+	var r2 = _row(p, "Scanlines", _slider(0.0, 1.0, 0.05, float(cf.fx_scan), "_fx_scan", "%.2f"))
+	var r3 = _row(p, "Film grain", _slider(0.0, 1.0, 0.05, float(cf.fx_grain), "_fx_grain", "%.2f"))
+	fx_w.red = r1.get_child(1).get_child(0)
+	fx_w.scan = r2.get_child(1).get_child(0)
+	fx_w.grain = r3.get_child(1).get_child(0)
+	fx_w.crt = _check(p, "CRT vignette", cf.fx_crt, "_fx_crt")
+	_check(p, "Run effects (red edge flash when a combo of 20+ breaks)", cf.fx_game, "_fx_game")
+	_check(p, "Telemetry: fps and frame time in the title status line", cf.fx_telemetry, "_fx_telemetry")
+
+func _fx_refresh():
+	get_tree().call_group("rr_atmo", "refresh")
+
+func _fx_custom():
+	if fx_lock: return
+	R.set_val("fx_preset", "custom")
+	for b in fx_w.preset.get_children(): b.pressed = (b.text == "CUSTOM")
+	_fx_refresh()
+
+func _fx_master(on:bool):
+	R.set_val("fx_on", on)
+	_fx_refresh()
+
+func _fx_preset(n:String):
+	if n == "custom": return
+	Look.apply_preset(n)
+	fx_lock = true
+	var cf = R.cfg()
+	fx_w.red.value = cf.fx_red
+	fx_w.scan.value = cf.fx_scan
+	fx_w.grain.value = cf.fx_grain
+	fx_w.crt.pressed = cf.fx_crt
+	fx_lock = false
+	_fx_refresh()
+
+func _fx_red(v:float):
+	R.set_val("fx_red", v)
+	_fx_custom()
+
+func _fx_scan(v:float):
+	R.set_val("fx_scan", v)
+	_fx_custom()
+
+func _fx_grain(v:float):
+	R.set_val("fx_grain", v)
+	_fx_custom()
+
+func _fx_crt(on:bool):
+	R.set_val("fx_crt", on)
+	_fx_custom()
+
+func _fx_game(on:bool): R.set_val("fx_game", on)
+
+func _fx_telemetry(on:bool): R.set_val("fx_telemetry", on)
 
 func _if_hitbox(on:bool):
 	R.set_val("hide_hitbox_text", on)

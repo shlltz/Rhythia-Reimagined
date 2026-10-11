@@ -21,6 +21,14 @@ const DEFAULTS = {
 	"swept_hitbox": true,       # count notes the cursor passes through between frames (NoteManager)
 	"lite_fx": false,           # lighter effects for low-end PCs (also switched on for the session by fps_watch)
 	"glitch_fx": true,          # glitch + chromatic aberration (10+ star maps, title logo)
+	"fx_on": true,              # Atmosphere master switch (personal build): scanlines, grain, CRT, red accents
+	"fx_preset": "machine",     # terminal | machine | hell | custom (a slider was moved)
+	"fx_red": 0.6,              # 0 = monochrome selection marks .. 1 = blood red
+	"fx_scan": 0.7,             # scanline strength
+	"fx_grain": 0.3,            # film grain strength
+	"fx_crt": false,            # CRT vignette
+	"fx_game": true,            # short effects in a run (red edge flash when a combo breaks)
+	"fx_telemetry": false,      # fps / frame time in the title status line
 	"title_bg": "rain",         # title screen background: rain | snow | waves (topographic)
 }
 # side panels the layout editor moves: sprite, label, default centre (world x, y), size (w, h)

@@ -33,9 +33,12 @@ var stamped:bool = false
 var closing:bool = false
 
 var mono:bool = load("res://mods/replay/Look.gd").mono()
+var pill_w:float = 120.0
+var shake:float = 0.0
+var flash:ColorRect = null
 
 func _draw_frame():
-	load("res://mods/replay/Look.gd").brackets(holder, Rect2(Vector2(), holder.rect_size).grow(10), 26.0, Color(1, 1, 1, 0.45), 2.0)
+	load("res://mods/replay/Look.gd").brackets(holder, Rect2(Vector2(), holder.rect_size).grow(10), 26.0, load("res://mods/replay/Look.gd").hot(0.55), 2.0)
 
 func _init(data:Dictionary):
 	run = data
@@ -102,6 +105,7 @@ func _ready():
 	var pill = _label(st[0], Vector2(220, 124), 1.1, st[1], 0)
 	var pw = pill.get_font("font").get_string_size(st[0]).x if pill.get_font("font") else 120.0
 	_tile(Rect2(206, 120, pw + 30, 34), st[1], 17, false, true)
+	pill_w = pw
 	holder.move_child(pill, holder.get_child_count() - 1)
 	best_label = _label("", Vector2(206, 158), 1.0, Color("#ffd75e"), 640)
 	if run.get("when"):
@@ -128,7 +132,9 @@ func _ready():
 	if run.end_type != Globals.END_PASS:
 		rows.append(["Progress", "%.1f%%" % (clamp(run.position / max(1.0, run.length), 0, 1) * 100)])
 	var stars = _stars(song)
-	if stars > 0: rows.append(["Stars", "%.2f" % stars])
+	if stars > 0:
+		var dg = load("res://mods/replay/Look.gd").danger(stars)
+		rows.append(["Stars", ("%.2f  // %s %s" % [stars, dg[0], dg[1]]) if mono else ("%.2f" % stars)])
 	for i in rows.size(): # one outlined tile per stat, two columns
 		var x = 32 + (i % 2) * 290
 		var y = 354 + int(i / 2) * 60
@@ -143,6 +149,13 @@ func _ready():
 	if mods.size() > 0: _label("Mods   " + PoolStringArray(mods).join("  ·  "), Vector2(34, H - 40), 0.9, Color(1, 1, 1, 0.6), 640)
 
 	var g = _grade(acc)
+	if mono: # evaluation line next to the status pill (from the grade, real run data)
+		var Lk = load("res://mods/replay/Look.gd")
+		var v = {"SS": "FLAWLESS", "S": "EXCELLENT", "A": "STRONG", "B": "ADEQUATE", "C": "MARGINAL", "D": "POOR", "F": "TERMINATED"}[g[0]]
+		var hot = g[0] in ["SS", "S"]
+		var vc = Lk.hot(0.95) if hot or g[0] == "F" else Color(1, 1, 1, 0.55)
+		if g[0] == "F": vc = Lk.BLOOD.lightened(0.15)
+		_label("// EVALUATION: " + v, Vector2(206 + pill_w + 52, 128), 0.95, vc, 0)
 	grade_text = _label(g[0], Vector2(W - 420, 120), 15.0, g[2], 380)
 	grade_text.align = Label.ALIGN_CENTER
 	if mono: # personal build: the osu! skin's rank art (Wrath), else a heavy face + static glitch
@@ -358,6 +371,12 @@ func _stars(song) -> float:
 # ------------------------------------------------------------------ animation
 func _process(delta):
 	t += delta
+	shake = max(0.0, shake - delta / 0.28)
+	if flash:
+		flash.color.a = max(0.0, flash.color.a - delta / 0.22)
+		if flash.color.a <= 0.0:
+			flash.queue_free()
+			flash = null
 	_layout()
 	# score counts up over 1.2 s (ease out), ticking
 	var k = clamp(t / 1.2, 0.0, 1.0)
@@ -370,6 +389,17 @@ func _process(delta):
 		if Rhythia.get_meta("last_run_best"): best_label.text = "NEW PERSONAL BEST!"
 
 func _stamp():
+	var Look = load("res://mods/replay/Look.gd")
+	if mono and Look.fx_on() and !run.get("stored"): # decisive payoff: a short red / white hit on S, SS and a failed run
+		var gk = _grade(float(run.hits) / max(1.0, float(run.total)))[0]
+		if gk in ["SS", "S", "F"]:
+			var fc = Look.BLOOD if gk == "F" else Look.hot()
+			flash = ColorRect.new()
+			flash.color = Color(fc.r, fc.g, fc.b, 0.3 if gk != "S" else 0.22)
+			flash.anchor_right = 1; flash.anchor_bottom = 1
+			flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			get_child(0).add_child(flash)
+			shake = 1.0
 	grade_text.modulate.a = 1
 	grade_text.rect_scale = Vector2(1.6, 1.6)
 	var passed = run.end_type == Globals.END_PASS and !run.replay
@@ -382,6 +412,7 @@ func _layout():
 	var size = get_viewport().get_visible_rect().size
 	var mouse = get_viewport().get_mouse_position()
 	var target = (size - Vector2(W, H)) / 2 + (size / 2 - mouse) * (8.0 / size.y) - Vector2(0, 30)
+	if shake > 0.0: target += Vector2(randf() - 0.5, randf() - 0.5) * 22.0 * shake # (short impact shake)
 	var dt = get_process_delta_time() # (smoothing by time, not per frame: same feel at any fps)
 	holder.rect_position = holder.rect_position.linear_interpolate(target, 1.0 - exp(-dt * 12.0)) if t > 0.05 else target
 	grade_text.rect_scale = grade_text.rect_scale.linear_interpolate(Vector2.ONE, 1.0 - exp(-dt * 11.0))

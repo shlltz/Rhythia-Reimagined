@@ -634,6 +634,7 @@ func _update_stars(map):
 		star_badge.set_script(StarBadge)
 		star_badge.align_left = true
 		star_badge.pill = false
+		star_badge.class_tag = true
 		star_badge.rect_min_size = Vector2(150, 22)
 		_i("/Data").add_child(star_badge)
 	var speed = 1.0

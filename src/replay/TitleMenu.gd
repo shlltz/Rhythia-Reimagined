@@ -226,23 +226,41 @@ func _add_terminal():
 
 func _draw_frame():
 	var r = Rect2(Vector2(24, 24), frame.rect_size - Vector2(48, 48))
-	Look.brackets(frame, r, 26.0, Color(1, 1, 1, 0.22 + 0.25 * punch), 2.0)
+	var bc = Look.hot().linear_interpolate(Look.BLOOD, punch * Look.red()) # (red marks flash on the kick)
+	Look.brackets(frame, r, 26.0, Color(bc.r, bc.g, bc.b, 0.22 + 0.25 * punch + 0.2 * Look.red()), 2.0)
 	# thin rule under the status line, fading out to the right
 	for k in 8:
 		frame.draw_line(Vector2(44 + k * 40, 62), Vector2(44 + (k + 1) * 40, 62), Color(1, 1, 1, 0.16 * (1.0 - k / 8.0)), 1.0)
 
+# short boot line, typed once per session (does not block the menu)
+var boot_t:float = -1.0
+var boot_txt:String = ""
 func _terminal_step(delta:float):
 	if !status: return
+	if map_count < 0 and Rhythia.registry_song: map_count = Rhythia.registry_song.get_items().size()
+	if boot_t < 0.0:
+		boot_t = 99.0
+		if Look.fx_on() and !Engine.has_meta("rr_booted"):
+			Engine.set_meta("rr_booted", true)
+			boot_t = 0.0
+			boot_txt = "BOOT > RHYTHIA v@@VERSION@@ > AUDIO OK > %s MAPS INDEXED > READY" % str(max(map_count, 0))
+	if boot_t < 1.1:
+		boot_t += delta
+		status.text = boot_txt.substr(0, int(boot_t / 1.0 * boot_txt.length())) + ("_" if int(boot_t * 12) % 2 == 0 and boot_t < 1.0 else "")
+		if boot_t >= 1.1: clock_t = 1.0
+		return
 	clock_t += delta
-	if clock_t >= 1.0:
+	var RI = load("res://mods/replay/Reimagined.gd")
+	if clock_t >= (0.25 if RI.val("fx_telemetry") else 1.0):
 		clock_t = 0.0
-		if map_count < 0 and Rhythia.registry_song: map_count = Rhythia.registry_song.get_items().size()
 		var t = OS.get_time()
 		status.text = "RHYTHIA // REIMAGINED v@@VERSION@@     %s MAPS     %02d:%02d" % [str(max(map_count, 0)), t.hour, t.minute]
+		if RI.val("fx_telemetry"):
+			status.text += "     %d FPS  %.1f MS" % [Engine.get_frames_per_second(), 1000.0 / max(1.0, Engine.get_frames_per_second())]
 	if punch > 0.01 or frame_lit:
 		frame.update() # (brackets flash on the kick; one more redraw once it has faded)
 		frame_lit = punch > 0.01
-	scan.visible = !load("res://mods/replay/Reimagined.gd").lite()
+	scan.visible = false # (Atmosphere.gd draws the scanlines over every menu screen)
 var frame_lit:bool = false
 
 func _font(size:int):

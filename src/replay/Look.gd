@@ -21,6 +21,46 @@ const TEXT_3 = Color(1, 1, 1, 0.38)
 # states
 const OK = Color("#5cdb7a")           # pass / success (the pass glow keeps its own green)
 const CRIT = Color("#ff2436")         # fail, critical, extreme difficulty - used sparingly
+# Atmosphere (personal build; Customize > Interface): one settings set drives the scanline / grain /
+# CRT overlay (Atmosphere.gd), the red of selection marks and the run effects. Presets are just
+# values for those settings.
+const BLOOD = Color("#ff2436")
+const PRESETS = {
+	"terminal": {"fx_red": 0.0, "fx_scan": 0.5, "fx_grain": 0.15, "fx_crt": false},
+	"machine": {"fx_red": 0.6, "fx_scan": 0.7, "fx_grain": 0.3, "fx_crt": false},
+	"hell": {"fx_red": 1.0, "fx_scan": 1.0, "fx_grain": 0.55, "fx_crt": true},
+}
+static func _R():
+	return load("res://mods/replay/Reimagined.gd")
+
+static func fx_on() -> bool:
+	return mono() and bool(_R().val("fx_on"))
+
+static func red() -> float:
+	return float(_R().val("fx_red")) if fx_on() else 0.0
+
+# selection / frame colour: white at red 0, blood red at red 1
+static func hot(a:float = 1.0) -> Color:
+	var c = Color(1, 1, 1).linear_interpolate(BLOOD, red())
+	return Color(c.r, c.g, c.b, a)
+
+static func apply_preset(n:String):
+	var R = _R()
+	for k in PRESETS[n]: R.cfg()[k] = PRESETS[n][k]
+	R.set_val("fx_preset", n)
+
+# danger class of a star rating: [roman, name, tier 0..4]
+const DANGER = [[3.0, "1", "LOW"], [5.5, "2", "MODERATE"], [8.0, "3", "HIGH"], [10.5, "4", "SEVERE"], [1e9, "5", "EXTREME"]]
+static func danger(stars:float) -> Array:
+	for i in DANGER.size():
+		if stars < DANGER[i][0]: return [DANGER[i][1], DANGER[i][2], i]
+	return ["5", "EXTREME", 4]
+
+# tint of a danger tier: grey below IV, then toward blood red (by the red setting)
+static func danger_col(tier:int) -> Color:
+	if tier < 3: return Color(1, 1, 1, 0.55 + 0.1 * tier)
+	return Color(1, 1, 1).linear_interpolate(BLOOD, clamp(red() * (0.6 if tier == 3 else 1.0), 0.0, 1.0))
+
 # motion (seconds): hover / press, small moves, page changes
 const T_FAST = 0.12
 const T_MED = 0.24

@@ -12,6 +12,7 @@ var font:Font = null
 var cache = null
 var align_left:bool = false
 var suffix:String = ""
+var class_tag:bool = false # personal build: danger class after the BPM (map page)
 var from_stars:float = -1.0
 var anim:float = 0.0 # 1 -> 0 after a speed change: the number counts to the new rating, the star pops
 var pill:bool = true # dark backdrop so the star colour reads on any button
@@ -118,6 +119,9 @@ func _draw():
 		btxt = "   %d BPM" % int(round(bpm * speed))
 		if bpm_range.size() == 2 and int(round(bpm_range[0] * speed)) != int(round(bpm_range[1] * speed)):
 			btxt = "   %d-%d BPM" % [int(round(bpm_range[0] * speed)), int(round(bpm_range[1] * speed))]
+	if class_tag and stars >= 0:
+		var Look = load("res://mods/replay/Look.gd")
+		if Look.mono(): txt += "  // C" + Look.danger(sv)[0] # danger class 1..5 (Look.DANGER)
 	var h = rect_size.y
 	var r = h * 0.42
 	var sw = f.get_string_size(txt).x

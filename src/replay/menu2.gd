@@ -28,6 +28,8 @@ func _ready():
 			if ResourceLoader.exists(p): keep.append(load(p))
 		Engine.set_meta("rr_keep_loaded", keep)
 	load("res://mods/replay/CrashWatch.gd").start(get_tree())
+	if load("res://mods/replay/Look.gd").mono() and ResourceLoader.exists("res://mods/replay/Atmosphere.gd"):
+		add_child(load("res://mods/replay/Atmosphere.gd").new()) # scanlines / grain / CRT over the menus
 	call_deferred("_crash_prompt")
 	if Rhythia.arcw_mode:
 		get_tree().change_scene("res://w.tscn")
