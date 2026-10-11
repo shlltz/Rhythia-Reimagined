@@ -140,7 +140,7 @@ func refresh(_s = null):
 	_label()
 	set_process(true)
 
-const ACCENT = Color("#8a6cff")
+var ACCENT:Color = load("res://mods/replay/Look.gd").accent()
 
 static func _box(bg:Color, border:Color, w:int, r:int) -> StyleBoxFlat:
 	var sb = StyleBoxFlat.new()

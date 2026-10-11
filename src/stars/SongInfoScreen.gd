@@ -251,7 +251,8 @@ func _relayout():
 	run_btn.size_flags_vertical = 0
 	_relayout_mods()
 	_move_run_box()
-	if Color("#8a6cff").r > 0.9: _share_buttons() # share build (the accent is swapped for the logo pink there)
+	if load("res://mods/replay/Look.gd").mono(): _mono_buttons() # personal build
+	elif Color("#8a6cff").r > 0.9: _share_buttons() # share build (the accent is swapped for the logo pink there)
 	add_to_group("rr_mappage")
 	_rr_apply()
 	_rr_collection_menu()
@@ -294,6 +295,37 @@ func _share_buttons():
 			b.add_stylebox_override(st, sb)
 	for k in ["font_color", "font_color_hover", "font_color_pressed", "font_color_focus"]:
 		run_btn.add_color_override(k, Color(1, 1, 1, 0.95))
+
+# personal build (Look.mono): sharp outlined Start that inverts on hover (white fill, dark text);
+# the icon buttons get the same outline with a faint fill on hover (their icons are drawn white)
+func _mono_buttons():
+	var Look = load("res://mods/replay/Look.gd")
+	for b in [run_btn] + ctrl_box.get_children():
+		if !(b is BaseButton): continue
+		var big = b == run_btn
+		for st in ["normal", "hover", "pressed", "focus", "disabled"]:
+			var bg = Color(0.02, 0.02, 0.024, 0.6)
+			var edge = Color(1, 1, 1, 0.55 if big else 0.28)
+			if st == "hover":
+				bg = Look.MONO_ACC if big else Color(1, 1, 1, 0.1)
+				edge = Look.MONO_ACC
+			elif st == "pressed":
+				bg = Color(1, 1, 1, 0.75) if big else Color(1, 1, 1, 0.18)
+				edge = Look.MONO_ACC
+			elif st == "disabled": edge.a = 0.15
+			b.add_stylebox_override(st, Look.box(bg, edge, 1, 0))
+	run_btn.text = run_btn.text.to_upper()
+	for k in ["font_color", "font_color_focus"]: run_btn.add_color_override(k, Color(1, 1, 1, 0.95))
+	for k in ["font_color_hover", "font_color_pressed"]: run_btn.add_color_override(k, Look.on_accent())
+
+# "Speed" / "Start From" are right-aligned labels clipped to the width the stock font needed: a wider
+# font cut them ("art From"). Unclipped, growing to the left (free space there), not into the controls.
+func _unclip_labels(mods:Node):
+	for n in ["SpeedMod", "StartOffset"]:
+		var l = mods.get_node_or_null(n + "/Label")
+		if l is Label:
+			l.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+			l.clip_text = false
 
 # Start + the icon row go under the "[+] MODS" bar, as wide as it (the cover column keeps the
 # map's look: cover, name, mapper, stars)
@@ -403,6 +435,7 @@ func _relayout_mods():
 	var mods = get_node_or_null("RS/H2/Mods")
 	if !mods or mods.has_node("ModsToggle") or !mods.has_node("NoFail") or !mods.has_node("SuddenDeath"): return
 	_add_slowest_speed(mods)
+	_unclip_labels(mods)
 	var col_a = mods.get_node("NoFail").rect_position.x
 	var col_b = mods.get_node("SuddenDeath").rect_position.x
 	var top = 0.0
@@ -440,7 +473,7 @@ func _relayout_mods():
 	for g in MOD_GROUPS:
 		var head = Label.new()
 		head.text = g[0]
-		head.add_color_override("font_color", Color("#8a6cff").lightened(0.25)) # group titles in the accent colour
+		head.add_color_override("font_color", load("res://mods/replay/Look.gd").accent().lightened(0.25)) # group titles in the accent colour
 		mods.add_child(head)
 		placed.append([head, Vector2(-150, y)])
 		y += 24

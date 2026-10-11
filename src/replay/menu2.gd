@@ -256,7 +256,7 @@ func _add_rr_credits():
 	for c in sec.get_children():
 		if c is Label:
 			c.text = "-- Rhythia|Reimagined --"
-			c.add_color_override("font_color", Color("#8a6cff"))
+			c.add_color_override("font_color", load("res://mods/replay/Look.gd").accent())
 	for e in RR_CREDITS:
 		var row = tmpl.duplicate()
 		if row.has_node("Name"): row.get_node("Name").text = e[0]

@@ -9,7 +9,7 @@ const UIAnim = preload("res://mods/replay/UIAnim.gd")
 const OsuSfx = preload("res://mods/replay/OsuSfx.gd")
 const W = 1180.0
 const H = 660.0
-const ACCENT = Color("#8a6cff")
+var ACCENT:Color = load("res://mods/replay/Look.gd").accent()
 const DIFFS = ["Easy", "Medium", "Hard", "Logic", "Tasukete"]
 const MODS = [["mod_nofail", "NoFail"], ["mod_sudden_death", "SuddenDeath"], ["mod_hardrock", "HardRock"],
 	["mod_flashlight", "Flashlight"], ["mod_ghost", "Ghost"], ["mod_nearsighted", "Nearsighted"],
@@ -31,6 +31,11 @@ var covered:Array = []
 var t:float = 0.0
 var stamped:bool = false
 var closing:bool = false
+
+var mono:bool = load("res://mods/replay/Look.gd").mono()
+
+func _draw_frame():
+	load("res://mods/replay/Look.gd").brackets(holder, Rect2(Vector2(), holder.rect_size).grow(10), 26.0, Color(1, 1, 1, 0.45), 2.0)
 
 func _init(data:Dictionary):
 	run = data
@@ -69,7 +74,7 @@ func _ready():
 	if ResourceLoader.exists("res://uitheme.tres"): holder.theme = load("res://uitheme.tres") # game font (modded font if installed)
 	var sb = StyleBoxFlat.new()
 	sb.bg_color = Color(0.04, 0.04, 0.055, 0.86)
-	sb.set_corner_radius_all(16)
+	sb.set_corner_radius_all(load("res://mods/replay/Look.gd").radius(16))
 	sb.corner_detail = 8
 	sb.anti_aliasing = true
 	sb.border_color = Color(1, 1, 1, 0.2)
@@ -79,6 +84,7 @@ func _ready():
 	holder.add_stylebox_override("panel", sb)
 	root.add_child(holder)
 	holder.rect_size = Vector2(W, H)
+	if mono: holder.connect("draw", self, "_draw_frame") # console frame: corner brackets outside the card
 
 	var c = TextureRect.new()
 	c.texture = cover_tex
@@ -213,7 +219,7 @@ static func _sbox(bg:Color, border:Color, w:int, r:int) -> StyleBoxFlat:
 	sb.bg_color = bg
 	sb.border_color = border
 	sb.set_border_width_all(w)
-	sb.set_corner_radius_all(r)
+	sb.set_corner_radius_all(load("res://mods/replay/Look.gd").radius(r))
 	sb.corner_detail = 6
 	sb.anti_aliasing = true
 	sb.draw_center = bg.a > 0
@@ -252,7 +258,7 @@ func _button(bar:Control, text:String, cb:String):
 
 func _status() -> Array:
 	if run.replay: return ["REPLAY", Color("#9ad0ff")]
-	if run.end_type != Globals.END_PASS: return ["FAILED" if run.end_type == Globals.END_FAIL else "GAVE UP", Color("#ff6b6b")]
+	if run.end_type != Globals.END_PASS: return ["FAILED" if run.end_type == Globals.END_FAIL else "GAVE UP", load("res://mods/replay/Look.gd").CRIT.lightened(0.15) if mono else Color("#ff6b6b")]
 	if run.pauses > 0: return ["DISQUALIFIED (paused)", Color("#ffb35e")]
 	return ["PASSED", Color("#6ff1a0")]
 
@@ -277,7 +283,7 @@ func _process(delta):
 	# score counts up over 1.2 s (ease out), ticking
 	var k = clamp(t / 1.2, 0.0, 1.0)
 	var shown = int(run.score * (1.0 - pow(1.0 - k, 3)))
-	score_label.text = Globals.comma_sep(shown)
+	score_label.text = ("%08d" % shown) if mono else Globals.comma_sep(shown) # (osu!-style zero padded score in the personal build)
 	if !stamped and t > 1.25:
 		stamped = true
 		_stamp()

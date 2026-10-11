@@ -6,7 +6,7 @@ extends Control
 
 const BUSES = ["Music"]
 const SIZE = 44.0
-const ACCENT = Color("#8a6cff")
+var ACCENT:Color = load("res://mods/replay/Look.gd").accent()
 const IDLE_HIDE = 2.5
 
 var paused:bool = false

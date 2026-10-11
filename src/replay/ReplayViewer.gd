@@ -114,7 +114,7 @@ class Btn extends Control:
 	func _draw():
 		var sb = StyleBoxFlat.new()
 		sb.bg_color = Color(1, 1, 1, 0.2 if down else (0.1 if hover else 0.0))
-		sb.border_color = Color("#8a6cff") if accent else Color(1, 1, 1, 0.55)
+		sb.border_color = load("res://mods/replay/Look.gd").accent() if accent else Color(1, 1, 1, 0.55)
 		for s in ["left", "top", "right", "bottom"]: sb.set("border_width_" + s, 2 if accent else 1)
 		for c in ["top_left", "top_right", "bottom_right", "bottom_left"]: sb.set("corner_radius_" + c, 10)
 		sb.corner_detail = 6

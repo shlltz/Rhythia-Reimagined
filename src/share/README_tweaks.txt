@@ -49,8 +49,8 @@ WHAT YOU GET
   Settings    redesigned settings page (tab column + big card, like Customize); ESC = title screen;
               "Half Ghost Fade" (25-300%) right under Fade Length in the Notes tab
   Map FX      the cover art is a visualizer: hits on the map's beats, spectrum bars around it;
-              7+ stars: glowing screen sides, 10+ stars: cover and Start quake, lightning on
-              select, hovering Start dims everything else; speed mods count the stars up;
+              7+ stars: glowing screen sides, 10+ stars: cover and Start quake,
+              hovering Start dims everything else; speed mods count the stars up;
               10+ stars also get glitch + chromatic aberration (toggle: Customize > Interface)
   Pass        green glow around the screen once every note is done, zoom into the results
   Results     osu!-style results screen (layout from Rhythia's rewrite): counting score, grade,

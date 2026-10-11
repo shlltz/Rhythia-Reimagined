@@ -6,6 +6,7 @@ extends CanvasLayer
 
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
 const OsuSfx = preload("res://mods/replay/OsuSfx.gd")
+const Look = preload("res://mods/replay/Look.gd")
 const LOGO = 520.0
 const SHIFT = 300.0            # how far the logo moves left when the cards open
 const CARD_W = 440.0
@@ -26,6 +27,7 @@ const RAIN_SHADER = """
 shader_type canvas_item;
 uniform float strength = 0.22;
 uniform vec2 offset = vec2(0.0);
+uniform vec3 tint = vec3(0.8, 0.88, 1.0);
 float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 void fragment() {
 	float aspect = SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x;
@@ -46,7 +48,7 @@ void fragment() {
 		float w = 1.0 - smoothstep(0.0, 0.07 + fl * 0.03, abs(fract(x) - 0.5));
 		a += body * w * (1.0 - fl * 0.3);
 	}
-	COLOR = vec4(0.8, 0.88, 1.0, clamp(a, 0.0, 1.0) * strength);
+	COLOR = vec4(tint, clamp(a, 0.0, 1.0) * strength);
 }
 """
 
@@ -116,8 +118,9 @@ func _ready():
 	root.mouse_filter = Control.MOUSE_FILTER_STOP # nothing behind gets clicks
 	if ResourceLoader.exists("res://uitheme.tres"): root.theme = load("res://uitheme.tres")
 	add_child(root)
+	mono = Look.mono()
 	var dim = ColorRect.new()
-	dim.color = Color(0.015, 0.015, 0.02, 0.94)
+	dim.color = Color(0.008, 0.008, 0.01, 0.96) if mono else Color(0.015, 0.015, 0.02, 0.94)
 	dim.anchor_right = 1; dim.anchor_bottom = 1
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(dim)
@@ -137,6 +140,12 @@ func _ready():
 		c.title = items[i][0]
 		c.sub = items[i][1]
 		c.col = items[i][2]
+		c.index = i
+		c.mono = mono
+		if mono: # white cards; red only for Exit
+			c.col = Look.CRIT if items[i][4] == "exit" else Look.MONO_ACC
+			c.title = c.title.to_upper()
+			c.sub = Look.tag(c.sub)
 		c.font_big = _font(28)
 		c.font_small = _font(15)
 		c.rect_size = Vector2(CARD_W, CARD_H)
@@ -180,8 +189,61 @@ func _ready():
 	brand.margin_left = -400; brand.margin_right = -28; brand.margin_top = -46; brand.margin_bottom = -22
 	brand.modulate = Color(1, 1, 1, 0.3)
 	root.add_child(brand)
+	if mono:
+		brand.visible = false # (the version is in the status line)
+		_add_terminal()
 	apply_skin()
 	show_menu()
+
+# ------------------------------------------------------------------ terminal details (personal build)
+# corner brackets framing the screen, a status line top left (maps, clock) and faint scanlines
+var mono:bool = false
+var status:Label
+var frame:Control
+var scan:ColorRect
+var clock_t:float = 1.0
+var map_count:int = -1
+
+func _add_terminal():
+	frame = Control.new()
+	frame.anchor_right = 1; frame.anchor_bottom = 1
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.connect("draw", self, "_draw_frame")
+	root.add_child(frame)
+	root.move_child(frame, topo.get_index() + 1)
+	status = Label.new()
+	var f = _font(15)
+	if f is DynamicFont:
+		f = f.duplicate()
+		f.extra_spacing_char = 1
+	status.add_font_override("font", f)
+	status.margin_left = 44; status.margin_top = 34; status.margin_right = 1200; status.margin_bottom = 56
+	status.modulate = Color(1, 1, 1, 0.42)
+	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(status)
+	scan = Look.scanlines(0.06)
+	root.add_child(scan)
+
+func _draw_frame():
+	var r = Rect2(Vector2(24, 24), frame.rect_size - Vector2(48, 48))
+	Look.brackets(frame, r, 26.0, Color(1, 1, 1, 0.22 + 0.25 * punch), 2.0)
+	# thin rule under the status line, fading out to the right
+	for k in 8:
+		frame.draw_line(Vector2(44 + k * 40, 62), Vector2(44 + (k + 1) * 40, 62), Color(1, 1, 1, 0.16 * (1.0 - k / 8.0)), 1.0)
+
+func _terminal_step(delta:float):
+	if !status: return
+	clock_t += delta
+	if clock_t >= 1.0:
+		clock_t = 0.0
+		if map_count < 0 and Rhythia.registry_song: map_count = Rhythia.registry_song.get_items().size()
+		var t = OS.get_time()
+		status.text = "RHYTHIA // REIMAGINED v@@VERSION@@     %s MAPS     %02d:%02d" % [str(max(map_count, 0)), t.hour, t.minute]
+	if punch > 0.01 or frame_lit:
+		frame.update() # (brackets flash on the kick; one more redraw once it has faded)
+		frame_lit = punch > 0.01
+	scan.visible = !load("res://mods/replay/Reimagined.gd").lite()
+var frame_lit:bool = false
 
 func _font(size:int):
 	if fonts.has(size): return fonts[size]
@@ -269,7 +331,9 @@ func apply_bg():
 			m.shader.code = load("res://mods/replay/menu2.gd").TOPO_SHADER
 			m.set_shader_param("strength", 0.16)
 			m.set_shader_param("speed", 0.035)
-		_: m.shader.code = RAIN_SHADER
+		_:
+			m.shader.code = RAIN_SHADER
+			if Look.mono(): m.set_shader_param("tint", Vector3(0.9, 0.9, 0.9))
 
 # custom logo from the Rhythia-reimagined skin folder
 func apply_skin():
@@ -277,6 +341,8 @@ func apply_skin():
 	var t = R.skin_tex("logo")
 	logo.texture = t if t else load("res://assets/images/branding/icon.png")
 	tilt = _measure_tilt(logo.texture)
+	# personal build: the stock (pink) logo turns white; a custom logo keeps its own colours
+	logo.material = Look.grey_material() if Look.mono() and !t else null
 
 func _sidebar(page:int):
 	var sb = menu.get_node_or_null("Sidebar")
@@ -410,6 +476,7 @@ func _process(delta):
 	ring.rect_position = centre
 	ring.update()
 	_logo_fx_step(delta)
+	_terminal_step(delta)
 
 func _draw_ring():
 	var vis = menu.get_node_or_null("AudioVisualizer")
@@ -538,7 +605,13 @@ class Card extends Control:
 			press = p
 			update()
 
+	var index:int = 0
+	var mono:bool = false
+
 	func _draw():
+		if mono:
+			_draw_mono()
+			return
 		var w = rect_size.x
 		var h = rect_size.y
 		var x0 = hover * 12.0 - press * 4.0 + beat * 5.0
@@ -566,3 +639,30 @@ class Card extends Control:
 		var cc = Color(1, 1, 1, 0.25 + 0.6 * hover)
 		draw_line(Vector2(cx - 6, cy - 9), Vector2(cx + 3, cy), cc, 2.5)
 		draw_line(Vector2(cx + 3, cy), Vector2(cx - 6, cy + 9), cc, 2.5)
+
+	# personal build: a sharp black slab with a thin outline; hover inverts it (solid fill, dark
+	# text) and corner brackets close in around it; index number + terminal subtitle
+	func _draw_mono():
+		var w = rect_size.x
+		var h = rect_size.y
+		var x0 = hover * 14.0 - press * 6.0 + beat * 4.0
+		var r = Rect2(x0, 0, w, h)
+		draw_rect(r, Color(0.02, 0.02, 0.024, 0.72).linear_interpolate(Color(col.r, col.g, col.b, 0.97), hover))
+		draw_rect(r, Color(1, 1, 1, 0.2 + 0.35 * beat).linear_interpolate(col, hover), false, 1.0)
+		draw_rect(Rect2(x0, 0, 3 + 3 * hover, h), Color(col.r, col.g, col.b, 0.85))
+		var light = 0.299 * col.r + 0.587 * col.g + 0.114 * col.b > 0.6
+		var ink = Color(0.03, 0.03, 0.035) if hover > 0.5 and light else Color(1, 1, 1)
+		if font_small: draw_string(font_small, Vector2(x0 + 20, h * 0.5 + 6), "%02d" % (index + 1), Color(ink.r, ink.g, ink.b, 0.45))
+		var tx = x0 + 62
+		if font_big: draw_string(font_big, Vector2(tx, h * 0.5 + 2), title, ink)
+		if font_small: draw_string(font_small, Vector2(tx, h * 0.5 + 24), sub, Color(ink.r, ink.g, ink.b, 0.5 + 0.2 * hover))
+		var cx = x0 + w - 44 + 8 * hover
+		var cy = h * 0.5
+		for k in 2:
+			var cc = Color(ink.r, ink.g, ink.b, (0.25 + 0.6 * hover) * (1.0 - 0.45 * k))
+			var ox = cx + k * 11
+			draw_line(Vector2(ox - 5, cy - 8), Vector2(ox + 3, cy), cc, 2.0)
+			draw_line(Vector2(ox + 3, cy), Vector2(ox - 5, cy + 8), cc, 2.0)
+		if hover > 0.02:
+			var g = 5.0 + 12.0 * (1.0 - hover)
+			load("res://mods/replay/Look.gd").brackets(self, r.grow(g), 12.0, Color(col.r, col.g, col.b, hover * 0.9), 2.0)

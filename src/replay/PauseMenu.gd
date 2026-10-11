@@ -6,6 +6,7 @@ extends CanvasLayer
 signal chosen(what) # "continue" / "retry" / "quit"
 
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
+const Look = preload("res://mods/replay/Look.gd")
 const ITEMS = [["Continue", Color(0.35, 0.85, 0.45)], ["Retry", Color(1.0, 0.78, 0.25)], ["Quit", Color(1.0, 0.36, 0.36)]]
 const BTN_W = 420.0
 const BTN_H = 64.0
@@ -16,6 +17,7 @@ var box:Control
 var buttons:Array = []
 var sel:int = 0
 var mouse_before:int = Input.MOUSE_MODE_VISIBLE
+var mono:bool = Look.mono() # personal build: sharp slabs, the picked one inverted (Quit in red)
 
 func _ready():
 	layer = 60
@@ -33,10 +35,13 @@ func _ready():
 	if ResourceLoader.exists("res://uitheme.tres"): box.theme = load("res://uitheme.tres")
 	add_child(box)
 	_label("PAUSED", 0, 60, 2.0, Color(1, 1, 1))
-	_label("this run is disqualified - it won't set a personal best", 66, 26, 1.0, Color(1, 1, 1, 0.5))
+	if mono:
+		_label(Look.tag("run disqualified - no personal best"), 66, 26, 1.0, Color(Look.CRIT.r, Look.CRIT.g, Look.CRIT.b, 0.85).lightened(0.2))
+		box.connect("draw", self, "_draw_frame")
+	else: _label("this run is disqualified - it won't set a personal best", 66, 26, 1.0, Color(1, 1, 1, 0.5))
 	for i in ITEMS.size():
 		var b = Button.new()
-		b.text = ITEMS[i][0]
+		b.text = ITEMS[i][0].to_upper() if mono else ITEMS[i][0]
 		b.focus_mode = Control.FOCUS_NONE
 		b.margin_left = 0; b.margin_right = BTN_W
 		b.margin_top = 150 + i * (BTN_H + BTN_GAP); b.margin_bottom = b.margin_top + BTN_H
@@ -82,8 +87,20 @@ func visible_menu(on:bool):
 	box.visible = on
 	set_process_input(on)
 
+func _draw_frame():
+	Look.brackets(box, Rect2(Vector2(-24, 130), Vector2(BTN_W + 48, ITEMS.size() * (BTN_H + BTN_GAP) + 22)), 18.0, Color(1, 1, 1, 0.35), 2.0)
+
 func _hover(i:int):
 	sel = i
+	if mono:
+		for k in buttons.size():
+			var on = k == sel
+			var c = Look.CRIT if k == ITEMS.size() - 1 else Look.MONO_ACC
+			var st = Look.box(Color(c.r, c.g, c.b, 0.96) if on else Color(0.02, 0.02, 0.024, 0.7), c if on else Color(1, 1, 1, 0.25), 1, 0)
+			for s in ["normal", "hover", "pressed", "focus"]: buttons[k].add_stylebox_override(s, st)
+			var ink = (Look.on_accent() if c == Look.MONO_ACC else Color(1, 1, 1)) if on else Color(1, 1, 1, 0.7)
+			for s in ["font_color", "font_color_hover", "font_color_pressed", "font_color_focus"]: buttons[k].add_color_override(s, ink)
+		return
 	for k in buttons.size():
 		var c:Color = ITEMS[k][1]
 		buttons[k].modulate = c if k == sel else Color(c.r, c.g, c.b, 0.55)

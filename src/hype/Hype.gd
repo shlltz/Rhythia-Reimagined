@@ -2,9 +2,8 @@ extends Control
 # Map-page effects:
 # - the cover art is an audio visualizer: it pulses with the bass and spectrum bars grow out of
 #   its four edges
-# - maps above 10 stars: cover + Start quake, lightning strikes the cover when the map is
-#   selected / Start is clicked (soft: no flicker, no screen flash); hovering Start dims everything
-#   else while Start shakes and glows
+# - maps above 10 stars: cover + Start quake; hovering Start dims everything else while Start
+#   shakes and glows
 # - maps above 10 stars: chromatic aberration over the whole screen (stronger on the beat and
 #   while Start is hovered) and glitch bursts on the cover art and the selected map's card
 # - maps from 7 stars: glow along the left and right screen edges in the star colour, pulsing
@@ -97,8 +96,8 @@ func _check_stars():
 	hype = stars > HYPE_STARS
 	if hype and !was: _strikes([0.0]) # selected (or sped up past) a 10+ map
 
-func _strikes(times:Array):
-	for x in times: strike_queue.append(x)
+func _strikes(_times:Array):
+	pass # lightning removed (0.6.11)
 
 func _input(e):
 	if hype and e is InputEventMouseButton and e.pressed and e.button_index == BUTTON_LEFT:

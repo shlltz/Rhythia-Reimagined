@@ -492,9 +492,15 @@ func make_song_button(id:int=-1):
 	badge.margin_top = -30; badge.margin_bottom = -8
 	btn.add_child(badge)
 	badge.set_song(map, _badge_font(btn))
+	if Look.mono(): # personal build: white focus frame on the selected card
+		var fx = Control.new()
+		fx.set_script(MapFocus)
+		btn.add_child(fx)
 	return btn
 
 const StarBadge = preload("res://mods/stars/StarBadge.gd")
+const MapFocus = preload("res://mods/stars/MapFocus.gd")
+const Look = preload("res://mods/replay/Look.gd")
 var badge_font:Font = null
 func _badge_font(btn:Control) -> Font:
 	if badge_font: return badge_font

@@ -161,7 +161,7 @@ def theme_text(t, width, mono=True, edge=None):
         nd = re.match(r'\[node name="([^"]*)"([^\]]*)\]', blk)
         par = re.search(r'parent="([^"]*)"', nd.group(2)) if nd else None
         path = ((par.group(1) if par else '') + '/' + nd.group(1)).split('/') if nd else []
-        if any(k in seg for seg in path for k in KEEP_PATH): res.append(blk); continue
+        if not mono and any(k in seg for seg in path for k in KEEP_PATH): res.append(blk); continue   # (own look: greyscale too)
         for seg in path:
             if seg in DIFF:
                 (o, n) = DIFF[seg]
@@ -397,13 +397,13 @@ SCRIPT_MODS = {
                         'v3MapList.gd': 'res://scripts/ui/menu/buttons/v3MapList.gd',
                         'StartOffset.gd': 'res://scripts/ui/menu/StartOffset.gd',
                         'contentmgr.gd': 'res://scripts/ui/cmgr/contentmgr.gd'},
-              ['StarRating.gd', 'StarCache.gd', 'StarBadge.gd', 'CMIcon.gd', 'CMStyle.gd', 'RecentPlays.gd', 'IconGlyph.gd', 'SpeedSlowest.gd']),
+              ['StarRating.gd', 'StarCache.gd', 'StarBadge.gd', 'CMIcon.gd', 'CMStyle.gd', 'RecentPlays.gd', 'IconGlyph.gd', 'SpeedSlowest.gd', 'MapFocus.gd']),
     'replay': ('replay', {'Replay.gd': 'res://scripts/content/game/Replay.gd', 'NoteManager.gd': 'res://scripts/game/NoteManager.gd',
                           'Game.gd': 'res://scripts/game/Game.gd', 'menu2.gd': 'res://scripts/ui/menu/menu2.gd',
                           'HUD.gd': 'res://scripts/game/HUD.gd', 'CursorTrail.gd': 'res://scripts/game/CursorTrail.gd',
                           'songload.gd': 'res://scripts/loaders/songload.gd', 'EndInfo.gd': 'res://scripts/ui/menu/buttons/EndInfo.gd'},
                ['ReplayViewer.gd', 'ReplayBrowser.gd', 'UIAnim.gd', 'VolumeOverlay.gd', 'LoadScreen.gd', 'AudioVisualizer.gd', 'PauseMenu.gd', 'UIJuice.gd', 'OsuSfx.gd', 'TitleMenu.gd', 'ResultsScreen.gd',
-                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd', 'CrashWatch.gd',
+                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd', 'CrashWatch.gd', 'Look.gd',
                 'icons/uicons-solid-rounded.woff', 'icons/Flaticon-license.txt']),
     'browser': ('browser', {}, ['MapBrowser.gd']),
     'hype': ('hype', {}, ['Hype.gd', 'PassFx.gd']),     # cover visualizer, 7+/10+ star glow / quake / lightning, pass glow + zoom
@@ -498,7 +498,9 @@ def apply(pk, name, o):
         if o.get('headings'):                                       # mod panels: big text (headings) in the bold slot
             pk.add('res://mods/font/headings.flag', b'1'); print('headings use the bold font')
         else: font(pk, path_arg(o['file']), o.get('target', 'hud'))
-    elif name == 'theme': theme(pk, o.get('width', 2))
+    elif name == 'theme':
+        theme(pk, o.get('width', 2))
+        pk.add('res://mods/look/mono.flag', b'1')                    # mods' own screens go monochrome too (Look.gd)
     elif name == 'results': results(pk)
     elif name == 'bigsettings': bigsettings(pk, o.get('scale', 1.2), o.get('friendly', True), o.get('hints', False))
     elif name == 'lang': lang(pk)

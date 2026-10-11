@@ -9,7 +9,9 @@ const R = preload("res://mods/replay/Reimagined.gd")
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
 const OsuSfx = preload("res://mods/replay/OsuSfx.gd")
 const OsuTrail = preload("res://mods/replay/OsuTrail.gd")
-const ACCENT = Color("#8a6cff")
+const Look = preload("res://mods/replay/Look.gd")
+var ACCENT:Color = Look.accent()
+var mono:bool = Look.mono()
 const W = 1060.0
 const H = 680.0
 const TABS = [["trail", "Cursor trail", "style, colour, opacity"], ["hud", "HUD layout", "move & scale panels"],
@@ -51,8 +53,8 @@ func _ready():
 
 	card = Panel.new()
 	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(0.05, 0.05, 0.07, 0.98)
-	sb.border_color = Color(1, 1, 1, 0.12)
+	sb.bg_color = Color(Look.SURFACE.r, Look.SURFACE.g, Look.SURFACE.b, 0.98) if mono else Color(0.05, 0.05, 0.07, 0.98)
+	sb.border_color = Color(1, 1, 1, 0.16 if mono else 0.12)
 	sb.set_border_width_all(1)
 	sb.shadow_color = Color(0, 0, 0, 0.5)
 	sb.shadow_size = 24
@@ -60,14 +62,20 @@ func _ready():
 	card.anchor_left = 0.5; card.anchor_right = 0.5; card.anchor_top = 0.5; card.anchor_bottom = 0.5
 	card.margin_left = -W / 2; card.margin_right = W / 2; card.margin_top = -H / 2; card.margin_bottom = H / 2
 	root.add_child(card)
+	if mono: # console frame: corner brackets just outside the card
+		var fr = Control.new()
+		fr.anchor_right = 1; fr.anchor_bottom = 1
+		fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fr.connect("draw", self, "_draw_frame", [fr])
+		card.add_child(fr)
 
 	var title = _label("RHYTHIA", 34, Color(1, 1, 1))
 	title.rect_position = Vector2(28, 18)
 	card.add_child(title)
-	var sub = _label("reimagined", 34, ACCENT)
+	var sub = _label("reimagined", 34, Look.TEXT_3 if mono else ACCENT)
 	sub.rect_position = Vector2(28 + _font(34).get_string_size("RHYTHIA ").x, 18)
 	card.add_child(sub)
-	var tag = _label("customize  -  v@@VERSION@@", 15, Color(1, 1, 1, 0.4))
+	var tag = _label(("// CUSTOMIZE  ·  v@@VERSION@@" if mono else "customize  -  v@@VERSION@@"), 15, Color(1, 1, 1, 0.4))
 	tag.rect_position = Vector2(30, 60)
 	card.add_child(tag)
 	var close = Button.new()
@@ -127,6 +135,9 @@ func _ready():
 	show_tab(Engine.get_meta("rr_tab") if Engine.has_meta("rr_tab") else "trail", false)
 	# opening click = the game's own (menu2 open_customize plays Press)
 	UIAnim.play(card, Vector2(0, 26), Vector2.ZERO, 0.0, 1.0, 0.3)
+
+func _draw_frame(fr:Control):
+	Look.brackets(fr, Rect2(Vector2(), fr.rect_size).grow(8), 22.0, Color(1, 1, 1, 0.5), 2.0)
 
 func _font(size:int):
 	if fonts.has(size): return fonts[size]
@@ -223,8 +234,10 @@ func _seg(options:Array, current:String, method:String) -> HBoxContainer:
 		on.bg_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.3)
 		on.border_color = ACCENT
 		on.set_border_width_all(2)
+		if mono: on = Look.box(Look.MONO_ACC, Look.MONO_ACC, 1, 0) # (picked = inverted)
 		b.add_stylebox_override("pressed", on)
-		b.add_color_override("font_color_pressed", Color(1, 1, 1))
+		b.add_color_override("font_color_pressed", Look.on_accent())
+		if mono: b.add_color_override("font_color_hover_pressed", Look.on_accent())
 		b.connect("pressed", self, method, [o[0]])
 		h.add_child(b)
 	return h
@@ -803,7 +816,7 @@ class TabButton extends Control:
 	func _draw():
 		var w = rect_size.x
 		var h = rect_size.y
-		var acc = Color("#8a6cff")
+		var acc = load("res://mods/replay/Look.gd").accent()
 		draw_rect(Rect2(0, 0, w, h), Color(1, 1, 1, 0.03 * hover + 0.05 * sel))
 		draw_rect(Rect2(0, 0, 3 + 2 * sel, h), Color(acc.r, acc.g, acc.b, sel))
 		var x = 18 + 4 * hover
@@ -971,7 +984,7 @@ class HudEditor extends Control:
 	func _draw():
 		var u = unit()
 		var c = rect_size / 2
-		var acc = Color("#8a6cff")
+		var acc = load("res://mods/replay/Look.gd").accent()
 		draw_rect(Rect2(Vector2.ZERO, rect_size), Color(1, 1, 1, 0.025))
 		if dragging:
 			draw_line(Vector2(c.x, 0), Vector2(c.x, rect_size.y), Color(acc.r, acc.g, acc.b, 0.35))

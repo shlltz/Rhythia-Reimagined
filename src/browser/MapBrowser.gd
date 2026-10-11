@@ -107,7 +107,7 @@ func _build_ui():
 	ps.bg_color = Color(0.04, 0.04, 0.055, 0.99)
 	ps.border_color = Color(1, 1, 1, 0.1)
 	ps.border_width_top = 1; ps.border_width_left = 1; ps.border_width_right = 1
-	ps.corner_radius_top_left = 10; ps.corner_radius_top_right = 10
+	ps.corner_radius_top_left = Look.radius(10); ps.corner_radius_top_right = Look.radius(10)
 	ps.shadow_color = Color(0, 0, 0, 0.6)
 	ps.shadow_size = 30
 	panel.add_stylebox_override("panel", ps)
@@ -117,7 +117,7 @@ func _build_ui():
 	var head = Panel.new()
 	var hs = StyleBoxFlat.new()
 	hs.bg_color = Color(0.07, 0.07, 0.09)
-	hs.corner_radius_top_left = 10; hs.corner_radius_top_right = 10
+	hs.corner_radius_top_left = Look.radius(10); hs.corner_radius_top_right = Look.radius(10)
 	head.add_stylebox_override("panel", hs)
 	head.anchor_right = 1
 	head.margin_bottom = HEAD_H
@@ -127,14 +127,14 @@ func _build_ui():
 	crumb.add_font_override("font", _font(22))
 	var crumb2 = _label("online maps", Rect2(28 + _font(22).get_string_size("RHYTHIA  ").x, 10, 300, 30))
 	crumb2.add_font_override("font", _font(22))
-	crumb2.add_color_override("font_color", ACCENT)
+	crumb2.add_color_override("font_color", Look.TEXT_3 if mono else ACCENT)
 	search = LineEdit.new()
 	search.placeholder_text = "search maps..."
 	search.add_font_override("font", _font(18))
 	for k in ["normal", "focus"]:
 		var sb = StyleBoxFlat.new()
 		sb.bg_color = Color(1, 1, 1, 0.05 if k == "normal" else 0.08)
-		sb.set_corner_radius_all(6)
+		sb.set_corner_radius_all(Look.radius(6))
 		sb.content_margin_left = 48
 		sb.content_margin_right = 14
 		if k == "focus":
@@ -224,16 +224,22 @@ func _paint_links():
 		for i in g[0].size():
 			var on = i == g[1]
 			var c = Color(1, 1, 1) if on else Color(1, 1, 1, 0.55)
+			if on and mono: c = Look.on_accent() # (picked = inverted: white fill, dark text)
 			g[0][i].add_color_override("font_color", c)
 			g[0][i].add_color_override("font_color_pressed", c)
-			g[0][i].add_color_override("font_color_hover", Color(1, 1, 1))
+			g[0][i].add_color_override("font_color_hover", c if on else Color(1, 1, 1))
 			for k in ["normal", "hover", "pressed"]:
 				var sb = StyleBoxFlat.new()
-				sb.set_corner_radius_all(15)
+				sb.set_corner_radius_all(Look.radius(15))
 				sb.content_margin_left = 14; sb.content_margin_right = 14
-				if on:
+				if on and mono: sb.bg_color = Look.MONO_ACC
+				elif on:
 					sb.bg_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.32)
 					sb.border_color = ACCENT
+					sb.set_border_width_all(1)
+				elif mono:
+					sb.bg_color = Color(1, 1, 1, 0.06 if k == "hover" else 0.0)
+					sb.border_color = Color(1, 1, 1, 0.4 if k == "hover" else 0.16)
 					sb.set_border_width_all(1)
 				else: sb.bg_color = Color(1, 1, 1, 0.08 if k == "hover" else 0.035)
 				g[0][i].add_stylebox_override(k, sb)
@@ -295,6 +301,7 @@ func _cache_key() -> String:
 
 func new_query():
 	query_id += 1
+	last_error = ""
 	maps = []
 	total = 0
 	ui_page = 0
@@ -358,7 +365,7 @@ func _fetch(page:int, qid:int) -> bool:
 		h.remove_meta("busy")
 		page_busy -= 1
 		loading = false
-		info.text = "Couldn't reach rhythia.com (error %d)" % err
+		_fail("Couldn't reach rhythia.com (error %d)" % err)
 	return true
 
 func _fetch_more():
@@ -380,15 +387,16 @@ func _on_api(result, code, _headers, body, h:HTTPRequest):
 			page_todo.push_front(page)
 			_fetch_more()
 			return
-		info.text = "rhythia.com didn't answer (result %d, HTTP %d) - check your connection" % [result, code]
+		_fail("rhythia.com didn't answer (result %d, HTTP %d) - check your connection" % [result, code])
 		_fetch_more()
 		loading = page_busy > 0 or !page_todo.empty()
-		if maps.size() > 0 and !loading: _render()
+		if !loading: _render() # (with nothing loaded: the error state instead of the placeholders)
 		return
 	var d = parse_json(body.get_string_from_utf8())
 	if typeof(d) != TYPE_DICTIONARY:
 		if page_busy == 0: loading = false
-		info.text = "Unexpected answer from rhythia.com"
+		_fail("Unexpected answer from rhythia.com")
+		if !loading and maps.empty(): _render()
 		return
 	var got = d.get("beatmaps")
 	if got is Array:
@@ -433,7 +441,7 @@ func _sort():
 func _update_info():
 	var t = ""
 	if maps.size() == 0:
-		t = "Searching rhythia.com..." if loading else "No maps found"
+		t = "Searching rhythia.com..." if loading else ("No maps found" if last_error == "" else last_error)
 	else:
 		t = "%d maps on rhythia.com" % total
 		if loading: t += "  ·  %s %d..." % ["updating" if showing_cached else "loading", incoming.size()]
@@ -456,6 +464,51 @@ func _render():
 	next_btn.disabled = ui_page >= pages - 1
 	scroll.scroll_vertical = 0
 	_update_info()
+	_empty_state()
+
+# ------------------------------------------------------------------ loading / empty / error states
+var last_error:String = ""
+var empty_lbl:Label
+
+func _fail(t:String):
+	last_error = t
+	info.text = t
+
+# nothing to show yet: grey placeholder cards while the first page loads, a centred message when the
+# search found nothing or rhythia.com could not be reached
+func _empty_state():
+	var none = maps.empty()
+	info.add_color_override("font_color", Look.CRIT.lightened(0.35) if none and last_error != "" and !loading else Color(1, 1, 1))
+	if none and loading:
+		for i in 6: rows_box.add_child(_skeleton())
+	if !empty_lbl:
+		empty_lbl = Label.new()
+		empty_lbl.align = Label.ALIGN_CENTER
+		empty_lbl.valign = Label.VALIGN_CENTER
+		empty_lbl.add_font_override("font", _font(18))
+		empty_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for k in ["anchor_left", "anchor_top", "anchor_right", "anchor_bottom", "margin_left", "margin_top", "margin_right", "margin_bottom"]:
+			empty_lbl.set(k, scroll.get(k))
+		panel.add_child(empty_lbl)
+	empty_lbl.visible = none and !loading
+	var err = last_error != ""
+	empty_lbl.text = ("CAN'T REACH RHYTHIA.COM" if err else "NO MAPS FOUND") + "\n\n" + ("check your connection, then pick a filter again" if err else "try another search or filter")
+	empty_lbl.add_color_override("font_color", Look.CRIT.lightened(0.35) if err else Color(1, 1, 1, 0.5))
+
+func _skeleton() -> Control:
+	var c = Panel.new()
+	c.rect_min_size = Vector2(0, CARD_H)
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.add_stylebox_override("panel", Look.box(CARD_BG, Color(1, 1, 1, 0.05), 1, 6))
+	for r in [Rect2(0, 0, CARD_H, CARD_H), Rect2(CARD_H + 14, 14, 260, 16), Rect2(CARD_H + 14, 40, 160, 12), Rect2(CARD_H + 14, 78, 220, 12)]:
+		var b = ColorRect.new()
+		b.color = Color(1, 1, 1, 0.05)
+		b.rect_position = r.position
+		b.rect_size = r.size
+		b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		c.add_child(b)
+	return c
 
 func _on_prev():
 	ui_page -= 1
@@ -470,7 +523,9 @@ const STATUS_COL = {"RANKED": Color("#b3ff66"), "APPROVED": Color("#66ccff"), "L
 const DIFF_COL = [Color("#9aa3ad"), Color("#4fd86b"), Color("#ffcc33"), Color("#ff5555"), Color("#b27cff"), Color("#7d7d7d")]
 const CARD_BG = Color(0.075, 0.075, 0.095)
 const CARD_HOVER = Color(0.1, 0.1, 0.13)
-const ACCENT = Color("#8a6cff")
+const Look = preload("res://mods/replay/Look.gd")
+var ACCENT:Color = Look.accent()
+var mono:bool = Look.mono()
 
 # "Artist - Title" -> [title, artist]
 static func _split(t:String) -> Array:
@@ -487,7 +542,7 @@ func _make_row(b:Dictionary) -> Control:
 	card.rect_clip_content = true
 	var cs = StyleBoxFlat.new()
 	cs.bg_color = CARD_BG
-	cs.set_corner_radius_all(6)
+	cs.set_corner_radius_all(Look.radius(6))
 	cs.border_color = Color(1, 1, 1, 0.06)
 	cs.set_border_width_all(1)
 	card.add_stylebox_override("panel", cs)
@@ -588,8 +643,18 @@ func _pill(s:String, col:Color) -> PanelContainer:
 	var p = PanelContainer.new()
 	var sb = StyleBoxFlat.new()
 	sb.bg_color = col
-	sb.set_corner_radius_all(9)
+	sb.set_corner_radius_all(Look.radius(9))
 	sb.content_margin_left = 8; sb.content_margin_right = 8; sb.content_margin_top = 1; sb.content_margin_bottom = 1
+	var ink = Color(0.08, 0.08, 0.1)
+	# personal build: text tags are outlined in their colour (only RANKED keeps a solid white tag);
+	# the star pill (no text) keeps its colour fill - the star colour is the one to scan for
+	if mono and s != "":
+		if s == "RANKED": sb.bg_color = Look.MONO_ACC
+		else:
+			sb.bg_color = Color(0, 0, 0, 0.3)
+			sb.border_color = Color(col.r, col.g, col.b, 0.75)
+			sb.set_border_width_all(1)
+			ink = col.lightened(0.25)
 	p.add_stylebox_override("panel", sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -597,7 +662,7 @@ func _pill(s:String, col:Color) -> PanelContainer:
 		var l = Label.new()
 		l.text = s
 		l.add_font_override("font", _font(12))
-		l.add_color_override("font_color", Color(0.08, 0.08, 0.1))
+		l.add_color_override("font_color", ink)
 		l.valign = Label.VALIGN_CENTER
 		p.add_child(l)
 	return p
@@ -627,6 +692,9 @@ func _refresh_row(oid:int):
 	var btn:Button = rows[oid].get_node("Get")
 	var st = state.get(oid, "")
 	btn.disabled = true
+	if mono:
+		_refresh_row_mono(btn, oid, st)
+		return
 	var col = Color(1, 1, 1, 0.12)
 	if _installed(oid):
 		btn.disabled = false
@@ -642,9 +710,47 @@ func _refresh_row(oid:int):
 	for k in ["normal", "hover", "pressed", "disabled"]:
 		var sb = StyleBoxFlat.new()
 		sb.bg_color = col.lightened(0.15) if k == "hover" else col
-		sb.set_corner_radius_all(15)
+		sb.set_corner_radius_all(Look.radius(15))
 		btn.add_stylebox_override(k, sb)
 	btn.add_color_override("font_color_disabled", Color(1, 1, 1, 0.75))
+
+# personal build: Download = white outline (inverts on hover), Go to map = solid white,
+# busy states = dim grey outline, a failed download = red outline
+func _refresh_row_mono(btn:Button, oid:int, st:String):
+	var fill = Color(0, 0, 0, 0.35)
+	var edge = Color(1, 1, 1, 0.6)
+	var ink = Color(1, 1, 1, 0.95)
+	var hover_ink = Look.on_accent()
+	var invert_hover = true
+	if _installed(oid):
+		btn.disabled = false
+		btn.text = "GO TO MAP"
+		fill = Look.MONO_ACC
+		edge = Look.MONO_ACC
+		ink = Look.on_accent()
+		invert_hover = false
+	elif st in ["queued", "downloading", "installing"]:
+		btn.text = {"queued": "QUEUED", "downloading": "DOWNLOADING", "installing": "INSTALLING"}[st]
+		edge = Color(1, 1, 1, 0.2)
+		ink = Color(1, 1, 1, 0.55)
+	else:
+		btn.disabled = false
+		btn.text = "RETRY" if st == "failed" else "DOWNLOAD"
+		if st == "failed":
+			edge = Look.CRIT
+			ink = Look.CRIT.lightened(0.3)
+			hover_ink = Color(1, 1, 1)
+	for k in ["normal", "hover", "pressed", "disabled"]:
+		var f = fill
+		var e = edge
+		if k in ["hover", "pressed"]:
+			f = Color(edge.r, edge.g, edge.b, 0.95) if invert_hover else fill.lightened(0.15)
+			e = Color(edge.r, edge.g, edge.b, 1.0)
+		btn.add_stylebox_override(k, Look.box(f, e, 1, 0))
+	btn.add_color_override("font_color", ink)
+	btn.add_color_override("font_color_disabled", ink)
+	btn.add_color_override("font_color_hover", hover_ink if invert_hover else ink)
+	btn.add_color_override("font_color_pressed", hover_ink if invert_hover else ink)
 
 func _installed(oid:int) -> bool:
 	return _installed_song(oid) != null

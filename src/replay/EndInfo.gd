@@ -107,7 +107,7 @@ func show_pb(_s=null):
 			rainbow_letter_grade = false
 			$LetterGrade.set("custom_colors/font_color",Color(1,1,1))
 			$LetterGrade.material.set_shader_param("shine",0)
-			$Result.set("custom_colors/font_color",Color("#ffdd99"))
+			$Result.set("custom_colors/font_color",Color(1, 1, 1, 0.55) if load("res://mods/replay/Look.gd").mono() else Color("#ffdd99"))
 			$FullCombo.visible = false
 			$Misses.visible = true
 			$Misses.text = "-"

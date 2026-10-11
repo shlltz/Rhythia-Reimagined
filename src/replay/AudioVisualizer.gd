@@ -27,9 +27,15 @@ var target_ceiling:float = 0.01
 var progress:float = 0.0
 var menu:Node
 var preview_cache = null
+# personal build (Look.mono): played part white, the rest dim grey
+var col_fill:Color = COLOR_FILL
+var col_back:Color = COLOR_BACK
 
 func _ready():
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if load("res://mods/replay/Look.gd").mono():
+		col_fill = Color(0.92, 0.92, 0.92, 0.9)
+		col_back = Color(1, 1, 1, 0.22)
 	anchor_top = 1
 	anchor_right = 1
 	anchor_bottom = 1
@@ -113,7 +119,7 @@ func _draw():
 		var s = clamp(mags[i] / ceiling, BAR_MIN / h, 1.0)
 		var x = i / (count - 1.0) * w
 		var bh = s * h
-		draw_rect(Rect2(x, h - bh, BAR_SIZE, bh), COLOR_FILL if x + BAR_SIZE / 2 < split else COLOR_BACK)
+		draw_rect(Rect2(x, h - bh, BAR_SIZE, bh), col_fill if x + BAR_SIZE / 2 < split else col_back)
 
 func _draw_fade():
 	# from transparent (FADE px above the strip) to FADE_COLOR at the strip, solid down to the screen edge

@@ -4,7 +4,9 @@ extends Node
 # bar is hidden; the buttons just switch current_tab) and the settings scrolling on the right.
 # Nothing is moved out of its parent: the game finds every setting by path.
 
-const ACCENT = Color("#8a6cff")
+const Look = preload("res://mods/replay/Look.gd")
+var ACCENT:Color = Look.accent()
+var mono:bool = Look.mono()
 const LEFT = 92.0              # right of the sidebar
 const TAB_W = 270.0
 const SUBS = {"Gameplay": "modifiers, camera", "Notes": "look, colours, spawning",
@@ -29,8 +31,8 @@ func _ready():
 	var card = Panel.new()
 	card.name = "RRCard"
 	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(0.05, 0.05, 0.07, 0.94)
-	sb.border_color = Color(1, 1, 1, 0.1)
+	sb.bg_color = Color(Look.SURFACE.r, Look.SURFACE.g, Look.SURFACE.b, 0.96) if mono else Color(0.05, 0.05, 0.07, 0.94)
+	sb.border_color = Color(1, 1, 1, 0.14 if mono else 0.1)
 	sb.set_border_width_all(1)
 	card.add_stylebox_override("panel", sb)
 	card.anchor_right = 1
@@ -42,11 +44,12 @@ func _ready():
 	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	settings.add_child(card)
 	settings.move_child(card, 0)
+	if mono: card.connect("draw", self, "_draw_frame", [card]) # console frame: corner brackets
 
 	var title = _label("SETTINGS", 40, Color(1, 1, 1))
 	title.rect_position = Vector2(28, 18)
 	card.add_child(title)
-	var sub = _label("game, audio, visuals", 16, Color(1, 1, 1, 0.42))
+	var sub = _label(Look.tag("game, audio, visuals"), 16, Color(1, 1, 1, 0.42))
 	sub.rect_position = Vector2(31, 70)
 	card.add_child(sub)
 	var line = ColorRect.new()
@@ -112,8 +115,8 @@ func _ready():
 			var sl = sec.get_node_or_null("SectionLine")
 			if sl is HSeparator:
 				var ls = StyleBoxLine.new()
-				ls.color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.45)
-				ls.thickness = 2
+				ls.color = Color(1, 1, 1, 0.2) if mono else Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.45)
+				ls.thickness = 1 if mono else 2
 				sl.add_stylebox_override("separator", ls)
 	_add_half_ghost_fade()
 	_add_hitbox_mode()
@@ -165,6 +168,9 @@ func _swept_changed(on:bool):
 
 func _half_ghost_changed(v:float):
 	load("res://mods/replay/Reimagined.gd").set_val("half_ghost_length", v / 100.0)
+
+func _draw_frame(card:Control):
+	Look.brackets(card, Rect2(Vector2(), card.rect_size).grow(-6), 22.0, Color(1, 1, 1, 0.4), 2.0)
 
 func _font(size:int):
 	if fonts.has(size): return fonts[size]
