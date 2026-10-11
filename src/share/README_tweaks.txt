@@ -23,7 +23,10 @@ WHAT YOU GET
   Maps        star rating + estimated BPM on every map (a range like 150-180 when the tempo changes;
               speed mods raise / lower both, animated), Start + buttons under the MODS bar,
               S---- speed (x0.69, the reverse of S++++) left of the <<< button,
-              mods menu that wipes up, star sort, restyled Content Manager,
+              mods menu that wipes up, restyled Content Manager,
+              sort by stars / name / mapper / last played / date added / length / BPM (Filters),
+              osu!-style search: every word must match (title, mapper, difficulty; "quotes" keep
+              words together) + filters stars>10  bpm<=180  length<2:30  notes>3000  mapper=name,
               imported map files go to the Recycle Bin after a successful import,
               map cache fix (faster library loading)
   Browse      "Browse" (sidebar or title screen): online map browser that slides up
@@ -40,7 +43,8 @@ WHAT YOU GET
               - skin: replace the play-area border, grid, trail dot, title logo and sidebar
                 icons with your own images (Choose... / Reset)
               - collections (map packs): "Add to collection..." in a map's ... menu, filter by
-                collection under Filters; sort the map list by stars / name / mapper
+                collection under Filters; sort the map list (stars / name / mapper / played / added /
+                length / BPM)
               - hide the "Default hitboxes, default hitwindow" line and the in-game HIT WINDOW /
                 HITBOX panel (on by default)
               - storage (Windows): move your user folder (maps, replays, scores, settings) to
@@ -57,7 +61,8 @@ WHAT YOU GET
               PASSED / DISQUALIFIED / FAILED, Back / Retry (`) / Watch replay
   Pause       osu!-style pause screen: ESC pauses (any time, even in the lead-in; Continue / Retry / Quit, ESC again = continue,
               counts back in by itself); SPACE only skips intros. A paused run is disqualified
-              (no personal best).
+              (no personal best). Quick retry: hold ` (left of 1) during a run - the screen fades
+              out and the map restarts.
   Replays     "Replays" sidebar button; while watching: SPACE pause | LEFT/RIGHT seek 5s
               (SHIFT 1s, CTRL 15s) | UP/DOWN speed 0.25x-2x | , . frame step | drag the bar
               | H hide UI (twice = whole HUD) | K keybind panel | ESC leave;

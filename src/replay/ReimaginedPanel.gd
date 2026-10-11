@@ -207,10 +207,10 @@ func _row(parent:Control, text:String, ctl:Control) -> HBoxContainer:
 	parent.add_child(h)
 	return h
 
-func _seg(options:Array, current:String, method:String) -> HBoxContainer:
+func _seg(options:Array, current:String, method:String, g:ButtonGroup = null) -> HBoxContainer:
 	var h = HBoxContainer.new()
 	h.add_constant_override("separation", 6)
-	var g = ButtonGroup.new()
+	if g == null: g = ButtonGroup.new() # (two rows can share one group: one choice across both)
 	for o in options:
 		var b = Button.new()
 		b.text = o[1]
@@ -565,7 +565,9 @@ func _build_interface():
 	_check(p, "Glitch + chromatic aberration (10+ star maps, title logo)", R.val("glitch_fx"), "_if_glitch")
 	_check(p, "Lighter effects for low-end PCs (auto when the game slows down)", R.val("lite_fx"), "_if_lite")
 	_heading(p, "Map list", "Also under Filters next to the map list.")
-	_row(p, "Sort by", _seg([["stars", "STARS"], ["name", "NAME"], ["mapper", "MAPPER"]], cf.sort, "_if_sort"))
+	var sg = ButtonGroup.new()
+	_row(p, "Sort by", _seg([["stars", "STARS"], ["name", "NAME"], ["mapper", "MAPPER"]], cf.sort, "_if_sort", sg))
+	_row(p, "", _seg([["recent", "PLAYED"], ["added", "ADDED"], ["length", "LENGTH"], ["bpm", "BPM"]], cf.sort, "_if_sort", sg))
 
 func _if_hitbox(on:bool):
 	R.set_val("hide_hitbox_text", on)
