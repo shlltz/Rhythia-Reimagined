@@ -76,6 +76,72 @@ static func brackets(ci:CanvasItem, r:Rect2, arm:float, col:Color, w:float = 2.0
 		ci.draw_line(p, p + Vector2(arm * d.x, 0), col, w)
 		ci.draw_line(p, p + Vector2(0, arm * d.y), col, w)
 
+# grade letters (S / A / F...): a heavy display face (Exo 2 ExtraBold, added by the theme build) -
+# null when it isn't there (share builds keep their font)
+const GRADE_FONT = "res://mods/look/grade.ttf"
+static func grade_font(size:int):
+	if !(ResourceLoader.exists(GRADE_FONT) or File.new().file_exists(GRADE_FONT)): return null
+	var d = DynamicFontData.new()
+	d.font_path = GRADE_FONT
+	var f = DynamicFont.new()
+	f.font_data = d
+	f.size = size
+	f.use_filter = true
+	return f
+
+# static chromatic aberration + glitch over a control (a grade letter): red / blue pulled apart by
+# `split` px and a few horizontal slices shifted - fixed (seeded), no animation. Reads the screen
+# right where the control is drawn (BackBufferCopy of its rect, a bit wider for the shifts).
+const STATIC_GLITCH_SHADER = """shader_type canvas_item;
+uniform float split = 4.0;
+uniform float seed = 1.0;
+uniform vec2 size = vec2(100.0, 100.0);
+float hash(float n) { return fract(sin(n) * 43758.5453); }
+void fragment() {
+	float band = floor(UV.y * 11.0);
+	float on = step(0.62, hash(band * 7.13 + seed));
+	float shift = (hash(band * 1.7 + seed * 3.1) - 0.5) * 0.16 * on;
+	vec2 uv = SCREEN_UV + vec2(shift * size.x * SCREEN_PIXEL_SIZE.x, 0.0);
+	vec2 sp = vec2((split + 3.0 * on) * SCREEN_PIXEL_SIZE.x, 0.0);
+	vec4 c = textureLod(SCREEN_TEXTURE, uv, 0.0);
+	c.r = textureLod(SCREEN_TEXTURE, uv + sp, 0.0).r;
+	c.b = textureLod(SCREEN_TEXTURE, uv - sp, 0.0).b;
+	COLOR = vec4(c.rgb, 1.0);
+}"""
+static func static_glitch(target:Control, sd:float = 1.0, split:float = 4.0):
+	if target.has_meta("rr_glitch"): return
+	var par = target.get_parent()
+	# drawn right after the target as siblings, not children: a child would take on the target's
+	# colour / alpha (the grade letter's tint) and show as a tinted box
+	var bb = BackBufferCopy.new()
+	bb.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT # (a rect copy came out black on the results layer)
+	par.add_child(bb)
+	par.move_child(bb, target.get_index() + 1)
+	var o = ColorRect.new()
+	o.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	o.material = ShaderMaterial.new()
+	o.material.shader = Shader.new()
+	o.material.shader.code = STATIC_GLITCH_SHADER
+	o.material.set_shader_param("seed", sd)
+	o.material.set_shader_param("split", split)
+	par.add_child(o)
+	par.move_child(o, bb.get_index() + 1)
+	target.set_meta("rr_glitch", [bb, o])
+	target.connect("item_rect_changed", load("res://mods/replay/Look.gd"), "_glitch_fit", [target])
+	target.connect("visibility_changed", load("res://mods/replay/Look.gd"), "_glitch_fit", [target])
+	_glitch_fit(target)
+
+static func _glitch_fit(target:Control):
+	var m = target.get_meta("rr_glitch")
+	var bb = m[0]
+	var o = m[1]
+	if !is_instance_valid(o): return
+	o.rect_position = target.rect_position
+	o.rect_size = target.rect_size
+	o.visible = target.visible
+	bb.visible = target.visible
+	o.material.set_shader_param("size", target.rect_size)
+
 # full-rect scanline overlay (no screen read: just thin dark lines and a slow faint roll band);
 # add it last, it ignores the mouse. Callers hide it with lighter effects on.
 const SCAN_SHADER = """shader_type canvas_item;

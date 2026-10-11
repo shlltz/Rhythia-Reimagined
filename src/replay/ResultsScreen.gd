@@ -145,6 +145,11 @@ func _ready():
 	var g = _grade(acc)
 	grade_text = _label(g[0], Vector2(W - 420, 120), 15.0, g[2], 380)
 	grade_text.align = Label.ALIGN_CENTER
+	if mono: # personal build: heavy display face + static colour split / glitch slices
+		var Look = load("res://mods/replay/Look.gd")
+		var gf = Look.grade_font(270)
+		if gf: grade_text.add_font_override("font", gf)
+		Look.static_glitch(grade_text, 2.7, 5.0)
 	grade_text.rect_pivot_offset = grade_text.rect_size / 2
 	grade_text.modulate.a = 0
 	var ring = GradeRing.new() # thin ring in the grade colour behind the letter

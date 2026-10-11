@@ -544,6 +544,11 @@ func _ready():
 func _reimagined(cf:Dictionary):
 	var R = load("res://mods/replay/Reimagined.gd")
 	if cf.hide_config_hud: $ConfigHud.visible = false
+	var Look = load("res://mods/replay/Look.gd") # personal build: grade letter in the display face
+	if Look.mono() and lettergrade:
+		var old = lettergrade.get_font("font")
+		var gf = Look.grade_font(old.size if old is DynamicFont else 64)
+		if gf: lettergrade.add_font_override("font", gf)
 	for it in R.HUD_ITEMS:
 		var e = R.hud_entry(it[0])
 		var s = get_node_or_null(it[0])

@@ -21,6 +21,21 @@ func get_time_ms(ms:float):
 	var rs = fmod(s,60)
 	return "%d:%02d" % [m,rs]
 
+# Rhythia-reimagined personal build: grade letters in the heavy display face, the big one with a
+# static colour split / glitch (Look.gd); once, same sizes as before
+var rr_graded:bool = false
+func _rr_grade_look():
+	if rr_graded: return
+	rr_graded = true
+	var Look = load("res://mods/replay/Look.gd")
+	if !Look.mono(): return
+	for n in ["LetterGrade", "LetterGrade2"]:
+		var l = get_node_or_null(n)
+		var old = l.get_font("font") if l else null
+		var gf = Look.grade_font(old.size if old is DynamicFont else 64)
+		if gf: l.add_font_override("font", gf)
+	if has_node("LetterGrade"): Look.static_glitch($LetterGrade, 5.3, 3.0)
+
 var rainbow_letter_grade:bool = false
 func update_letter_grade(acc:float=0):
 	var grade:String = "--"
@@ -49,6 +64,7 @@ func update_letter_grade(acc:float=0):
 		grade = "F"
 		gcol = Color("#ff8282")
 	
+	_rr_grade_look()
 	$LetterGrade.text = grade
 	$LetterGrade.material.set_shader_param("shine",shine)
 	$LetterGrade.set("custom_colors/font_color",gcol)
@@ -102,6 +118,7 @@ func show_pb(_s=null):
 		else:
 			visible = true
 			$Result.text = "No PB"
+			_rr_grade_look()
 			$LetterGrade.text = "-"
 			$LetterGrade2.text = ""
 			rainbow_letter_grade = false

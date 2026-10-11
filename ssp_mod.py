@@ -500,7 +500,8 @@ def apply(pk, name, o):
         else: font(pk, path_arg(o['file']), o.get('target', 'hud'))
     elif name == 'theme':
         theme(pk, o.get('width', 2))
-        pk.add('res://mods/look/mono.flag', b'1')                    # mods' own screens go monochrome too (Look.gd)
+        pk.add('res://mods/look/mono.flag', b'1')
+        pk.add('res://mods/look/grade.ttf', src('sharelook', 'Exo2-ExtraBold.ttf'))   # grade letters (Look.grade_font)                    # mods' own screens go monochrome too (Look.gd)
     elif name == 'results': results(pk)
     elif name == 'bigsettings': bigsettings(pk, o.get('scale', 1.2), o.get('friendly', True), o.get('hints', False))
     elif name == 'lang': lang(pk)
