@@ -511,7 +511,9 @@ func _ready():
 		replay_viewer = load("res://mods/replay/ReplayViewer.gd").new()
 		replay_viewer.spawn = self
 		add_child(replay_viewer)
-	
+	elif !Rhythia.replaying and ResourceLoader.exists("res://mods/replay/QuickRetry.gd"):
+		add_child(load("res://mods/replay/QuickRetry.gd").new()) # hold ` to restart the map
+
 	chaos_rng.seed = hash(Rhythia.selected_song.id)
 	earthquake_rng.seed = hash(Rhythia.selected_song.id)
 	

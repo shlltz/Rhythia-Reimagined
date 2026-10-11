@@ -60,7 +60,7 @@ func search_matches(s:Song):
 		difficulty_filter.has(s.difficulty) and
 		(!s.is_online or show_online_maps) and
 		(!s.is_broken or show_broken_maps) and
-		(search_text == "" or s.name.to_lower().find(search_text.to_lower()) != -1) and
+		(search_text == "" or _rr_search_match(s)) and
 		(author_search_text == "" or s.creator.to_lower().find(author_search_text.to_lower()) != -1) and
 		(rr_coll == null or rr_coll.has(s.id))
 	)
@@ -210,6 +210,7 @@ func build_list():
 	disp = []
 	favorite = []
 	_cache_stars()
+	if _sort_fn().begins_with("sortkey"): _rr_sort_keys(star_of.keys()) # (star_of holds every map)
 	for id in Rhythia.favorite_songs:
 		var s = Rhythia.registry_song.get_item(id)
 		if s and Rhythia.is_favorite(id) and search_matches(s):
@@ -310,10 +311,146 @@ var rr_sort:String = "stars"
 var rr_coll = null              # song id -> true, or null = all maps
 var rr_sort_btn:OptionButton
 var rr_coll_btn:OptionButton
-const RR_SORTS = [["stars", "stars"], ["name", "name"], ["mapper", "mapper"]]
+const RR_SORTS = [["stars", "stars"], ["name", "name"], ["mapper", "mapper"], ["recent", "played"],
+	["added", "added"], ["length", "length"], ["bpm", "bpm"]]
 
 func _sort_fn() -> String:
-	return {"name": "sortname", "mapper": "sortmapper"}.get(rr_sort, "sortsong")
+	return {"name": "sortname", "mapper": "sortmapper", "recent": "sortkey_desc", "added": "sortkey_desc",
+		"length": "sortkey", "bpm": "sortkey"}.get(rr_sort, "sortsong")
+
+# sort keys for recently played / date added / length / bpm, filled before each sort (build_list).
+# Maps without a key (never played, BPM not known yet) go last either way; ties by name.
+var rr_key:Dictionary = {}
+var rr_added:Dictionary = {}   # song id -> map file time, read once per session (one stat per map)
+
+func _rr_sort_keys(group:Array):
+	rr_key = {}
+	match rr_sort:
+		"recent":
+			var plays = load("res://mods/stars/RecentPlays.gd")._load()
+			for s in group:
+				var p = plays.get(s.id)
+				if p is Array and p.size() > 0 and p[p.size() - 1] is Dictionary: rr_key[s] = float(p[p.size() - 1].get("t", 0))
+		"added":
+			var f = File.new()
+			for s in group:
+				if !rr_added.has(s.id):
+					var path = str(s.filePath)
+					rr_added[s.id] = float(f.get_modified_time(Globals.p(path))) if path != "" and f.file_exists(Globals.p(path)) else -1.0
+				if rr_added[s.id] > 0: rr_key[s] = rr_added[s.id]
+		"length":
+			for s in group: rr_key[s] = float(s.last_ms)
+		"bpm":
+			var cache = load("res://mods/stars/StarCache.gd").get_instance(get_tree())
+			for s in group:
+				var b = cache.get_bpm(s)
+				if b > 0: rr_key[s] = b
+
+# low -> high (flipped: high -> low)
+func sortkey(a:Song, b:Song):
+	var ha = rr_key.has(a)
+	var hb = rr_key.has(b)
+	if ha != hb: return ha
+	if ha and rr_key[a] != rr_key[b]: return (rr_key[a] < rr_key[b]) != flip_display
+	return sortname(a, b)
+
+# newest first (flipped: oldest first) - played / added dates
+func sortkey_desc(a:Song, b:Song):
+	var ha = rr_key.has(a)
+	var hb = rr_key.has(b)
+	if ha != hb: return ha
+	if ha and rr_key[a] != rr_key[b]: return (rr_key[a] > rr_key[b]) != flip_display
+	return sortname(a, b)
+
+# ---------------------------------------------------------------- search syntax (osu!-style)
+# Every word has to appear in the title, the mapper or the difficulty name ("quoted words" stay
+# together). Filters: stars / bpm / length / notes with = != < <= > >= (length in seconds or m:ss;
+# "=" on a whole number matches that whole number, stars=6 -> 6.00-6.99), mapper=name. Stars and
+# BPM are the 1.0x values. Parsed once per search text, not per map.
+const RR_SEARCH_HELP = "Search: every word must match the title, mapper or difficulty  (\"quoted words\" stay together)\nFilters: stars>10  bpm<=180  length<2:30  notes>3000  mapper=name\n(= != < <= > >=, stars / BPM at 1.0x speed)"
+const RR_KEYS = {"stars": "stars", "star": "stars", "sr": "stars", "bpm": "bpm", "length": "length", "len": "length",
+	"notes": "notes", "note": "notes", "mapper": "mapper", "creator": "mapper"}
+var rr_q_src = null      # search text the parsed query belongs to
+var rr_q_words:Array = []
+var rr_q_filters:Array = [] # [key, op, value]
+
+func _rr_parse_search():
+	rr_q_src = search_text
+	rr_q_words = []
+	rr_q_filters = []
+	var t = search_text.to_lower()
+	var tokens = []
+	var i = 0
+	while i < t.length(): # split on spaces, "quoted parts" kept whole
+		if t[i] == " ":
+			i += 1
+			continue
+		if t[i] == "\"":
+			var j = t.find("\"", i + 1)
+			if j < 0: j = t.length()
+			tokens.append(["q", t.substr(i + 1, j - i - 1)])
+			i = j + 1
+			continue
+		var j = t.find(" ", i)
+		if j < 0: j = t.length()
+		tokens.append(["w", t.substr(i, j - i)])
+		i = j
+	for tk in tokens:
+		var f = _rr_filter(tk[1]) if tk[0] == "w" else null
+		if f: rr_q_filters.append(f)
+		elif tk[1] != "": rr_q_words.append(tk[1])
+
+# "stars>=10" -> ["stars", ">=", 10.0] (or null when it isn't a valid filter: then it's a word)
+func _rr_filter(w:String):
+	for op in ["<=", ">=", "!=", "==", "<", ">", "=", ":"]:
+		var k = w.find(op)
+		if k <= 0: continue
+		var key = RR_KEYS.get(w.substr(0, k))
+		var v = w.substr(k + op.length())
+		if key == null or v == "": return null
+		var o = "=" if op in ["==", ":"] else op
+		if key == "mapper":
+			return [key, o, v] if o in ["=", "!="] else null
+		var num = 0.0
+		if key == "length" and ":" in v:
+			var p = v.split(":")
+			if p.size() != 2 or !p[0].is_valid_integer() or !p[1].is_valid_float(): return null
+			num = float(p[0]) * 60.0 + float(p[1])
+		elif v.is_valid_float(): num = float(v)
+		else: return null
+		return [key, o, num, v.is_valid_integer() and !(":" in v)]
+	return null
+
+func _rr_search_match(s:Song) -> bool:
+	if rr_q_src != search_text: _rr_parse_search()
+	if rr_q_words.size() > 0:
+		var hay = (s.name + "\n" + s.creator + "\n" + str(s.custom_data.get("difficulty_name", ""))).to_lower()
+		for w in rr_q_words:
+			if hay.find(w) == -1: return false
+	for f in rr_q_filters:
+		if !_rr_filter_ok(s, f): return false
+	return true
+
+func _rr_filter_ok(s:Song, f:Array) -> bool:
+	if f[0] == "mapper":
+		var has = s.creator.to_lower().find(f[2]) != -1
+		return has if f[1] == "=" else !has
+	var v = -1.0
+	match f[0]:
+		"stars": v = star_of.get(s, -1.0)
+		"bpm": v = load("res://mods/stars/StarCache.gd").get_instance(get_tree()).get_bpm(s)
+		"length": v = s.last_ms / 1000.0
+		"notes": v = float(s.note_count)
+	if v < 0 or (f[0] == "bpm" and v <= 0): return false # not rated / measured yet (BPM 0 = couldn't tell)
+	var x = f[2]
+	match f[1]:
+		"=": return floor(v) == x if f[3] else abs(v - x) < 0.005
+		"!=": return !(floor(v) == x if f[3] else abs(v - x) < 0.005)
+		"<": return v < x
+		"<=": return v <= x
+		">": return v > x
+		">=": return v >= x
+	return false
 
 func sortname(a:Song, b:Song):
 	var x = a.name.to_lower()
@@ -331,6 +468,8 @@ func _rr_init():
 	if !ResourceLoader.exists(RR): return
 	add_to_group("rr_collections")
 	_rr_load()
+	var se = get_node_or_null("/root/Menu/Main/Maps/MapRegistry/T/Search")
+	if se: se.hint_tooltip = RR_SEARCH_HELP
 	var f = get_node_or_null("/root/Menu/Main/Maps/Filters")
 	if !f or !f.has_node("NameSort"): return
 	var at = f.get_node("NameSort").get_index() + 1
