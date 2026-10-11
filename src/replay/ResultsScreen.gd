@@ -149,8 +149,9 @@ func _ready():
 		var Look = load("res://mods/replay/Look.gd")
 		var art = _rank_art(g[1]) if g[0] != "F" else null # (osu! has no fail rank: F stays a letter)
 		if art:
+			g[2] = art[1] # ring in the art's own colour
 			var tr = TextureRect.new()
-			tr.texture = art
+			tr.texture = art[0]
 			tr.expand = true
 			tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -161,7 +162,8 @@ func _ready():
 			# meme was); the letter in the middle stays untouched
 			tr.material = ShaderMaterial.new()
 			tr.material.shader = Shader.new()
-			tr.material.shader.code = "shader_type canvas_item;\nvoid fragment() {\n\tvec4 c = texture(TEXTURE, UV);\n\tvec2 q = abs(UV - vec2(0.5)) * 2.0;\n\tc.a *= (1.0 - smoothstep(0.45, 1.0, q.x)) * (1.0 - smoothstep(0.45, 1.0, q.y)) * (1.0 - smoothstep(0.7, 1.15, length(q)));\n\tCOLOR = c * COLOR;\n}"
+			tr.material.shader.code = "shader_type canvas_item;\nuniform float edge = 0.0;\nvoid fragment() {\n\tvec4 c = texture(TEXTURE, UV);\n\tvec2 q = abs(UV - vec2(0.5)) * 2.0;\n\tc.a *= smoothstep(edge, edge + 0.22, UV.x) * (1.0 - smoothstep(0.45, 1.0, q.x)) * (1.0 - smoothstep(0.45, 1.0, q.y)) * (1.0 - smoothstep(0.7, 1.15, length(q)));\n\tCOLOR = c * COLOR;\n}"
+			tr.material.set_shader_param("edge", art[2])
 			grade_text.add_child(tr)
 			grade_text.clip_text = false # (it clipped the art to the text box)
 			grade_text.self_modulate.a = 0.0 # (the label keeps its pop-in animation, the art rides on it)
@@ -230,10 +232,41 @@ func _rank_art(k:String):
 		img.blit_rect(clear, Rect2(Vector2.ZERO, clear.get_size()), Vector2.ZERO)
 	var used = img.get_used_rect()
 	if used.size.x <= 0: return null
-	img = img.get_rect(used)
+	# the letter's solid core (on a 1/8 copy: cheap) sets the centre and the ring colour - the glow
+	# around it is lopsided, so a plain crop left the letter off-centre
+	var sm = img.duplicate()
+	sm.resize(int(img.get_width() / 8), int(img.get_height() / 8), Image.INTERPOLATE_BILINEAR)
+	sm.lock()
+	var lo = Vector2(INF, INF)
+	var hi = Vector2(-INF, -INF)
+	var sum = Color(0, 0, 0, 0)
+	var n = 0
+	for y in sm.get_height():
+		for x in sm.get_width():
+			var c = sm.get_pixel(x, y)
+			if c.a < 0.85: continue
+			lo = Vector2(min(lo.x, x), min(lo.y, y))
+			hi = Vector2(max(hi.x, x), max(hi.y, y))
+			sum += c
+			n += 1
+	sm.unlock()
+	var mid = used.position + used.size / 2
+	var col = Color(1, 1, 1)
+	if n > 0:
+		mid = (lo + hi + Vector2.ONE) * 4.0 # (x8 / 2)
+		col = Color(sum.r / n, sum.g / n, sum.b / n).lightened(0.15)
+	# square crop centred on the core, big enough for all of the glow
+	var half = max(max(mid.x - used.position.x, used.end.x - mid.x), max(mid.y - used.position.y, used.end.y - mid.y))
+	var out = Image.new()
+	out.create(int(half * 2), int(half * 2), false, img.get_format())
+	out.fill(Color(0, 0, 0, 0))
+	var src = Rect2(mid - Vector2(half, half), Vector2(half, half) * 2).clip(Rect2(Vector2.ZERO, img.get_size()))
+	out.blit_rect(img, src, src.position - (mid - Vector2(half, half)))
 	var t = ImageTexture.new()
-	t.create_from_image(img, Texture.FLAG_FILTER | Texture.FLAG_MIPMAPS)
-	return t
+	t.create_from_image(out, Texture.FLAG_FILTER | Texture.FLAG_MIPMAPS)
+	var edge = 0.0 # where the cleared meme area ends, as a fraction of the crop width
+	if RANK_CUT.has(k): edge = clamp((RANK_CUT[k] - (mid.x - half)) / (half * 2), 0.0, 1.0)
+	return [t, col, edge]
 
 var fonts:Dictionary = {}
 func _font(size:int):
