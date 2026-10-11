@@ -145,11 +145,31 @@ func _ready():
 	var g = _grade(acc)
 	grade_text = _label(g[0], Vector2(W - 420, 120), 15.0, g[2], 380)
 	grade_text.align = Label.ALIGN_CENTER
-	if mono: # personal build: heavy display face + static colour split / glitch slices
+	if mono: # personal build: the osu! skin's rank art (Wrath), else a heavy face + static glitch
 		var Look = load("res://mods/replay/Look.gd")
-		var gf = Look.grade_font(270)
-		if gf: grade_text.add_font_override("font", gf)
-		Look.static_glitch(grade_text, 2.7, 5.0)
+		var art = _rank_art(g[1]) if g[0] != "F" else null # (osu! has no fail rank: F stays a letter)
+		if art:
+			var tr = TextureRect.new()
+			tr.texture = art
+			tr.expand = true
+			tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var side = 420.0
+			tr.rect_size = Vector2(side, side)
+			tr.rect_position = Vector2((380.0 - side) / 2, (grade_text.rect_size.y - side) / 2)
+			# soft round fade: the art's glow ends in a hard box (and the S has a cut where the
+			# meme was); the letter in the middle stays untouched
+			tr.material = ShaderMaterial.new()
+			tr.material.shader = Shader.new()
+			tr.material.shader.code = "shader_type canvas_item;\nvoid fragment() {\n\tvec4 c = texture(TEXTURE, UV);\n\tvec2 q = abs(UV - vec2(0.5)) * 2.0;\n\tc.a *= (1.0 - smoothstep(0.45, 1.0, q.x)) * (1.0 - smoothstep(0.45, 1.0, q.y)) * (1.0 - smoothstep(0.7, 1.15, length(q)));\n\tCOLOR = c * COLOR;\n}"
+			grade_text.add_child(tr)
+			grade_text.clip_text = false # (it clipped the art to the text box)
+			grade_text.self_modulate.a = 0.0 # (the label keeps its pop-in animation, the art rides on it)
+			grade_text.modulate = Color(1, 1, 1, grade_text.modulate.a)
+		else:
+			var gf = Look.grade_font(270)
+			if gf: grade_text.add_font_override("font", gf)
+			Look.static_glitch(grade_text, 2.7, 5.0)
 	grade_text.rect_pivot_offset = grade_text.rect_size / 2
 	grade_text.modulate.a = 0
 	var ring = GradeRing.new() # thin ring in the grade colour behind the letter
@@ -193,6 +213,27 @@ func _label(text:String, pos:Vector2, scale:float, col:Color, width:float = 0) -
 		l.clip_text = true
 		l.rect_size.x = width / (1.0 if f else scale)
 	return l
+
+# rank art from the osuskin mod (ranking-X / S / A / B / C / D.png, 2436x600 canvases with the
+# letter in the middle): cropped to what is drawn. The skin's S has a meme picture left of the
+# letter - everything left of the letter is cleared first. null when the image isn't there.
+const RANK_CUT = {"S": 1042}
+func _rank_art(k:String):
+	var p = "res://mods/osuskin/ranking-%s.png" % k
+	if !File.new().file_exists(p): return null
+	var img = Image.new()
+	if img.load(p) != OK: return null
+	if RANK_CUT.has(k): # (blit of a clear image: fill_rect is Godot 4)
+		var clear = Image.new()
+		clear.create(RANK_CUT[k], img.get_height(), false, img.get_format())
+		clear.fill(Color(0, 0, 0, 0))
+		img.blit_rect(clear, Rect2(Vector2.ZERO, clear.get_size()), Vector2.ZERO)
+	var used = img.get_used_rect()
+	if used.size.x <= 0: return null
+	img = img.get_rect(used)
+	var t = ImageTexture.new()
+	t.create_from_image(img, Texture.FLAG_FILTER | Texture.FLAG_MIPMAPS)
+	return t
 
 var fonts:Dictionary = {}
 func _font(size:int):
