@@ -73,6 +73,7 @@ func _ready():
 		set_process(false)
 		return
 	header_h = HEADER_H if standalone else 0.0
+	if !standalone: root.connect("visibility_changed", self, "_root_visibility")
 	if standalone:
 		root.set("color", C_BG)
 		_build_header()
@@ -85,8 +86,17 @@ func _ready():
 	_style_finish(add.get_node("Finish"))
 
 func _process(delta):
+	# embedded page while it isn't shown: only the card height keeps easing (no redraw, no text
+	# fixing - that ran every frame on every menu screen); it all syncs as soon as the page shows
+	if !standalone and !root.is_visible_in_tree():
+		_fit_card(delta, false)
+		return
 	_fit_card(delta)
 	_sync_screen()
+
+# the page became visible: fix AddSong's texts right away, before it is drawn
+func _root_visibility():
+	if root.is_visible_in_tree(): _sync_screen()
 
 # ---------------------------------------------------------------- helpers
 func font(size:int) -> DynamicFont:
@@ -453,7 +463,7 @@ func visible_screen() -> String:
 	return current_screen
 
 # card height follows the visible screen (eases between sizes)
-func _fit_card(delta):
+func _fit_card(delta, redraw:bool = true):
 	var scr = visible_screen()
 	if scr == "": return
 	var target = SCREENS[scr][2]
@@ -462,7 +472,7 @@ func _fit_card(delta):
 	if abs(card_h - target) < 0.5: card_h = target
 	add.margin_top = -card_h / 2 + header_h / 2
 	add.margin_bottom = card_h / 2 + header_h / 2
-	add.update()
+	if redraw: add.update()
 
 # Text that AddSong.gd rewrites at runtime: card title/step, finish state, field
 # prefixes, button captions, text-map status. Cheap checks, run every frame.
