@@ -21,26 +21,64 @@ static func disc(ci:CanvasItem, c:Vector2, r:float, col:Color):
 	if col.a <= 0.0 or r <= 0.0: return
 	_band(ci, c, 0.0, TAU, [0.0, max(r - FEATHER * 0.5, 0.0), r + FEATHER * 0.5], [col, col, Color(col.r, col.g, col.b, 0)])
 
-# rings at the given radii (inner to outer), one colour per radius, as a single triangle array
+# rings at the given radii (inner to outer), one colour per radius, as a single triangle array.
+# Vertices are stored ring by ring (all of radius 0, then all of radius 1, ...): each ring is the
+# cached unit directions moved by one native Transform2D.xform, colours are filled by doubling and
+# the triangle indices (same triangles, same order as building it point by point) are cached per
+# segment count - a 400-segment disc used to cost ~7000 GDScript appends a draw (the title glow
+# draws six of them every frame).
 static func _band(ci:CanvasItem, c:Vector2, a0:float, a1:float, radii:Array, cols:Array):
 	var sweep = a1 - a0
 	var n = int(clamp(abs(sweep) * radii[radii.size() - 1] / 2.5, 16, 400)) # ~2.5px per segment
 	var m = radii.size()
+	var dirs = _dirs(a0, sweep, n)
 	var pts = PoolVector2Array()
 	var cs = PoolColorArray()
-	var idx = PoolIntArray()
+	for k in m:
+		var r = max(radii[k], 0.0)
+		pts.append_array(Transform2D(Vector2(r, 0), Vector2(0, r), c).xform(dirs)) # = c + d * r, per point
+		cs.append_array(_fill(cols[k], n + 1))
+	VisualServer.canvas_item_add_triangle_array(ci.get_canvas_item(), _indices(n, m), pts, cs)
+
+# unit directions at the n + 1 segment edges (full circles cached per n; arcs sweep, so not those)
+static func _dirs(a0:float, sweep:float, n:int) -> PoolVector2Array:
+	var full = a0 == 0.0 and sweep == TAU
+	var cache:Dictionary = Engine.get_meta("rr_ring_dirs") if Engine.has_meta("rr_ring_dirs") else {}
+	if full and cache.has(n): return cache[n]
+	var d = PoolVector2Array()
 	for i in n + 1:
 		var a = a0 + sweep * float(i) / n
-		var d = Vector2(cos(a), sin(a))
-		for k in m:
-			pts.append(c + d * max(radii[k], 0.0))
-			cs.append(cols[k])
-		if i > 0:
-			var b = (i - 1) * m
-			for k in m - 1:
-				idx.append(b + k); idx.append(b + k + 1); idx.append(b + m + k)
-				idx.append(b + k + 1); idx.append(b + m + k + 1); idx.append(b + m + k)
-	VisualServer.canvas_item_add_triangle_array(ci.get_canvas_item(), idx, pts, cs)
+		d.append(Vector2(cos(a), sin(a)))
+	if full:
+		if cache.size() > 64: cache.clear()
+		cache[n] = d
+		Engine.set_meta("rr_ring_dirs", cache)
+	return d
+
+# triangles of an (n segments x m radii) band, vertex index = ring * (n + 1) + segment edge
+static func _indices(n:int, m:int) -> PoolIntArray:
+	var key = n * 8 + m
+	var cache:Dictionary = Engine.get_meta("rr_ring_idx") if Engine.has_meta("rr_ring_idx") else {}
+	if cache.has(key): return cache[key]
+	var idx = PoolIntArray()
+	var e = n + 1
+	for i in range(1, n + 1):
+		for k in m - 1:
+			var a = k * e + i - 1        # (edge i - 1, ring k)
+			var b = (k + 1) * e + i - 1  # (edge i - 1, ring k + 1)
+			idx.append(a); idx.append(b); idx.append(a + 1)
+			idx.append(b); idx.append(b + 1); idx.append(a + 1)
+	if cache.size() > 64: cache.clear()
+	cache[key] = idx
+	Engine.set_meta("rr_ring_idx", cache)
+	return idx
+
+# count copies of one colour, built by doubling (native appends, not one per vertex)
+static func _fill(col:Color, count:int) -> PoolColorArray:
+	var a = PoolColorArray([col])
+	while a.size() < count: a.append_array(a)
+	a.resize(count)
+	return a
 
 # frame-rate independent smoothing toward a target (rate = how fast, per second)
 static func approach(v:float, target:float, rate:float, delta:float) -> float:
