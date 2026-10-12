@@ -745,8 +745,9 @@ func _draw_cursor(c:Control, g:Rect2, cell:float):
 		var p = Vector2(g.position.x + (q.x + 0.5) * cell, g.position.y + (q.y + 0.5) * cell)
 		if prev != null: c.draw_line(prev, p, Color(1, 1, 1, 0.5 * (1.0 - j / 13.0)), 1.0 + 3.0 * (1.0 - j / 13.0))
 		prev = p
-	c.draw_circle(prev, 7.0, Color(1, 1, 1, 0.95))
-	c.draw_arc(prev, 11.0, 0, TAU, 24, Color(1, 1, 1, 0.45), 1.0)
+	c.draw_circle(prev, 9.0, Color(1, 1, 1, 1.0))
+	c.draw_circle(prev, 4.0, Color(0.02, 0.02, 0.024, 1.0))
+	c.draw_arc(prev, 15.0, 0, TAU, 28, Color(1, 1, 1, 0.7), 2.0)
 
 func _draw_field():
 	var c = field
@@ -767,7 +768,6 @@ func _draw_field():
 		var hs = cell * 0.5
 		c.draw_rect(Rect2(h - Vector2(hs, hs) / 2, Vector2(hs, hs)), Color(1, 1, 1, 0.12))
 		c.draw_rect(Rect2(h - Vector2(hs, hs) / 2, Vector2(hs, hs)), Look.LINE_HI, false, 1.0)
-	_draw_cursor(c, g, cell)
 	var ns = cell * 0.5
 	var i = m.lower_bound(pos - 220.0)
 	while i < m.notes.size() and m.notes[i][2] <= pos + APPROACH:
@@ -798,6 +798,7 @@ func _draw_field():
 		else:
 			c.draw_rect(r, col, false, 1.5)
 		i += 1
+	_draw_cursor(c, g, cell) # on top of the notes
 	c.draw_string(_font(13), Vector2(g.position.x, g.end.y + 34), "%d selected / %d notes   playhead %s" % [sel.size(), m.notes.size(), Model.fmt_time(int(pos))], Look.TEXT_3)
 
 # ------------------------------------------------------------------ timeline
