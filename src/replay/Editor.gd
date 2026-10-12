@@ -61,7 +61,7 @@ var advance:bool = false
 var sel:Dictionary = {}              # key -> note
 var clip:Array = []
 var hover_cell:Vector2 = Vector2(-9, -9)
-var cur_trail:Array = [] # raw pointer positions (grid units) for the cursor visualizer
+var show_cursor:bool = true # pattern cursor: glides from note to note, arriving on each note's time
 var field_drag = null                # {start: Vector2 grid, keys}
 var tl_drag = null
 var drag_delta:Vector2 = Vector2.ZERO
@@ -647,8 +647,6 @@ func _field_input(ev):
 	if !m: return
 	if ev is InputEventMouseMotion:
 		hover_cell = _to_grid(ev.position)
-		cur_trail.append(hover_cell)
-		if cur_trail.size() > 18: cur_trail.pop_front()
 		if field_drag != null:
 			var d = _snap_pos(hover_cell) - _snap_pos(field_drag.start) if pos_snap != "free" else hover_cell - field_drag.start
 			if drag_delta != d:
@@ -687,7 +685,6 @@ func _field_input(ev):
 
 func _field_exit():
 	hover_cell = Vector2(-9, -9)
-	cur_trail.clear()
 	field.update()
 
 # the note near a grid point among the ones the field shows now
@@ -719,17 +716,37 @@ func _place_note(g:Vector2):
 	if advance: _seek(ms + Model.step_ms(m.bpm, m.div))
 	_sel_changed()
 
-# cursor visualizer: the exact (unsnapped) pointer with a fading trail, like the in-game cursor
+# where the pattern cursor is at time t (grid units): rests on a note, then glides to the next one and
+# arrives exactly on its time (up to 600 ms of travel), so the mapper sees how the pattern moves
+func _cursor_at(t:float):
+	var i = m.lower_bound(t)
+	if i >= m.notes.size():
+		if m.notes.empty(): return null
+		var l = m.notes[m.notes.size() - 1]
+		return Vector2(l[0], l[1])
+	var nx = m.notes[i]
+	if i == 0: return Vector2(nx[0], nx[1])
+	var pv = m.notes[i - 1]
+	var span = min(nx[2] - pv[2], 600.0)
+	var k = clamp((t - (nx[2] - span)) / max(span, 1.0), 0.0, 1.0)
+	k = k * k * (3.0 - 2.0 * k)
+	return Vector2(pv[0], pv[1]).linear_interpolate(Vector2(nx[0], nx[1]), k)
+
+func _toggle_cursor():
+	show_cursor = !show_cursor
+	field.update()
+
 func _draw_cursor(c:Control, g:Rect2, cell:float):
-	var n = cur_trail.size()
-	if n == 0 or hover_cell.x < -5: return
-	var prev = Vector2.ZERO
-	for i in n:
-		var p = Vector2(g.position.x + (cur_trail[i].x + 0.5) * cell, g.position.y + (cur_trail[i].y + 0.5) * cell)
-		if i > 0: c.draw_line(prev, p, Color(1, 1, 1, 0.5 * float(i) / n), 1.0 + 3.0 * float(i) / n)
+	if !show_cursor or m.notes.empty(): return
+	var prev = null
+	for j in range(12, -1, -1):
+		var q = _cursor_at(pos - j * 22.0)
+		if q == null: return
+		var p = Vector2(g.position.x + (q.x + 0.5) * cell, g.position.y + (q.y + 0.5) * cell)
+		if prev != null: c.draw_line(prev, p, Color(1, 1, 1, 0.5 * (1.0 - j / 13.0)), 1.0 + 3.0 * (1.0 - j / 13.0))
 		prev = p
-	c.draw_circle(prev, 6.0, Color(1, 1, 1, 0.95))
-	c.draw_arc(prev, 9.0, 0, TAU, 20, Color(1, 1, 1, 0.45), 1.0)
+	c.draw_circle(prev, 7.0, Color(1, 1, 1, 0.95))
+	c.draw_arc(prev, 11.0, 0, TAU, 24, Color(1, 1, 1, 0.45), 1.0)
 
 func _draw_field():
 	var c = field
@@ -2358,6 +2375,7 @@ func _input(ev):
 			KEY_PERIOD: _jump_note(1)
 			KEY_B: _bookmark_add()
 			KEY_L: _set_loop(!loop_on)
+			KEY_C: _toggle_cursor()
 			KEY_BRACKETLEFT: _loop_mark(true)
 			KEY_BRACKETRIGHT: _loop_mark(false)
 			KEY_F5: _test(ev.shift)
