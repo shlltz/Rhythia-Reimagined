@@ -203,7 +203,7 @@ func _heading(parent:Control, text:String, sub:String = ""):
 	if sub != "":
 		var s = _label(sub, 14, Color(1, 1, 1, 0.45))
 		s.autowrap = true
-		s.rect_min_size.x = content.rect_size.x
+		s.rect_min_size.x = parent.rect_min_size.x if parent.rect_min_size.x > 0 else content.rect_size.x
 		parent.add_child(s)
 
 func _row(parent:Control, text:String, ctl:Control) -> HBoxContainer:
@@ -269,6 +269,7 @@ func _check(parent:Control, text:String, on:bool, method:String) -> CheckBox:
 	c.text = text
 	c.pressed = on
 	c.focus_mode = Control.FOCUS_NONE
+	c.add_constant_override("hseparation", 12) # (the tick sat right against the first letter)
 	c.connect("toggled", self, method)
 	parent.add_child(c)
 	return c
@@ -569,6 +570,14 @@ func _build_interface():
 	var p = _page("interface")
 	var cf = R.cfg()
 	_heading(p, "Interface", "Title screen background and less clutter on the map page and in game.")
+	var sc = ScrollContainer.new() # (the page is taller than the card since Atmosphere was added)
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.scroll_horizontal_enabled = false
+	p.add_child(sc)
+	p = VBoxContainer.new()
+	p.rect_min_size.x = content.rect_size.x - 20
+	p.add_constant_override("separation", 10)
+	sc.add_child(p)
 	_check(p, "Hide \"Default hitboxes, default hitwindow\" on the map page", cf.hide_hitbox_text, "_if_hitbox")
 	_check(p, "Hide the HIT WINDOW / HITBOX panel and HW / HB text in game", cf.hide_config_hud, "_if_config")
 	_row(p, "Title background", _seg([["rain", "RAIN"], ["snow", "SNOW"], ["waves", "WAVEY"]], cf.title_bg, "_if_bg"))
