@@ -125,7 +125,7 @@ func _input(ev):
 	if mb and !mb.hidden: return
 	var t = get_node_or_null("TitleMenu")
 	if t and t.visible: return
-	var f = get_viewport().gui_get_focus_owner()
+	var f = get_focus_owner()
 	if f is LineEdit and f.text != "":
 		f.release_focus() # first Esc just leaves the search box
 		return

@@ -142,14 +142,35 @@ func _ready():
 	root.add_child(confirm)
 	var mus = menu.get_node_or_null("MenuSong")
 	if mus: mus.stream_paused = true
+	_cover(true)
 	if Engine.has_meta("rr_editor_model"):
 		var live = Engine.get_meta("rr_editor_model")
 		Engine.remove_meta("rr_editor_model")
 		_adopt(live, Engine.get_meta("rr_editor_pos") if Engine.has_meta("rr_editor_pos") else 0.0)
 	UIAnim.play(root, Vector2(0, 18), Vector2.ZERO, 0.0, 1.0, 0.25)
 
+# the menu pages behind stay hidden while the editor is open: the map search grabs focus on every
+# typed character, the map list scrolls on the wheel and Space starts the map - none of that may
+# reach the menu from here
+var covered:Array = []
+func _cover(on:bool):
+	if on:
+		var main = menu.get_node_or_null("Main")
+		if main:
+			for c in main.get_children():
+				if c is CanvasItem and c.visible:
+					c.visible = false
+					covered.append(c)
+	else:
+		for c in covered:
+			if is_instance_valid(c): c.visible = true
+		covered = []
+
 func _exit_tree():
+	_cover(false)
 	if is_instance_valid(ap): ap.stop()
+	var eb = AudioServer.get_bus_index("RREdit")
+	if eb >= 0: AudioServer.set_bus_effect_enabled(eb, 0, false)
 	_wave_cleanup()
 	var mus = menu.get_node_or_null("MenuSong") if is_instance_valid(menu) else null
 	if mus and !Engine.has_meta("rr_editor_testing"): mus.stream_paused = false
@@ -230,9 +251,31 @@ func _style_input(c:Control):
 func _panel_style(bg:Color) -> StyleBoxFlat:
 	return Look.box(bg, Look.LINE, 1, 0)
 
+# editing playback goes through its own bus (into the game's Music bus) so slow speeds can keep the
+# song's pitch with a pitch shifter that is only enabled when speed != 1: no delay at normal speed
+func _edit_bus() -> String:
+	var bus = AudioServer.get_bus_index("RREdit")
+	if bus < 0:
+		AudioServer.add_bus()
+		bus = AudioServer.get_bus_count() - 1
+		AudioServer.set_bus_name(bus, "RREdit")
+		AudioServer.add_bus_effect(bus, AudioEffectPitchShift.new())
+		AudioServer.set_bus_effect_enabled(bus, 0, false)
+	bus = AudioServer.get_bus_index("RREdit")
+	AudioServer.set_bus_send(bus, "Music" if AudioServer.get_bus_index("Music") >= 0 else "Master")
+	return "RREdit"
+
+func _apply_speed():
+	ap.pitch_scale = speed
+	var bus = AudioServer.get_bus_index("RREdit")
+	if bus >= 0 and AudioServer.get_bus_effect_count(bus) > 0:
+		var fx = AudioServer.get_bus_effect(bus, 0)
+		if fx is AudioEffectPitchShift: fx.pitch_scale = 1.0 / speed # (the tape-style pitch change of pitch_scale cancelled out)
+		AudioServer.set_bus_effect_enabled(bus, 0, speed != 1.0)
+
 func _build_audio():
 	ap = AudioStreamPlayer.new()
-	ap.bus = "Music" if AudioServer.get_bus_index("Music") >= 0 else "Master"
+	ap.bus = _edit_bus()
 	add_child(ap)
 	var hs = Rhythia.get_stream_with_default("user://hit", Rhythia.def_hit_snd)
 	for i in 4:
@@ -568,7 +611,13 @@ func _snap_pos(v:Vector2) -> Vector2:
 func _place_ms() -> int:
 	return m.snap(pos, m.bpm, m.offset, m.div) if time_snap else int(round(pos))
 
+func _drop_focus(ev):
+	if ev is InputEventMouseButton and ev.pressed:
+		var fo = root.get_focus_owner()
+		if fo: fo.release_focus()
+
 func _field_input(ev):
+	_drop_focus(ev)
 	if !m: return
 	if ev is InputEventMouseMotion:
 		hover_cell = _to_grid(ev.position)
@@ -964,6 +1013,7 @@ func _draw_minimap(c:Control, sz:Vector2):
 	c.draw_line(Vector2(pos * k, r.position.y), Vector2(pos * k, r.end.y), Look.hot(0.9), 2.0)
 
 func _tl_input(ev):
+	_drop_focus(ev)
 	if !m: return
 	var lane = _lane_rect()
 	if ev is InputEventMouseButton:
@@ -1463,7 +1513,7 @@ func _toggle_play():
 	else:
 		if pos >= audio_len - 20.0: pos = 0.0
 		ap.stream = stream
-		ap.pitch_scale = speed
+		_apply_speed()
 		ap.play(pos / 1000.0)
 		playing = true
 		_prev_pos = pos
@@ -1471,7 +1521,7 @@ func _toggle_play():
 
 func _speed_changed(i:int):
 	speed = [0.5, 0.75, 1.0][i]
-	if playing: ap.pitch_scale = speed
+	_apply_speed()
 
 func _set_loop(on:bool):
 	loop_on = on
@@ -2208,8 +2258,8 @@ func _exit():
 func _input(ev):
 	if _closing: return
 	if !(ev is InputEventKey) or !ev.pressed or ev.echo: return
-	var fo = get_viewport().gui_get_focus_owner()
-	var typing = fo is LineEdit
+	var fo = root.get_focus_owner()
+	var typing = fo is LineEdit and !(fo.get_parent() is SpinBox) # (a number box never needs a space / letter shortcut)
 	if confirm.visible: return
 	if ev.scancode == KEY_ESCAPE:
 		if typing:
