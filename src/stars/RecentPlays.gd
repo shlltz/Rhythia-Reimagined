@@ -46,7 +46,7 @@ static func _load() -> Dictionary:
 
 static func record(run:Dictionary):
 	var song = run.get("song")
-	if !song or run.get("replay"): return
+	if !song or run.get("replay") or song.id == "rr_editor_test": return # (map editor test runs are not plays)
 	var all = _load()
 	var plays:Array = all.get(song.id, [])
 	var acc = float(run.hits) / max(1.0, float(run.total))

@@ -246,6 +246,16 @@ func _relayout():
 			bt.add_color_override(k, Color(0, 0, 0, 0))
 		bt.hint_tooltip = {"menu": "Map actions", "heart": "Favorite", "play": "Play / stop the song"}[n[1]]
 		bt.add_child(load("res://mods/stars/IconGlyph.gd").new(n[1]))
+	if ResourceLoader.exists("res://mods/replay/Editor.gd") and !ctrl.has_node("RREdit"): # map editor button
+		var eb = Button.new()
+		eb.name = "RREdit"
+		eb.text = "EDIT"
+		eb.rect_min_size = Vector2(52, 40)
+		eb.size_flags_horizontal = 0
+		eb.focus_mode = Control.FOCUS_NONE
+		eb.hint_tooltip = "Open this map in the map editor"
+		eb.connect("pressed", self, "_rr_edit")
+		ctrl.add_child(eb)
 	right.alignment = BoxContainer.ALIGN_CENTER # cover + name / mapper / stars, centred in the column
 	run_btn.rect_min_size = Vector2(0, 48)
 	run_btn.size_flags_vertical = 0
@@ -258,13 +268,17 @@ func _relayout():
 	update()
 	call_deferred("_fit_column")
 
+func _rr_edit():
+	var mn = get_tree().root.get_node_or_null("Menu")
+	if mn and mn.has_method("open_editor") and Rhythia.selected_song: mn.open_editor(Rhythia.selected_song)
+
 # Start + the icon row as wide as the cover, so the column lines up
 func _fit_column():
 	var box = get_node_or_null("RS/H2/Mods/RunBox")
 	var side = box.rect_size.x if box else 380.0
 	run_btn.size_flags_horizontal = SIZE_FILL
 	var btns = []
-	for n in ["Actions", "Favorite", "PreviewMusic"]:
+	for n in ["Actions", "Favorite", "PreviewMusic", "RREdit"]:
 		var b = ctrl_box.get_node_or_null(n)
 		if b and b.visible: btns.append(b)
 	for b in btns: b.rect_min_size.x = floor((side - 8 * (btns.size() - 1)) / max(1, btns.size()))

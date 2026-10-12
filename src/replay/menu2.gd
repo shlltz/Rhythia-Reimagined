@@ -81,6 +81,10 @@ func _ready():
 # ---------------------------------------------------------------- osu-style screens
 # results screen after a run, title menu on startup and on Esc from map selection
 func _add_osu_screens():
+	if Engine.has_meta("rr_editor_testing"):
+		_editor_return() # back from a map editor test run: no results screen, straight back to the editor
+		Engine.set_meta("title_seen", true)
+		return
 	if Rhythia.has_meta("last_run"):
 		var run = Rhythia.get_meta("last_run")
 		Rhythia.remove_meta("last_run")
@@ -113,13 +117,13 @@ func _input(ev):
 	var maps = get_node_or_null("Main/Maps")
 	var st = get_node_or_null("Main/Settings")
 	if !(maps and maps.is_visible_in_tree()) and !(st and st.is_visible_in_tree()): return
-	for n in ["ResultsScreen", "ReplayBrowser", "ReimaginedPanel"]:
+	for n in ["ResultsScreen", "ReplayBrowser", "ReimaginedPanel", "Editor"]:
 		if has_node(n): return
 	var mb = get_node_or_null("MapBrowser")
 	if mb and !mb.hidden: return
 	var t = get_node_or_null("TitleMenu")
 	if t and t.visible: return
-	var f = get_viewport().gui_get_focus_owner()
+	var f = get_focus_owner()
 	if f is LineEdit and f.text != "":
 		f.release_focus() # first Esc just leaves the search box
 		return
@@ -241,6 +245,8 @@ func _add_replay_button():
 	var last = replays
 	if ResourceLoader.exists(MAP_BROWSER):
 		last = _sidebar_button(l, "Browse", "res://assets/images/ui/cloud_32.png", replays.name, "open_map_browser")
+	if ResourceLoader.exists(EDITOR):
+		last = _sidebar_button(l, "Editor", "res://assets/images/ui/cloud_32.png", last.name, "open_editor")
 	# Rhythia-reimagined customize panel (icon drawn: three sliders)
 	var cz = _sidebar_button(l, "Customize", "res://assets/images/ui/cloud_32.png", last.name, "open_customize")
 	var tex = cz.get_node("Tex")
@@ -329,6 +335,37 @@ func open_customize():
 	var p = load("res://mods/replay/ReimaginedPanel.gd").new()
 	p.name = "ReimaginedPanel"
 	add_child(p)
+
+# map editor (Editor.gd): from the title card, the sidebar and the map page button
+const EDITOR = "res://mods/replay/Editor.gd"
+func open_editor(song = null):
+	if has_node("Editor") or !ResourceLoader.exists(EDITOR): return
+	if has_node("Press"): get_node("Press").play()
+	var e = load(EDITOR).new()
+	e.name = "Editor"
+	add_child(e)
+	if song != null: e.call_deferred("open_song", song)
+
+# a test run from the editor ended (pass, fail or exit): drop its traces, restore the selection,
+# reopen the editing session
+func _editor_return():
+	Engine.remove_meta("rr_editor_testing")
+	Rhythia.start_offset = 0
+	if Rhythia.has_meta("last_run"):
+		var run = Rhythia.get_meta("last_run")
+		Rhythia.remove_meta("last_run")
+		var rp = str(run.get("replay_path", ""))
+		if rp != "" and File.new().file_exists(rp): Directory.new().remove(rp)
+	var d = Directory.new()
+	var best = Globals.p("user://bests/rr_editor_test")
+	if d.file_exists(best): d.remove(best)
+	if Rhythia.has_meta("last_run_best"): Rhythia.remove_meta("last_run_best")
+	var prev = Engine.get_meta("rr_editor_prev") if Engine.has_meta("rr_editor_prev") else ""
+	Engine.remove_meta("rr_editor_prev")
+	if prev != "":
+		var s = Rhythia.registry_song.get_item(prev)
+		if s is Object: Rhythia.select_song(s)
+	open_editor()
 
 const MAP_BROWSER = "res://mods/browser/MapBrowser.gd"
 func open_map_browser():
