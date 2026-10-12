@@ -17,7 +17,7 @@ const SIDEBAR = {
 	"results": "play", "play": "play", "settings": "settings", "replays": "film", "browse": "cloud-download",
 	"customize": "settings-sliders", "favorites": "heart", "favourites": "heart", "content": "square-plus",
 	"contentmgr": "square-plus", "import": "square-plus", "language": "language", "lang": "language",
-	"quit": "power", "exit": "power", "credits": "users",
+	"editor": "music-note", "quit": "power", "exit": "power", "credits": "users",
 }
 
 static func available() -> bool:

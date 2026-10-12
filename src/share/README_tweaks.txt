@@ -67,6 +67,15 @@ WHAT YOU GET
               (SHIFT 1s, CTRL 15s) | UP/DOWN speed 0.25x-2x | , . frame step | drag the bar
               | H hide UI (twice = whole HUD) | K keybind panel | ESC leave;
               misses show as red ticks on the replay bar
+  Editor      "Editor" title card + sidebar button, EDIT on the map page: edits real .sspm maps
+              (new map from an mp3 / ogg / wav, or any library map). 3x3 field + timeline with
+              waveform, snapping (BPM / offset / 1/1..1/16 grid are editor aids, not stored in the
+              map), select / move / copy / paste / duplicate / mirror / rotate / repeat, undo / redo,
+              bookmarks, loop, hit sounds + metronome, checks, autosave + recovery, SAVE (.sspm in
+              your library, old file backed up first), EXPORT (verified copy + .txt), TEST (F5) runs
+              the real game and returns to the same session. SPACE play | LEFT/RIGHT step | B bookmark
+              | L loop | CTRL+Z/Y/C/V/D/A/S | ESC leave. Original library maps are never overwritten
+              (built-in / online maps open as a *_edit copy).
   Look        Exo 2 font, colours matching the Rhythia logo, Flaticon icons, osu-style results panel,
               bigger settings page
   Language    Vietnamese (pick "Tieng Viet" in the language menu, in place of Polish)
