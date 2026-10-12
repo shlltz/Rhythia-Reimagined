@@ -140,9 +140,9 @@ func _ready():
 	confirm = ConfirmationDialog.new()
 	confirm.connect("confirmed", self, "_confirmed")
 	root.add_child(confirm)
-	var mus = menu.get_node_or_null("MenuSong")
-	if mus: mus.stream_paused = true
 	_cover(true)
+	_find_players()
+	_hush()
 	if Engine.has_meta("rr_editor_model"):
 		var live = Engine.get_meta("rr_editor_model")
 		Engine.remove_meta("rr_editor_model")
@@ -166,14 +166,39 @@ func _cover(on:bool):
 			if is_instance_valid(c): c.visible = true
 		covered = []
 
+# the game's own music (menu music / the map-page preview, nodes named MenuSong) keeps playing
+# behind the editor and mixes with the song being edited: pause every other player while the
+# editor is open, put them back on exit
+var other_players:Array = []
+var hushed:Array = []
+var _hush_t:float = 0.0
+func _find_players():
+	other_players = []
+	var stack = [get_tree().root]
+	while !stack.empty():
+		var n = stack.pop_back()
+		if n == self or n == ap or n == wave_player: continue
+		for c in n.get_children(): stack.append(c)
+		if n is AudioStreamPlayer and !(self.is_a_parent_of(n)): other_players.append(n)
+
+func _hush():
+	for n in other_players:
+		if is_instance_valid(n) and n.playing and !n.stream_paused:
+			n.stream_paused = true
+			hushed.append(n)
+
+func _unhush():
+	for n in hushed:
+		if is_instance_valid(n): n.stream_paused = false
+	hushed = []
+
 func _exit_tree():
+	_unhush()
 	_cover(false)
 	if is_instance_valid(ap): ap.stop()
 	var eb = AudioServer.get_bus_index("RREdit")
 	if eb >= 0: AudioServer.set_bus_effect_enabled(eb, 0, false)
 	_wave_cleanup()
-	var mus = menu.get_node_or_null("MenuSong") if is_instance_valid(menu) else null
-	if mus and !Engine.has_meta("rr_editor_testing"): mus.stream_paused = false
 
 func _font(size:int):
 	if fonts.has(size): return fonts[size]
@@ -1558,13 +1583,17 @@ func _process(delta):
 	if !m:
 		return
 	if playing:
-		var p = (ap.get_playback_position() + AudioServer.get_time_since_last_mix() - AudioServer.get_output_latency()) * 1000.0
-		if p < pos - 200.0 or !ap.playing:
-			if !ap.playing:
-				playing = false
-				if loop_on and loop_b > loop_a: _seek(loop_a)
+		if !ap.playing:
+			playing = false
+			if loop_on and loop_b > loop_a: _seek(loop_a)
 		else:
-			pos = max(pos, p) if p >= pos - 60.0 else p
+			# playhead = the audio clock, smoothed: the wall clock moves it every frame, the audio position
+			# (capped time since the last mix: a stalled mixer must not shoot the playhead ahead) pulls it
+			# back by 15 % a frame; a real jump (> 0.4 s) snaps
+			var raw = ap.get_playback_position() + clamp(AudioServer.get_time_since_last_mix(), 0.0, 0.05) - AudioServer.get_output_latency()
+			var est = pos + delta * 1000.0 * speed
+			var d = raw * 1000.0 - est
+			pos = raw * 1000.0 if abs(d) > 400.0 else max(pos, est + d * 0.15) # (never steps back: a lagging clock just holds the playhead)
 		if loop_on and loop_b > loop_a and pos >= loop_b:
 			_seek(loop_a)
 			ap.play(pos / 1000.0)
@@ -1585,6 +1614,10 @@ func _process(delta):
 		tl.update()
 		field.update()
 	if wave_state == "loading": _wave_step()
+	_hush_t += delta
+	if _hush_t > 0.5:
+		_hush_t = 0.0
+		_hush() # (a preview that restarts on its own is paused again)
 	_auto_t += delta
 	if _auto_t > 15.0:
 		_auto_t = 0.0
@@ -1642,23 +1675,30 @@ func _wave_begin():
 			wave_state = "ready"
 			return
 		f.close()
-	# two buses: the capture bus at 0 dB sends into a muted one, the peak meter reads the first
-	var bus = AudioServer.get_bus_index("RRWave")
-	if bus < 0:
-		AudioServer.add_bus()
-		bus = AudioServer.get_bus_count() - 1
-		AudioServer.set_bus_name(bus, "RRWave")
+	# two buses: the capture bus (0 dB, the peak meter reads it) sends into a muted one. A bus can only
+	# send to a bus with a LOWER index, so the muted one must be created first - the other way round
+	# the send was ignored and the capture played at 4x pitch through the speakers
 	var mute = AudioServer.get_bus_index("RRMute")
 	if mute < 0:
 		AudioServer.add_bus()
 		mute = AudioServer.get_bus_count() - 1
 		AudioServer.set_bus_name(mute, "RRMute")
-		AudioServer.set_bus_volume_db(mute, -80.0)
+	AudioServer.set_bus_volume_db(mute, -80.0)
+	AudioServer.set_bus_mute(mute, true)
+	var bus = AudioServer.get_bus_index("RRWave")
+	if bus < 0:
+		AudioServer.add_bus()
+		bus = AudioServer.get_bus_count() - 1
+		AudioServer.set_bus_name(bus, "RRWave")
 	AudioServer.set_bus_send(AudioServer.get_bus_index("RRWave"), "RRMute")
+	if AudioServer.get_bus_index("RRWave") < AudioServer.get_bus_index("RRMute"): # (cannot happen on a fresh start)
+		AudioServer.move_bus(AudioServer.get_bus_index("RRMute"), AudioServer.get_bus_index("RRWave"))
 	wave.resize(int(ceil(audio_len / BIN)) + 2)
 	for i in wave.size(): wave[i] = 0.0
 	wave_player = AudioStreamPlayer.new()
-	wave_player.stream = stream
+	var cs = Globals.audioLoader.load_file(m.meta.audio) # (its own stream object: not shared with the editing playback)
+	if cs is AudioStreamOGGVorbis or cs is AudioStreamMP3: cs.loop = false
+	wave_player.stream = cs if cs != Globals.error_sound and cs != null else stream
 	wave_player.bus = "RRWave"
 	wave_player.pitch_scale = WAVE_PITCH
 	add_child(wave_player)
