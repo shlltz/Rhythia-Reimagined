@@ -417,6 +417,7 @@ func _relayout_mods():
 	var mods = get_node_or_null("RS/H2/Mods")
 	if !mods or mods.has_node("ModsToggle") or !mods.has_node("NoFail") or !mods.has_node("SuddenDeath"): return
 	_add_slowest_speed(mods)
+	_touch_speed(mods)
 	var col_a = mods.get_node("NoFail").rect_position.x
 	var col_b = mods.get_node("SuddenDeath").rect_position.x
 	var top = 0.0
@@ -621,6 +622,27 @@ func _update_stars(map):
 	if Rhythia.mod_speed_level != Globals.SPEED_NORMAL:
 		speed = Globals.speed_multi[Rhythia.mod_speed_level]
 	star_badge.set_song(map, _i("/Data/Data").get_font("font"), speed)
+
+# touch screens: the Speed box opens a number pad (SpeedPad.gd) - the Android keyboard often never
+# showed for it or never committed the value
+func _touch_speed(mods:Control, force:bool = false):
+	var c = mods.get_node_or_null("SpeedMod/C")
+	if !c or !c.has_node("CustomSpeed") or !(force or OS.has_touchscreen_ui_hint()): return
+	if !ResourceLoader.exists("res://mods/stars/SpeedPad.gd"): return
+	var le = c.get_node("CustomSpeed").get_line_edit()
+	le.editable = false
+	le.virtual_keyboard_enabled = false
+	le.focus_mode = Control.FOCUS_NONE
+	le.connect("gui_input", self, "_speed_tap", [le, c])
+
+func _speed_tap(ev, le:LineEdit, c:Control):
+	if !(ev is InputEventMouseButton) or ev.button_index != BUTTON_LEFT or ev.pressed: return
+	if !Rect2(Vector2(), le.rect_size).has_point(ev.position): return # (a drag-scroll lifts off screen)
+	if get_tree().root.has_node("SpeedPad"): return
+	var pad = load("res://mods/stars/SpeedPad.gd").new()
+	pad.name = "SpeedPad"
+	pad.c = c
+	get_tree().root.add_child(pad)
 
 # S---- (x0.69) button left of the stock <<< one (SpeedSlowest.gd)
 func _add_slowest_speed(mods:Control):
