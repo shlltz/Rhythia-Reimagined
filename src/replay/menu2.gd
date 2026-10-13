@@ -77,6 +77,8 @@ func _ready():
 	# touch screens: drag-to-scroll for the settings page, replay list and other scroll areas
 	if OS.has_touchscreen_ui_hint() and !get_tree().root.has_node("TouchScroll"):
 		get_tree().root.call_deferred("add_child", load("res://mods/replay/TouchScroll.gd").new())
+	if OS.has_touchscreen_ui_hint() and !get_tree().root.has_node("TouchKeys") and ResourceLoader.exists("res://mods/replay/TouchKeys.gd"):
+		get_tree().root.call_deferred("add_child", load("res://mods/replay/TouchKeys.gd").new())
 
 # ---------------------------------------------------------------- osu-style screens
 # results screen after a run, title menu on startup and on Esc from map selection
