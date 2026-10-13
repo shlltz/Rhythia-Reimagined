@@ -71,7 +71,7 @@ func stop():
 	set_process(false)
 	if is_instance_valid(target):
 		var parent = target.get_parent()
-		if parent and parent.is_connected("sort_children", self, "_on_sorted"):
+		if parent is Container and parent.is_connected("sort_children", self, "_on_sorted"):
 			parent.disconnect("sort_children", self, "_on_sorted")
 		target.rect_position = base + to_off
 		target.modulate.a = to_a
