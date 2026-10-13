@@ -636,14 +636,18 @@ func _logs_prev():
 
 # the log of the session that crashed, ready to paste (also used by the menu's crash prompt)
 static func crash_report() -> String:
-	var path = load("res://mods/replay/CrashWatch.gd").previous_log()
-	return "CRASH REPORT (previous session)" + char(10) + _read_log(path if path != "" else LOG_FILE)
+	var CW = load("res://mods/replay/CrashWatch.gd")
+	var path = CW.previous_log()
+	var tr = CW.trail()
+	if tr != "": tr = "LAST MOMENTS (every 2 s, newest last):" + char(10) + tr + char(10)
+	return "CRASH REPORT (previous session)" + char(10) + tr + _read_log(path if path != "" else LOG_FILE)
 
 func _log_text() -> String:
 	if log_prev:
 		var path = load("res://mods/replay/CrashWatch.gd").previous_log()
 		if path == "": return "(no log from the last session)"
-		return "LAST SESSION" + (" (crashed)" if load("res://mods/replay/CrashWatch.gd").crashed() else "") + char(10) + _read_log(path)
+		if load("res://mods/replay/CrashWatch.gd").crashed(): return crash_report()
+		return "LAST SESSION" + char(10) + _read_log(path)
 	return _read_log(LOG_FILE)
 
 # no log: say where it looked, so a bug report still helps
