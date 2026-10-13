@@ -1731,7 +1731,7 @@ func _wave_begin():
 	wave.resize(int(ceil(audio_len / BIN)) + 2)
 	for i in wave.size(): wave[i] = 0.0
 	wave_player = AudioStreamPlayer.new()
-	var cs = Globals.audioLoader.load_file(m.meta.audio) # (its own stream object: not shared with the editing playback)
+	var cs = _load_stream(m.meta.audio) # (its own stream object: not shared with the editing playback)
 	if cs is AudioStreamOGGVorbis or cs is AudioStreamMP3: cs.loop = false
 	wave_player.stream = cs if cs != Globals.error_sound and cs != null else stream
 	wave_player.bus = "RRWave"
@@ -1847,6 +1847,16 @@ func _adopt(model, at:float = 0.0, from_song = null):
 	_auto_rev = m.rev
 	msg("")
 
+# the game's AudioLoader.load_file maps user:// through Globals.p, which on Android points at a
+# different folder than the engine's user:// (where the editor keeps its files): read the bytes here
+func _load_stream(path:String):
+	var f = File.new()
+	if f.open(path, File.READ) != OK: return null
+	var b = f.get_buffer(f.get_len())
+	f.close()
+	if b.size() == 0: return null
+	return Globals.audioLoader.load_buffer(b, false)
+
 func _load_audio():
 	stream = null
 	audio_ok = false
@@ -1855,7 +1865,7 @@ func _load_audio():
 	playing = false
 	var path = m.meta.audio
 	if path != "" and File.new().file_exists(path):
-		var s = Globals.audioLoader.load_file(path)
+		var s = _load_stream(path)
 		if s != Globals.error_sound and s != null:
 			stream = s
 			if s is AudioStreamOGGVorbis or s is AudioStreamMP3: s.loop = false
