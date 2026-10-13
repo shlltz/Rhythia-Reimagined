@@ -586,8 +586,6 @@ func _build_interface():
 	p.add_child(gap)
 	_check(p, "Glitch + chromatic aberration (10+ star maps, title logo)", R.val("glitch_fx"), "_if_glitch")
 	_check(p, "Lighter effects for low-end PCs (auto when the game slows down)", R.val("lite_fx"), "_if_lite")
-	if OS.has_touchscreen_ui_hint():
-		_check(p, "In-game keyboard for text boxes (off = the phone's keyboard)", R.val("touch_keys"), "_if_touch_keys")
 	if mono: _build_atmosphere(p)
 	_heading(p, "Map list", "Also under Filters next to the map list.")
 	var sg = ButtonGroup.new()
@@ -666,9 +664,6 @@ func _if_hitbox(on:bool):
 func _if_config(on:bool): R.set_val("hide_config_hud", on)
 
 func _if_glitch(on:bool): R.set_val("glitch_fx", on)
-
-func _if_touch_keys(on:bool):
-	R.set_val("touch_keys", on)
 
 func _if_lite(on:bool):
 	R.set_val("lite_fx", on)
