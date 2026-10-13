@@ -19,7 +19,6 @@ const DEFAULTS = {
 	"collection": "",           # map list filter ("" = all maps)
 	"half_ghost_length": 1.0,   # Half Ghost: how long the notes take to fade (1.0 = game default)
 	"swept_hitbox": true,       # count notes the cursor passes through between frames (NoteManager)
-	"touch_keys": true,         # touch screens: the in-game keyboard (TouchKeys.gd) instead of the phone's
 	"lite_fx": false,           # lighter effects for low-end PCs (also switched on for the session by fps_watch)
 	"glitch_fx": true,          # glitch + chromatic aberration (10+ star maps, title logo)
 	"title_bg": "rain",         # title screen background: rain | snow | waves (topographic)
