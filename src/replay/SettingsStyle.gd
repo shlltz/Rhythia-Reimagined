@@ -11,6 +11,17 @@ const SUBS = {"Gameplay": "modifiers, camera", "Notes": "look, colours, spawning
 	"World & Cursor": "background, cursor", "UI": "HUD, colours", "Video & Audio": "graphics, volume",
 	"Replays & Misc": "replays, other"}
 
+# "+" cell after the last colorset (Note Colors): opens the colorset maker (ColorsetMaker.gd)
+func _colorset_plus():
+	yield(get_tree(), "idle_frame")
+	yield(get_tree(), "idle_frame")
+	yield(get_tree(), "idle_frame")
+	if is_instance_valid(settings) and ResourceLoader.exists("res://mods/replay/ColorsetMaker.gd"):
+		load("res://mods/replay/ColorsetMaker.gd").install(settings, menu)
+
+func _open_colorset_maker(grid:Node):
+	load("res://mods/replay/ColorsetMaker.gd").open(menu, grid)
+
 var settings:Control
 var scroll:ScrollContainer
 var tabs:TabContainer
@@ -20,6 +31,7 @@ var menu:Node
 
 func _ready():
 	menu = get_parent()
+	call_deferred("_colorset_plus")
 	settings = menu.get_node_or_null("Main/Settings")
 	scroll = menu.get_node_or_null("Main/Settings/S")
 	tabs = menu.get_node_or_null("Main/Settings/S/F/TabContainer")
