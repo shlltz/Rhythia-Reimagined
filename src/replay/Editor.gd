@@ -194,7 +194,6 @@ func _unhush():
 	hushed = []
 
 func _exit_tree():
-	_fs_restore()
 	_unhush()
 	_cover(false)
 	if is_instance_valid(ap): ap.stop()
@@ -2080,34 +2079,17 @@ func _pick_audio(new_map:bool):
 
 # the game's file picker (Globals.file_sel) sits on the root under the editor's layer: on phones
 # (Godot's own dialog, no system one) it opened invisible behind the editor while still taking the
-# input. While it's open it is moved onto a layer above the editor, and back when it answers.
-var fs_layer:CanvasLayer = null
-var fs_home = null   # [parent, index]
+# input. While it's open the editor layer is hidden, and shown again when the picker answers (it
+# always does: a cancel answers with nothing). Moving the picker onto a higher layer instead
+# crashed phones (its nodes re-entered the tree without a viewport).
 var fs_then:String = ""
 
 func _fs_raise(then:String):
 	fs_then = then
-	var fs = Globals.file_sel
-	if !is_instance_valid(fs) or fs_home != null: return
-	fs_layer = CanvasLayer.new()
-	fs_layer.layer = layer + 1
-	get_tree().root.add_child(fs_layer)
-	fs_home = [fs.get_parent(), fs.get_index()]
-	fs.get_parent().remove_child(fs)
-	fs_layer.add_child(fs)
-
-func _fs_restore():
-	var fs = Globals.file_sel
-	if fs_home != null and is_instance_valid(fs) and is_instance_valid(fs_home[0]):
-		fs.get_parent().remove_child(fs)
-		fs_home[0].add_child(fs)
-		fs_home[0].move_child(fs, min(fs_home[1], fs_home[0].get_child_count() - 1))
-	fs_home = null
-	if is_instance_valid(fs_layer): fs_layer.queue_free()
-	fs_layer = null
+	if is_instance_valid(Globals.file_sel) and !Globals.file_sel.use_native: visible = false
 
 func _fs_done(v):
-	_fs_restore()
+	visible = true
 	if fs_then != "": call(fs_then, v)
 
 func _audio_new(files:PoolStringArray):
