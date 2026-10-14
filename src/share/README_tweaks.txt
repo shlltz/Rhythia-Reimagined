@@ -67,6 +67,9 @@ WHAT YOU GET
               (SHIFT 1s, CTRL 15s) | UP/DOWN speed 0.25x-2x | , . frame step | drag the bar
               | H hide UI (twice = whole HUD) | K keybind panel | ESC leave;
               misses show as red ticks on the replay bar
+  Colorsets   Settings > Notes > Note Colors: a "+" cell after the last colorset opens the Colorset
+              Maker (name, colours with a picker, add / remove / reorder, mirror, load an existing
+              set, Save / Save & Use). Saved as colorsets/<name>.txt like hand-made ones.
   Editor      "Editor" title card + sidebar button, EDIT on the map page: edits real .sspm maps
               (new map from an mp3 / ogg / wav, or any library map). 3x3 field + timeline with
               waveform, snapping (BPM / offset / 1/1..1/16 grid are editor aids, not stored in the
