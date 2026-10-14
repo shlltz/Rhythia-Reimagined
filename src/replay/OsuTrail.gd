@@ -5,7 +5,8 @@ extends MultiMeshInstance
 # Rhythia-reimagined settings; the dot image can be replaced by skin slot "trail".
 
 const R = preload("res://mods/replay/Reimagined.gd")
-const LIFE = 0.18              # seconds at length 1.0
+const LIFE = 0.30              # seconds at length 1.0
+const GAP = 1.55               # distance between dots, in cursor widths (osu!: separate soft dots, not a smear)
 const MAX_DOTS = 500
 const BEHIND = 0.002           # world units behind the cursor
 
@@ -28,7 +29,7 @@ func _ready():
 	life = LIFE * clamp(float(cf.trail_length), 0.2, 4.0)
 	alpha = clamp(float(cf.trail_alpha), 0.0, 1.0)
 	size = clamp(float(cf.trail_size), 0.2, 3.0)
-	spacing = 0.263 * Rhythia.cursor_scale * size * 0.16
+	spacing = 0.263 * Rhythia.cursor_scale * size * GAP
 	radius = 0.1315 * Rhythia.cursor_scale * 0.8 * size
 	var tex = R.skin_tex("trail")
 	if !tex: tex = dot_texture()
@@ -63,7 +64,8 @@ static func dot_texture() -> Texture:
 	img.lock()
 	for y in 64:
 		for x in 64:
-			var a = clamp(1.0 - Vector2(x - 31.5, y - 31.5).length() / 32.0, 0.0, 1.0)
+			var r = Vector2(x - 31.5, y - 31.5).length() / 32.0 # soft round blob: a solid core, then a short fade to the edge
+			var a = clamp((1.0 - r) / 0.45, 0.0, 1.0)
 			img.set_pixel(x, y, Color(1, 1, 1, a * a * (3.0 - 2.0 * a)))
 	img.unlock()
 	var t = ImageTexture.new()
@@ -94,5 +96,5 @@ func _process(delta):
 		var k = clamp(1.0 - (now - q[1]) / life, 0.0, 1.0)
 		var rr = radius * (0.45 + 0.55 * k)
 		multimesh.set_instance_transform(i, Transform(Basis().scaled(Vector3(rr, rr, rr)), q[0] + off))
-		multimesh.set_instance_color(i, Color(c.r, c.g, c.b, k * k * alpha * 0.4))
+		multimesh.set_instance_color(i, Color(c.r, c.g, c.b, pow(k, 1.4) * alpha * 0.7))
 	multimesh.visible_instance_count = dots.size()
