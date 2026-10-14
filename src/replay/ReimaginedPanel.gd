@@ -840,8 +840,8 @@ class TrailPreview extends Control:
 		var c = rect_size / 2
 		var r = min(rect_size.x, rect_size.y) * 0.36
 		var p = c + Vector2(sin(t * 1.9), sin(t * 3.8)) * r
-		var life = 0.18 * float(cf.trail_length)
-		var spacing = 4.0 * float(cf.trail_size)
+		var life = 0.30 * float(cf.trail_length)
+		var spacing = 26.0 * 1.55 * float(cf.trail_size) # (cursor width x OsuTrail.GAP)
 		if last == null: last = p
 		var d = p.distance_to(last)
 		if d >= spacing:
@@ -874,12 +874,12 @@ class TrailPreview extends Control:
 		match cf.trail_style:
 			"osu":
 				if !tex: tex = load("res://mods/replay/OsuTrail.gd").dot_texture()
-				var life = 0.18 * float(cf.trail_length)
+				var life = 0.30 * float(cf.trail_length)
 				var rr0 = cr * 0.8 * float(cf.trail_size)
 				for q in dots:
 					var k = clamp(1.0 - (t - q[1]) / life, 0.0, 1.0)
 					var rr = rr0 * (0.45 + 0.55 * k)
-					draw_texture_rect(tex, Rect2(q[0] - Vector2(rr, rr), Vector2(rr, rr) * 2), false, Color(tc.r, tc.g, tc.b, k * k * a * 0.55))
+					draw_texture_rect(tex, Rect2(q[0] - Vector2(rr, rr), Vector2(rr, rr) * 2), false, Color(tc.r, tc.g, tc.b, pow(k, 1.4) * a * 0.7))
 			"game":
 				for q in ghosts:
 					var k = clamp(1.0 - (t - q[1]) / 0.12, 0.0, 1.0)
