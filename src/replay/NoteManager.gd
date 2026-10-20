@@ -474,6 +474,7 @@ func spawn_notes(note_array:Array):
 
 func _ready():
 	cache_settings()
+	_mp_lock()
 	if ResourceLoader.exists("res://mods/replay/Reimagined.gd"):
 		sweep_on = bool(load("res://mods/replay/Reimagined.gd").val("swept_hitbox"))
 	if Rhythia.do_note_pushback:
@@ -511,7 +512,7 @@ func _ready():
 		replay_viewer = load("res://mods/replay/ReplayViewer.gd").new()
 		replay_viewer.spawn = self
 		add_child(replay_viewer)
-	elif !Rhythia.replaying and ResourceLoader.exists("res://mods/replay/QuickRetry.gd"):
+	elif !Rhythia.replaying and !_mp_lock() and ResourceLoader.exists("res://mods/replay/QuickRetry.gd"):
 		add_child(load("res://mods/replay/QuickRetry.gd").new()) # hold ` to restart the map
 
 	chaos_rng.seed = hash(Rhythia.selected_song.id)
@@ -789,7 +790,7 @@ func _process(delta:float):
 	
 	if active and notes_loaded:
 		if !notes_loaded: return
-		can_skip = ((next_ms-prev_ms) > 5000) and (next_ms >= max(ms+(3000*speed_multi),1100*speed_multi)) and ($Notes.multimesh.visible_instance_count <= 1)
+		can_skip = ((next_ms-prev_ms) > 5000) and (next_ms >= max(ms+(3000*speed_multi),1100*speed_multi)) and ($Notes.multimesh.visible_instance_count <= 1) and !_mp_on
 		
 		$Cursor.can_switch_move_modes = (ms < Rhythia.music_offset)
 		
@@ -1153,6 +1154,13 @@ func _mobile_pause_just() -> bool:
 	keys_down["mpause"] = down
 	return down and !was
 
+# a multiplayer match is running (MPClient): no skipping, no quick retry, no Retry
+var _mp_on:bool = false
+func _mp_lock() -> bool:
+	var mp = get_tree().root.get_node_or_null("RRMultiplayer")
+	_mp_on = mp != null and mp.in_match()
+	return _mp_on
+
 func _live_pause(delta:float):
 	var mp = _mobile_pause_just()
 	var space = _key_just(KEY_SPACE)
@@ -1235,6 +1243,7 @@ func _pause_choice(what:String):
 				music_started = true
 			else: music_started = false # paused in the lead-in: music starts on time again
 		"retry":
+			if _mp_on: return # (no restarts in a multiplayer match)
 			get_tree().change_scene("res://scenes/song.tscn")
 		"quit":
 			get_parent().end(Globals.END_GIVEUP)

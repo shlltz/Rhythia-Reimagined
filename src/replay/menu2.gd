@@ -28,6 +28,8 @@ func _ready():
 			if ResourceLoader.exists(p): keep.append(load(p))
 		Engine.set_meta("rr_keep_loaded", keep)
 	load("res://mods/replay/CrashWatch.gd").start(get_tree())
+	if !get_tree().root.has_node("RRMultiplayer") and ResourceLoader.exists(MULTI):
+		load("res://mods/replay/MPClient.gd").recover() # a multiplayer match was cut off: own settings back
 	call_deferred("_crash_prompt")
 	if Rhythia.arcw_mode:
 		get_tree().change_scene("res://w.tscn")
@@ -81,6 +83,11 @@ func _ready():
 # ---------------------------------------------------------------- osu-style screens
 # results screen after a run, title menu on startup and on Esc from map selection
 func _add_osu_screens():
+	var mp = get_tree().root.get_node_or_null("RRMultiplayer")
+	if Engine.has_meta("rr_mp_return") or (mp and mp.connected_or_trying()):
+		_multi_return() # back from a multiplayer match (or still in a lobby): the lobby and its results
+		Engine.set_meta("title_seen", true)
+		return
 	if Engine.has_meta("rr_editor_testing"):
 		_editor_return() # back from a map editor test run: no results screen, straight back to the editor
 		Engine.set_meta("title_seen", true)
@@ -117,7 +124,7 @@ func _input(ev):
 	var maps = get_node_or_null("Main/Maps")
 	var st = get_node_or_null("Main/Settings")
 	if !(maps and maps.is_visible_in_tree()) and !(st and st.is_visible_in_tree()): return
-	for n in ["ResultsScreen", "ReplayBrowser", "ReimaginedPanel", "Editor"]:
+	for n in ["ResultsScreen", "ReplayBrowser", "ReimaginedPanel", "Editor", "Multiplayer"]:
 		if has_node(n): return
 	var mb = get_node_or_null("MapBrowser")
 	if mb and !mb.hidden: return
@@ -247,6 +254,8 @@ func _add_replay_button():
 		last = _sidebar_button(l, "Browse", "res://assets/images/ui/cloud_32.png", replays.name, "open_map_browser")
 	if ResourceLoader.exists(EDITOR):
 		last = _sidebar_button(l, "Editor", "res://assets/images/ui/cloud_32.png", last.name, "open_editor")
+	if ResourceLoader.exists(MULTI):
+		last = _sidebar_button(l, "Multiplayer", "res://assets/images/ui/cloud_32.png", last.name, "open_multiplayer")
 	# Rhythia-reimagined customize panel (icon drawn: three sliders)
 	var cz = _sidebar_button(l, "Customize", "res://assets/images/ui/cloud_32.png", last.name, "open_customize")
 	var tex = cz.get_node("Tex")
@@ -366,6 +375,25 @@ func _editor_return():
 		var s = Rhythia.registry_song.get_item(prev)
 		if s is Object: Rhythia.select_song(s)
 	open_editor()
+
+# multiplayer (MPMenu.gd screens, MPClient.gd connection): title card + sidebar button
+const MULTI = "res://mods/replay/MPMenu.gd"
+func open_multiplayer(results:bool = false):
+	if has_node("Multiplayer") or !ResourceLoader.exists(MULTI): return
+	if has_node("Press"): get_node("Press").play()
+	if results: Engine.set_meta("rr_mp_results", true)
+	var m = load(MULTI).new()
+	m.name = "Multiplayer"
+	add_child(m)
+
+func _multi_return():
+	var came_back = Engine.has_meta("rr_mp_return")
+	Engine.remove_meta("rr_mp_return")
+	if Rhythia.has_meta("last_run"): Rhythia.remove_meta("last_run")
+	if Rhythia.has_meta("last_run_best"): Rhythia.remove_meta("last_run_best")
+	var mp = get_tree().root.get_node_or_null("RRMultiplayer")
+	if mp: mp.back_in_menu()
+	open_multiplayer(came_back)
 
 const MAP_BROWSER = "res://mods/browser/MapBrowser.gd"
 func open_map_browser():

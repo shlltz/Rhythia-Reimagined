@@ -268,6 +268,32 @@ func _relayout():
 	update()
 	call_deferred("_fit_column")
 
+# multiplayer host picking the lobby's map (MPMenu): Start turns into PICK FOR LOBBY
+var mp_pick_btn:Button = null
+func rr_mp_pick_mode(on:bool):
+	if on and !mp_pick_btn:
+		mp_pick_btn = Button.new()
+		mp_pick_btn.name = "RRMPPick"
+		mp_pick_btn.text = "PICK FOR LOBBY"
+		mp_pick_btn.focus_mode = Control.FOCUS_NONE
+		mp_pick_btn.rect_min_size = run_btn.rect_min_size
+		mp_pick_btn.size_flags_horizontal = run_btn.size_flags_horizontal
+		mp_pick_btn.size_flags_vertical = run_btn.size_flags_vertical
+		for st in ["normal", "hover", "pressed", "focus", "disabled"]:
+			var sb = run_btn.get_stylebox(st)
+			if sb: mp_pick_btn.add_stylebox_override(st, sb)
+		mp_pick_btn.add_font_override("font", run_btn.get_font("font"))
+		for k in ["font_color", "font_color_hover", "font_color_pressed"]: mp_pick_btn.add_color_override(k, run_btn.get_color(k))
+		mp_pick_btn.connect("pressed", self, "_rr_mp_pick")
+		run_btn.get_parent().add_child(mp_pick_btn)
+		run_btn.get_parent().move_child(mp_pick_btn, run_btn.get_index())
+	if mp_pick_btn: mp_pick_btn.visible = on
+	run_btn.visible = !on
+
+func _rr_mp_pick():
+	var m = get_tree().root.get_node_or_null("Menu/Multiplayer")
+	if m and Rhythia.selected_song: m.pick_done(Rhythia.selected_song)
+
 func _rr_edit():
 	var mn = get_tree().root.get_node_or_null("Menu")
 	if mn and mn.has_method("open_editor") and Rhythia.selected_song: mn.open_editor(Rhythia.selected_song)

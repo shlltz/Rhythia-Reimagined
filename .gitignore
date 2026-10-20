@@ -22,3 +22,5 @@ __pycache__/
 # signing tools + the APK signing key (keep private: updates must be signed with the same key)
 tools/
 *.apk
+tests/**/t/
+__pycache__/

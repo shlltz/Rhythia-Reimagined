@@ -44,6 +44,11 @@ func _ready():
 		b.connect("mouse_entered", self, "_hover", [i])
 		box.add_child(b)
 		buttons.append(b)
+	var mp = get_tree().root.get_node_or_null("RRMultiplayer")
+	if mp and mp.in_match(): # multiplayer: no restarts (Quit leaves the match, the others play on)
+		buttons[1].disabled = true
+		buttons[1].text += " (off in multiplayer)"
+		buttons[2].text = "Quit match"
 	_hover(0)
 	add_child(load("res://mods/replay/UIJuice.gd").new())
 	visible_menu(false)
@@ -89,7 +94,7 @@ func _hover(i:int):
 		buttons[k].modulate = c if k == sel else Color(c.r, c.g, c.b, 0.55)
 
 func _pick(i:int):
-	if !is_open(): return
+	if !is_open() or buttons[i].disabled: return
 	emit_signal("chosen", ["continue", "retry", "quit"][i])
 
 func _input(ev):

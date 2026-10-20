@@ -19,6 +19,7 @@ const ITEMS = [
 	["Settings", "game, audio, visuals", Color("#5cc98a"), "menu-options-click.mp3", "settings"],
 	["Browse", "download new maps", Color("#4db8ff"), "", "browse"], # game's own click (menu2 Press); browser mod only
 	["Editor", "build and test maps", Color("#ffb347"), "", "editor"], # game's own click (menu2 Press)
+	["Multiplayer", "play a map together", Color("#ff7ad9"), "", "multiplayer"], # (menu2 Press)
 	["Exit", "see you next time", Color("#ff6b6b"), "menu-exit-click.mp3", "exit"],
 ]
 
@@ -262,6 +263,9 @@ func _after_close(then:String):
 		"editor":
 			_sidebar(0)
 			menu.open_editor()
+		"multiplayer":
+			_sidebar(0)
+			menu.open_multiplayer()
 		_: _sidebar(0)
 
 func apply_bg():

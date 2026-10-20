@@ -10,14 +10,14 @@ const CODES = {
 	"language": 0xf85b, "power": 0xfaa8, "search": 0xfb98, "menu-dots": 0xf918, "users": 0xfe7e,
 	"music-note": 0xf987, "info": 0xf7ff, "star": 0xfcc1, "folder": 0xf6ac, "time-past": 0xfd82,
 	"rewind": 0xfb31, "forward": 0xf6b9, "step-backward": 0xfcc9, "step-forward": 0xfcca, "minus": 0xf93e,
-	"plus": 0xfa8c, "cross": 0xf4ed, "eye-crossed": 0xf5e9, "eye": 0xf5eb,
+	"plus": 0xfa8c, "cross": 0xf4ed, "eye-crossed": 0xf5e9, "eye": 0xf5eb, "users-alt": 0xfe79, "globe": 0xf6f9,
 }
 # sidebar button name (lower case) -> icon
 const SIDEBAR = {
 	"results": "play", "play": "play", "settings": "settings", "replays": "film", "browse": "cloud-download",
 	"customize": "settings-sliders", "favorites": "heart", "favourites": "heart", "content": "square-plus",
 	"contentmgr": "square-plus", "import": "square-plus", "language": "language", "lang": "language",
-	"editor": "music-note", "quit": "power", "exit": "power", "credits": "users",
+	"editor": "music-note", "quit": "power", "exit": "power", "credits": "users", "multiplayer": "users-alt",
 }
 
 static func available() -> bool:

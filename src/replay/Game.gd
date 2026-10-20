@@ -64,6 +64,9 @@ func end(end_type:int):
 	if ending: return
 	print("My god, what are you doing!?")
 	ending = true
+	var mp = get_tree().root.get_node_or_null("RRMultiplayer") # multiplayer match: final score to the lobby
+	var mp_run = mp != null and mp.in_match()
+	if mp_run: mp.game_end(self, end_type)
 	if end_type == Globals.END_GIVEUP and Rhythia.record_replays and !Rhythia.replaying:
 		Rhythia.replay.store_sig($Spawn.rms,Globals.RS_GIVEUP)
 	if end_type != Globals.END_PASS:
@@ -134,7 +137,7 @@ func end(end_type:int):
 			position = Rhythia.song_end_position, length = last_ms, speed = speed_multi, replay = Rhythia.replaying,
 			mods = load("res://mods/replay/ResultsScreen.gd").current_mods(),
 			replay_path = Globals.p("user://replays/%s.sspre" % Rhythia.replay.id) if Rhythia.record_replays and !Rhythia.replaying and Rhythia.replay else ""})
-		if ResourceLoader.exists("res://mods/stars/RecentPlays.gd"):
+		if ResourceLoader.exists("res://mods/stars/RecentPlays.gd") and !mp_run: # (session runs aren't personal plays)
 			load("res://mods/stars/RecentPlays.gd").record(Rhythia.get_meta("last_run"))
 		var fx = get_node_or_null("PassFx")
 		if fx and end_type == Globals.END_PASS: yield(fx.zoom_in(), "completed") # personal pass effect (hype mod)
@@ -330,5 +333,17 @@ func _ready():
 	yield(get_tree(),"idle_frame")
 	black_fade_target = false
 	$ForceMatLoad.visible = false
+	# multiplayer: the lead-in waits for the lobby's shared start time (MPClient.go_open), then skips
+	# ahead by however late this frame came, so every game starts its map at the same moment
+	var mp = get_tree().root.get_node_or_null("RRMultiplayer")
+	if mp and mp.in_match():
+		mp.game_ready(self)
+		while is_inside_tree() and !mp.go_open():
+			yield(get_tree(), "idle_frame")
+		if !is_inside_tree(): return
+		if mp.match_aborted():
+			end(Globals.END_GIVEUP)
+			return
+		$Spawn.ms += mp.go_late_ms() * $Spawn.speed_multi
 	$Spawn.active = true
 
