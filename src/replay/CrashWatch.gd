@@ -70,10 +70,12 @@ func _now() -> String:
 	var what = sc.filename.get_file().get_basename() if sc and sc.filename != "" else (sc.name if sc else "?")
 	var m = tr.root.get_node_or_null("Menu")
 	if m:
-		for n in ["ResultsScreen", "Editor", "ReplayBrowser", "ReimaginedPanel", "MapBrowser"]:
+		for n in ["ResultsScreen", "Editor", "Multiplayer", "ReplayBrowser", "ReimaginedPanel", "MapBrowser"]:
 			var c = m.get_node_or_null(n)
 			if c and c.get("visible") != false and !(n == "MapBrowser" and c.get("hidden")): what += " +" + n
 	if what.begins_with("song") and Rhythia.selected_song: what += " map=" + str(Rhythia.selected_song.id)
+	var mp = tr.root.get_node_or_null("RRMultiplayer")
+	if mp and mp.status != "idle": what += " mp=%s/%s%s" % [mp.status, mp.phase, "/host" if mp.hosting() else ""]
 	return "%5ds  %s  vram %.0f MB  tex %.0f MB  objects %d  fps %d" % [(OS.get_ticks_msec() - t0) / 1000,
 		what, Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0,
 		Performance.get_monitor(Performance.RENDER_TEXTURE_MEM_USED) / 1048576.0,

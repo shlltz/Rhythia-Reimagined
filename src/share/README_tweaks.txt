@@ -79,6 +79,18 @@ WHAT YOU GET
               the real game and returns to the same session. SPACE play | LEFT/RIGHT step | B bookmark
               | L loop | CTRL+Z/Y/C/V/D/A/S | ESC leave. Original library maps are never overwritten
               (built-in / online maps open as a *_edit copy).
+  Multiplayer "Multiplayer" title card + sidebar button. Create a lobby (your game hosts it while
+              you play - no server needed) or join one: LAN lobbies are found automatically, or
+              type the address / room code shown in the lobby. The host picks the map (SELECT MAP,
+              then PICK FOR LOBBY on the map page), speed and mods; everyone needs the same map
+              (checked: same notes + audio), presses READY, and the host starts. All games start
+              together, No Fail is always on, live scores on the left, ranked results after,
+              chat, kick / make host, reconnect after a short drop. Your own mods / settings come
+              back after each match. Session results only: no personal bests, replays or recent plays.
+              Same network: nothing to set up. Internet: the host forwards TCP port 47320 on the
+              router (or everyone uses Tailscale / ZeroTier / Radmin VPN); there is no relay
+              server, so a host behind a strict NAT can't be reached. Allow SoundSpacePlus.exe
+              in the firewall (TCP 47320, UDP 47321 for LAN discovery).
   Look        Exo 2 font, colours matching the Rhythia logo, Flaticon icons, osu-style results panel,
               bigger settings page
   Language    Vietnamese (pick "Tieng Viet" in the language menu, in place of Polish)
