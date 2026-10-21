@@ -30,6 +30,7 @@ func _ready():
 	load("res://mods/replay/CrashWatch.gd").start(get_tree())
 	if !get_tree().root.has_node("RRMultiplayer") and ResourceLoader.exists(MULTI):
 		load("res://mods/replay/MPClient.gd").recover() # a multiplayer match was cut off: own settings back
+	if ResourceLoader.exists("res://mods/replay/RewriteFeel.gd"): load("res://mods/replay/RewriteFeel.gd").restore() # (fallback; normally done as the menu enters the tree)
 	if load("res://mods/replay/Look.gd").mono() and ResourceLoader.exists("res://mods/replay/Atmosphere.gd"):
 		add_child(load("res://mods/replay/Atmosphere.gd").new()) # scanlines / grain / CRT over the menus
 	call_deferred("_crash_prompt")

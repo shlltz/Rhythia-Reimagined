@@ -19,6 +19,7 @@ const DEFAULTS = {
 	"collection": "",           # map list filter ("" = all maps)
 	"half_ghost_length": 1.0,   # Half Ghost: how long the notes take to fade (1.0 = game default)
 	"swept_hitbox": true,       # count notes the cursor passes through between frames (NoteManager)
+	"rewrite_feel": false,      # runs use the Rhythia rewrite's default look (RewriteFeel.gd)
 	"mp_name": "",              # multiplayer display name ("" = a generated playerNNNN; not an account)
 	"mp_recent": [],            # multiplayer: last joined addresses
 	"lite_fx": false,           # lighter effects for low-end PCs (also switched on for the session by fps_watch)
