@@ -18,7 +18,16 @@ func files_dropped(files:PoolStringArray,_screen:int):
 	else:
 		var song
 		var cleanup = load("res://mods/import/ImportCleanup.gd").new() # auto-delete mod
+		var phxm = load("res://mods/fixes/Phxm.gd") # .phxm maps / rewrite map folders
 		for file in files:
+			if phxm and phxm.is_map(file):
+				var r = phxm.import(file)
+				if r is String:
+					Globals.notify(Globals.NOTIFY_ERROR, r, "Couldn't import " + file.get_file(), 6)
+					continue
+				song = r
+				cleanup.trash(file)
+				continue
 			if file.get_extension() != "sspm": continue
 			song = Song.new()
 			song.load_from_sspm(file)
