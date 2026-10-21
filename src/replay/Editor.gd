@@ -2269,7 +2269,7 @@ func save_map() -> String:
 	m.rev += 1
 	Rhythia.registry_song.check_and_remove_id(id)
 	Rhythia.registry_song.add_sspm_map(path)
-	var list = menu.get_node_or_null("Main/Maps/MapRegistry/S/VBoxContainer")
+	var list = load("res://mods/replay/Classic.gd").map_list(menu)
 	if list and list.has_method("prepare_songs"):
 		list.prepare_songs()
 		list.reload_to_current_page()

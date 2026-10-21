@@ -1062,8 +1062,8 @@ func _pick_end():
 # the map page shows PICK FOR LOBBY instead of Start while picking (SongInfoScreen.rr_mp_pick_mode)
 func _pick_mode_page(on:bool):
 	if !menu or !is_instance_valid(menu): return
-	var si = menu.get_node_or_null("Main/Maps/Results/Results")
-	if si and si.has_method("rr_mp_pick_mode"): si.rr_mp_pick_mode(on)
+	var si = load("res://mods/replay/Classic.gd").pick_target(menu)
+	if si: si.rr_mp_pick_mode(on)
 
 func pick_done(song):
 	if !picking: return

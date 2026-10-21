@@ -126,7 +126,7 @@ func _process(delta):
 		t = max(t, t_fallback)
 
 	if outro_t < 0:
-		var menu_up = get_tree().current_scene and get_tree().current_scene.filename == MENU
+		var menu_up = get_tree().current_scene and get_tree().current_scene.filename in [MENU, "res://scenes/menu/oldmenu2.tscn"]
 		if t >= SOUND_END and (menu_up or t >= SOUND_END + MAX_WAIT): begin_outro()
 
 	# logo: zoom in from 0.6 to 1.0 over the sound, punch on each hit
