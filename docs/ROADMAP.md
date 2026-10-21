@@ -72,9 +72,9 @@ GitHub releases + signed manifest ──> updater (download, verify, back up, sw
 - [x] skin profiles + skin editor (Customize > Skin > Skin editor): notes (shape incl. own .obj, colour set or own colours, size, opacity, spin, note image), cursor (image, size, colour mode, spin, game / osu! trail, trail + touch images), effects (hit / miss effect, show, at cursor, miss flash), sounds (hit / miss mp3 / ogg, on / off, play), HUD (font, miss / score text colours); live preview from the game's own materials / meshes / effect scenes; save / duplicate / rename / delete (recycle bin) / reset group / revert; .rrskin import (validated in a temp folder) / export; the setup before skins kept as a profile; applied through a menu reload (the stock settings controls write their values back otherwise); survives restarts. Not skinnable here: HUD layout / grid / border / icons (already in Customize), WAV sounds (the game's loader can't read WAV files)
 
 ### Phase 3: editor
-- [~] onset envelope + BPM / offset estimate, beat markers, preview grid, USE (AUTO tab). Synthetic beats: tempo right; offset ~11 ms late (constant bias, not fixed yet). Real test song: 161 BPM vs 200 from its notes - NOT reliable yet (EditorToolsTest.gd)
+- [x] BPM / offset estimate, beat markers, preview grid, USE (AUTO tab). The song is captured sample-exact (EditorCapture.gd: AudioEffectCapture on a muted 4x bus; the old per-frame peak meter was ~70 ms of song per value). Click tracks through the real capture: exact tempo, offset within 1 ms; synthetic envelopes within 5 ms; noise: no tempo claimed. Real test song: 150.08 BPM (its notes: 150 / 300), notes 11 ms from the estimated grid (EditorToolsTest.gd, own + share)
 - [x] snap override: hold Alt = no time snap
-- [~] pattern tools (EditorPatterns.gd: stream paths, jumps, circle, spiral, rotate / scale / reverse, mirror section, repeat rotating, slots 1-9): pure functions tested; in-editor rotate + slot recall checks still fail (EditorToolsTest.gd)
+- [x] pattern tools (EditorPatterns.gd: stream paths, jumps, circle, spiral, rotate / scale / reverse, mirror section, repeat rotating, slots 1-9), one undo step each; undo / redo now select what they put back (EditorToolsTest.gd)
 - [ ] workflow parity items from the Quantum Editor (list kept in EDITOR.md)
 
 ### Phase 4: Replay Studio

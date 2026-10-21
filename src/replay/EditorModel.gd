@@ -220,10 +220,25 @@ func can_undo() -> bool:
 func can_redo() -> bool:
 	return redo_stack.size() > 0
 
+# after undo / redo: the notes that step put (back) into the map - the editor selects them
+var touched:Array = []
+func _placed(op:Array) -> Array:
+	match op[0]:
+		"add": return op[1]
+		"mov":
+			var r = []
+			for pr in op[1]: r.append(pr[1])
+			return r
+	return []
+
 func undo() -> String:
 	if undo_stack.empty(): return ""
 	var g = undo_stack.pop_back()
-	for i in range(g.ops.size() - 1, -1, -1): _apply(_invert(g.ops[i]))
+	touched = []
+	for i in range(g.ops.size() - 1, -1, -1):
+		var inv = _invert(g.ops[i])
+		_apply(inv)
+		touched += _placed(inv)
 	redo_stack.append(g)
 	dirty = true
 	rev += 1
@@ -232,7 +247,10 @@ func undo() -> String:
 func redo() -> String:
 	if redo_stack.empty(): return ""
 	var g = redo_stack.pop_back()
-	for op in g.ops: _apply(op)
+	touched = []
+	for op in g.ops:
+		_apply(op)
+		touched += _placed(op)
 	undo_stack.append(g)
 	dirty = true
 	rev += 1

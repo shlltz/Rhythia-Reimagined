@@ -12,12 +12,12 @@ extends CanvasLayer
 
 const Model = preload("res://mods/replay/EditorModel.gd")
 const Look = preload("res://mods/replay/Look.gd")
+const Cap = preload("res://mods/replay/EditorCapture.gd")
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
 const DIR = "user://editor"
 const SESSION = DIR + "/session.json"
 const TEST_ID = "rr_editor_test"
 const BIN = 25.0                     # waveform bin, ms
-const WAVE_PITCH = 4.0                # capture speed (the muted song is played at this pitch)
 const APPROACH = 700.0               # how far ahead the field shows notes, ms
 const DIFFS = ["Unknown", "Easy", "Medium", "Hard", "Logic", "Tasukete"]
 const SNAPS = [1, 2, 3, 4, 6, 8, 12, 16]
@@ -70,11 +70,12 @@ var box_sel = null                   # {a: ms, b: ms, add: bool}
 
 # waveform (peaks per BIN ms, 0..1; captured by playing the song muted at 4x)
 var wave:PoolRealArray = PoolRealArray()
-var env_lo:PoolRealArray = PoolRealArray()  # low / high band energy per BIN (audio analysis, EditorAuto.gd)
+var env_lo:PoolRealArray = PoolRealArray()  # low / high / whole band peaks per Cap.ABIN (audio analysis, EditorAuto.gd)
 var env_hi:PoolRealArray = PoolRealArray()
+var env_all:PoolRealArray = PoolRealArray()
 var wave_n:int = 0                   # bins captured so far
 var wave_state:String = "none"       # none | loading | ready | failed
-var wave_player:AudioStreamPlayer
+var wave_cap = null                  # EditorCapture node while capturing
 var wave_lines = null
 var wave_key:String = ""
 var _tl_dirty:bool = true
@@ -180,7 +181,7 @@ func _find_players():
 	var stack = [get_tree().root]
 	while !stack.empty():
 		var n = stack.pop_back()
-		if n == self or n == ap or n == wave_player: continue
+		if n == self or n == ap: continue
 		for c in n.get_children(): stack.append(c)
 		if n is AudioStreamPlayer and !(self.is_a_parent_of(n)): other_players.append(n)
 
@@ -461,12 +462,17 @@ func _build_left():
 	page_btns.props.pressed = true
 
 func _page_tab(pressed:bool, id:String):
-	if pressed: _page(id)
+	if pressed and !_paging: _page(id)
 
+var _paging:bool = false
 func _page(id:String):
 	for k in pages: pages[k][0].visible = k == id
 	if id == "notes": _refresh_note_list()
 	if id == "checks": _run_checks()
+	if page_btns.has(id) and !page_btns[id].pressed: # (opened from code: the tab follows)
+		_paging = true
+		page_btns[id].pressed = true
+		_paging = false
 
 func _field_row(parent:Control, label:String, ctl:Control):
 	parent.add_child(_lbl(label.to_upper(), 12, Look.TEXT_3))
@@ -1426,14 +1432,26 @@ func _select_all():
 func _undo():
 	if !m: return
 	var n = m.undo()
-	if n != "": msg("undo: " + n)
+	if n != "":
+		msg("undo: " + n)
+		_select_touched()
 	_sel_changed()
 
 func _redo():
 	if !m: return
 	var n = m.redo()
-	if n != "": msg("redo: " + n)
+	if n != "":
+		msg("redo: " + n)
+		_select_touched()
 	_sel_changed()
+
+# undo / redo select what the step put back (nothing put back: the selection stays)
+func _select_touched():
+	if m.touched.empty(): return
+	sel = {}
+	for x in m.touched:
+		var k = Model.key_of(x)
+		if m.keys.has(k): sel[k] = x
 
 func _jump_note(dir:int):
 	if m.notes.empty(): return
@@ -1759,6 +1777,7 @@ func _wave_begin(force:bool = false):
 	wave_lines = null
 	env_lo = PoolRealArray()
 	env_hi = PoolRealArray()
+	env_all = PoolRealArray()
 	if !stream or audio_len <= 0:
 		wave_state = "none"
 		return
@@ -1775,122 +1794,88 @@ func _wave_begin(force:bool = false):
 			for i in min(n, buf.size()): wave[i] = buf[i] / 255.0
 			wave_n = n
 			wave_state = "ready"
-			_env_load(n)
+			_env_load()
 			return
 		f.close()
-	# two buses: the capture bus (0 dB, the peak meter reads it) sends into a muted one. A bus can only
-	# send to a bus with a LOWER index, so the muted one must be created first - the other way round
-	# the send was ignored and the capture played at 4x pitch through the speakers
-	var mute = AudioServer.get_bus_index("RRMute")
-	if mute < 0:
-		AudioServer.add_bus()
-		mute = AudioServer.get_bus_count() - 1
-		AudioServer.set_bus_name(mute, "RRMute")
-	AudioServer.set_bus_volume_db(mute, -80.0)
-	AudioServer.set_bus_mute(mute, true)
-	var bus = AudioServer.get_bus_index("RRWave")
-	if bus < 0:
-		AudioServer.add_bus()
-		bus = AudioServer.get_bus_count() - 1
-		AudioServer.set_bus_name(bus, "RRWave")
-	AudioServer.set_bus_send(AudioServer.get_bus_index("RRWave"), "RRMute")
-	if AudioServer.get_bus_effect_count(AudioServer.get_bus_index("RRWave")) == 0: # band energies for the audio analysis (EditorAuto.gd)
-		var an = AudioEffectSpectrumAnalyzer.new()
-		an.fft_size = AudioEffectSpectrumAnalyzer.FFT_SIZE_256 # (~6 ms window: 23 ms of song at 4x)
-		an.buffer_length = 0.1
-		AudioServer.add_bus_effect(AudioServer.get_bus_index("RRWave"), an)
-	if AudioServer.get_bus_index("RRWave") < AudioServer.get_bus_index("RRMute"): # (cannot happen on a fresh start)
-		AudioServer.move_bus(AudioServer.get_bus_index("RRMute"), AudioServer.get_bus_index("RRWave"))
-	wave.resize(int(ceil(audio_len / BIN)) + 2)
-	for i in wave.size(): wave[i] = 0.0
-	env_lo.resize(wave.size())
-	env_hi.resize(wave.size())
-	for i in wave.size():
-		env_lo[i] = 0.0
-		env_hi[i] = 0.0
-	wave_player = AudioStreamPlayer.new()
 	var cs = _load_stream(m.meta.audio) # (its own stream object: not shared with the editing playback)
 	if cs is AudioStreamOGGVorbis or cs is AudioStreamMP3: cs.loop = false
-	wave_player.stream = cs if cs != Globals.error_sound and cs != null else stream
-	wave_player.bus = "RRWave"
-	wave_player.pitch_scale = WAVE_PITCH
-	add_child(wave_player)
-	wave_player.play()
-	wave_state = "loading"
-	_wave_last = 0
+	wave_cap = Cap.new()
+	add_child(wave_cap)
+	wave_cap.start(cs if cs != Globals.error_sound and cs != null else stream, audio_len, BIN)
+	wave = wave_cap.wave
+	wave_state = "loading" if wave_cap.state == "loading" else "failed"
+	wave_frame = 0
 
-var _wave_last:int = 0
 func _wave_step():
-	if !is_instance_valid(wave_player): return
-	var bus = AudioServer.get_bus_index("RRWave")
-	var t = wave_player.get_playback_position() * 1000.0
-	var cur = int(t / BIN)
-	var pk = max(AudioServer.get_bus_peak_volume_left_db(bus, 0), AudioServer.get_bus_peak_volume_right_db(bus, 0))
-	var v = clamp(db2linear(pk), 0.0, 1.0)
-	v = pow(v, 0.7)
-	var inst = AudioServer.get_bus_effect_instance(bus, 0) if AudioServer.get_bus_effect_count(bus) > 0 else null
-	var lo = _band(inst, 40.0, 180.0) if inst else 0.0     # kick / bass (song Hz: x4 at the capture pitch)
-	var hi = _band(inst, 2500.0, 5500.0) if inst else 0.0  # snares / hats
-	for i in range(_wave_last, min(cur + 1, wave.size())):
-		wave[i] = max(wave[i], v)
-		if i < env_lo.size():
-			env_lo[i] = max(env_lo[i], lo)
-			env_hi[i] = max(env_hi[i], hi)
-	_wave_last = max(_wave_last, cur)
-	wave_n = min(cur, wave.size())
-	if !wave_player.playing or t >= audio_len - 40.0:
-		wave_n = wave.size()
-		wave_state = "ready"
-		_wave_cleanup()
-		_wave_save()
-		if auto_pending: call_deferred("_auto_run")
+	if !is_instance_valid(wave_cap): return
+	var done = wave_cap.state != "loading"
 	wave_frame += 1
-	if wave_frame % 8 == 0 or wave_state == "ready":
+	if wave_frame % 8 == 0 or done:
+		wave = wave_cap.wave # (a copy every few frames is enough for the drawing)
+		wave_n = wave_cap.wave_n
 		wave_lines = null
 		tl.update()
+	if !done: return
+	if wave_cap.state == "ready":
+		env_lo = wave_cap.lo
+		env_hi = wave_cap.hi
+		env_all = wave_cap.al
+		wave_n = wave.size()
+		wave_state = "ready"
+		_wave_save()
+	else:
+		wave_state = "failed"
+	_wave_cleanup()
+	if auto_pending: call_deferred("_auto_run")
 
 var wave_frame:int = 0
 func _wave_cleanup():
-	if is_instance_valid(wave_player):
-		wave_player.stop()
-		wave_player.queue_free()
-	wave_player = null # (the two capture buses stay for the session: removing them under a player crashed the game)
+	if is_instance_valid(wave_cap):
+		wave_cap.stop()
+		wave_cap.queue_free()
+	wave_cap = null # (the two capture buses stay for the session: removing them under a player crashed the game)
 
 func _wave_cache_path() -> String:
 	if !m or m.meta.audio == "": return ""
 	return m.meta.audio.get_base_dir() + "/wave.bin"
 
-func _band(inst, a:float, b:float) -> float:
-	var mg = inst.get_magnitude_for_frequency_range(a * WAVE_PITCH, min(b * WAVE_PITCH, 22000.0), AudioEffectSpectrumAnalyzerInstance.MAGNITUDE_MAX)
-	return clamp((linear2db(max(max(mg.x, mg.y), 1e-7)) + 70.0) / 70.0, 0.0, 1.0)
-
-# band envelopes cache (env.bin next to wave.bin: count, then a byte per bin for each band)
+# analysis envelopes cache (env2.bin next to wave.bin: "RRE2", bin ms x 100, count, then a byte per
+# bin for each of the low / high / whole bands; env.bin of earlier builds held per-frame values)
 func _env_path() -> String:
 	var p = _wave_cache_path()
-	return p.get_base_dir() + "/env.bin" if p != "" else ""
+	return p.get_base_dir() + "/env2.bin" if p != "" else ""
 
-func _env_load(n:int):
+func _env_load():
 	var f = File.new()
 	var p = _env_path()
 	if p == "" or !f.file_exists(p) or f.open(p, File.READ) != OK: return
-	if f.get_32() == n:
-		var a = f.get_buffer(n)
-		var b = f.get_buffer(n)
-		if a.size() == n and b.size() == n:
-			env_lo.resize(n)
-			env_hi.resize(n)
-			for i in n:
-				env_lo[i] = a[i] / 255.0
-				env_hi[i] = b[i] / 255.0
+	var n = 0
+	if f.get_buffer(4).get_string_from_ascii() == "RRE2" and f.get_32() == int(Cap.ABIN * 100):
+		n = f.get_32()
+	if n > 0 and abs(n - (int(ceil(audio_len / Cap.ABIN)) + 2)) <= 2:
+		var arrs = []
+		for k in 3:
+			var b = f.get_buffer(n)
+			if b.size() != n: break
+			var a = PoolRealArray()
+			a.resize(n)
+			for i in n: a[i] = b[i] / 255.0
+			arrs.append(a)
+		if arrs.size() == 3:
+			env_lo = arrs[0]
+			env_hi = arrs[1]
+			env_all = arrs[2]
 	f.close()
 
 func _env_save():
 	var p = _env_path()
-	if p == "" or env_lo.size() != wave.size(): return
+	if p == "" or env_lo.size() == 0: return
 	var f = File.new()
 	if f.open(p, File.WRITE) != OK: return
+	f.store_buffer("RRE2".to_ascii())
+	f.store_32(int(Cap.ABIN * 100))
 	f.store_32(env_lo.size())
-	for arr in [env_lo, env_hi]:
+	for arr in [env_lo, env_hi, env_all]:
 		var buf = PoolByteArray()
 		buf.resize(arr.size())
 		for i in arr.size(): buf[i] = int(clamp(arr[i] * 255.0, 0.0, 255.0))
@@ -2667,11 +2652,11 @@ func _auto_start():
 		return
 	if auto_thread and auto_thread.is_active(): return
 	auto_pending = true
-	if wave_state == "ready" and env_lo.size() == wave.size() and env_lo.size() > 0:
+	if wave_state == "ready" and env_lo.size() > 0:
 		_auto_run()
 		return
 	auto_lbl.text = "Listening to the song (muted, 4x speed)..."
-	_wave_begin(true) # (a waveform from the cache has no band energies: capture again)
+	_wave_begin(true) # (no cached band envelopes for this audio: capture again)
 
 func _auto_run():
 	auto_pending = false
@@ -2680,10 +2665,10 @@ func _auto_run():
 		return
 	auto_lbl.text = "Analysing..."
 	auto_thread = Thread.new()
-	auto_thread.start(self, "_auto_work", [env_lo, env_hi, wave])
+	auto_thread.start(self, "_auto_work", [env_lo, env_hi, env_all])
 
 func _auto_work(a:Array):
-	call_deferred("_auto_done", Auto.analyse(a[0], a[1], a[2], BIN))
+	call_deferred("_auto_done", Auto.analyse(a[0], a[1], a[2], Cap.ABIN))
 
 func _auto_done(res:Dictionary):
 	if auto_thread and auto_thread.is_active(): auto_thread.wait_to_finish()
