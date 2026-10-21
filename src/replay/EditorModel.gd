@@ -58,6 +58,18 @@ static func fmt_time(ms:int) -> String:
 	ms = abs(ms)
 	return "%s%d:%02d.%03d" % ["-" if neg else "", ms / 60000, (ms / 1000) % 60, ms % 1000]
 
+# [average notes per second from the first to the last note, most notes inside any 1 s window];
+# notes sorted by ms (two pointers: one pass)
+static func nps(ns:Array) -> Array:
+	if ns.size() < 2: return [0.0, float(ns.size())]
+	var span = max(1.0, float(ns[-1][2] - ns[0][2]))
+	var peak = 0
+	var j = 0
+	for i in ns.size():
+		while ns[i][2] - ns[j][2] >= 1000: j += 1
+		peak = max(peak, i - j + 1)
+	return [ns.size() / (span / 1000.0), float(peak)]
+
 # ------------------------------------------------------------------ text format (Sound Space "id,x|y|ms,..." with 2-x / 2-y like Song.export_text)
 static func to_txt(id:String, ns:Array) -> String:
 	var parts = PoolStringArray([id])

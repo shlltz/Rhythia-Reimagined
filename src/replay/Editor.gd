@@ -200,6 +200,56 @@ func _exit_tree():
 	var eb = AudioServer.get_bus_index("RREdit")
 	if eb >= 0: AudioServer.set_bus_effect_enabled(eb, 0, false)
 	_wave_cleanup()
+	if star_thread and star_thread.is_active(): star_thread.wait_to_finish()
+
+# ------------------------------------------------------------------ live difficulty
+# The game's own star rating (stars/StarRating.gd, the same numbers the map list shows), redone on a
+# worker thread 0.4 s after the notes last changed - a 13k-note map takes ~70 ms, which must not
+# stall editing - and only when the notes really differ from the last rated set. Also the average
+# and peak (busiest second) notes per second. "..." = an update is pending / running.
+const STAR_DEBOUNCE = 0.4
+var star_lbl:Label
+var star_thread:Thread = null
+var star_rev:int = -1        # rev of the notes the shown rating belongs to
+var star_due:float = -1.0    # seconds until the next rating starts (< 0 = none pending)
+var star_key:String = ""
+var star_val:float = -1.0
+var star_nps:Array = [0.0, 0.0]
+
+func _star_tick(delta:float):
+	if !star_lbl or !m or !ResourceLoader.exists("res://mods/stars/StarRating.gd"): return
+	if m.rev != star_rev and star_due < 0: star_due = STAR_DEBOUNCE
+	if star_due >= 0:
+		star_due -= delta
+		if star_due < 0:
+			if star_thread and star_thread.is_active(): star_due = 0.05 # (still busy with the previous set)
+			else:
+				star_rev = m.rev
+				var notes = m.notes.duplicate(true) # (the worker gets its own copy)
+				var key = str(notes.size()) + ":" + str(notes.hash())
+				if key != star_key: # (an edit and its undo: same notes, same rating)
+					star_key = key
+					star_thread = Thread.new()
+					star_thread.start(self, "_star_work", notes)
+	_star_show()
+
+func _star_work(notes:Array):
+	var stars = load("res://mods/stars/StarRating.gd").new().calculate(notes, 1.0) if notes.size() > 1 else 0.0
+	call_deferred("_star_done", stars, Model.nps(notes))
+
+func _star_done(stars:float, nps:Array):
+	if star_thread and star_thread.is_active(): star_thread.wait_to_finish()
+	star_val = stars
+	star_nps = nps
+	_star_show()
+
+func _star_show():
+	var pending = star_due >= 0 or (star_thread and star_thread.is_active())
+	if star_val < 0:
+		star_lbl.text = "★ ..."
+		return
+	star_lbl.text = "★ %.2f%s   %.1f nps, peak %.0f" % [star_val, " ..." if pending else "", star_nps[0], star_nps[1]]
+	star_lbl.hint_tooltip = "Star rating (the game's own formula, at 1.0x); updates a moment after you edit.\nAverage notes per second over the map, and the busiest second."
 
 func _font(size:int):
 	if fonts.has(size): return fonts[size]
@@ -341,6 +391,11 @@ func _build_top():
 	state_lbl.rect_min_size = Vector2(150, 0)
 	state_lbl.valign = Label.VALIGN_CENTER
 	h.add_child(state_lbl)
+	star_lbl = _lbl("★ ...", 14, Look.TEXT)
+	star_lbl.rect_min_size = Vector2(240, 0)
+	star_lbl.valign = Label.VALIGN_CENTER
+	star_lbl.mouse_filter = Control.MOUSE_FILTER_PASS # (its tooltip)
+	h.add_child(star_lbl)
 	for b in [["NEW", "_ask_new"], ["OPEN", "_ask_open"], ["SAVE", "_save_pressed"], ["EXPORT", "_export"]]:
 		h.add_child(_btn(b[0], b[1], [], false, 78))
 	h.add_child(_btn("TEST (F5)", "_test", [false], false, 100))
@@ -1649,6 +1704,7 @@ func _process(delta):
 		tl.update()
 		field.update()
 	if wave_state == "loading": _wave_step()
+	_star_tick(delta)
 	_hush_t += delta
 	if _hush_t > 0.5:
 		_hush_t = 0.0
@@ -2311,7 +2367,11 @@ func _export_to(path):
 	if !f.file_exists(txt) and f.open(txt, File.WRITE) == OK:
 		f.store_string(Model.to_txt(id, m.notes))
 		f.close()
-	msg("exported and verified: " + dst.get_file() + " (+ .txt)")
+	var extra = " (+ .txt)"
+	if ResourceLoader.exists("res://mods/fixes/Phxm.gd"): # the rewrite's format next to it
+		var px = load("res://mods/fixes/Phxm.gd").export(chk, dst.get_basename() + ".phxm")
+		extra = " (+ .txt, .phxm)" if px is Dictionary else " (+ .txt; .phxm failed: %s)" % px
+	msg("exported and verified: " + dst.get_file() + extra)
 
 func _test(from_here:bool):
 	if !m: return
