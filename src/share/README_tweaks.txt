@@ -54,6 +54,9 @@ WHAT YOU GET
                 to the new one and starts again
   Settings    redesigned settings page (tab column + big card, like Customize); ESC = title screen;
               "Half Ghost Fade" (25-300%) right under Fade Length in the Notes tab
+              "Rewrite Feel" in the Gameplay tab: maps play with the Rhythia rewrite's default look
+              (approach 30 / 15, FoV 70, camera sway, its note fade + pushback); your own settings
+              stay as they are and apply again when it's off
   Map FX      the cover art is a visualizer: hits on the map's beats, spectrum bars around it;
               7+ stars: glowing screen sides, 10+ stars: cover and Start quake, lightning on
               select, hovering Start dims everything else; speed mods count the stars up;
