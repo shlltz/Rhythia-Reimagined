@@ -203,6 +203,11 @@ func _ready():
 	root.add_child(bar)
 	_button(bar, "Back", "_back")
 	_button(bar, "Retry", "_retry")
+	if run.get("resume") and ResourceLoader.exists("res://mods/replay/Checkpoint.gd"):
+		var rb = _button(bar, "From fail point", "_retry_resume")
+		if rb: rb.hint_tooltip = "Retry from %s: the last exact checkpoint at least 2 s before you failed.\nScore, combo and health as they were there. Can't set a personal best; no replay." % _mmss(run.resume.snap.at)
+		bar.margin_left -= 85 # (a 4th / 5th button: the bar grows instead of squeezing the labels)
+		bar.margin_right += 85
 	if run.replay_path != "" and File.new().file_exists(run.replay_path): _button(bar, "Watch replay", "_watch")
 
 	_cover(true)
@@ -347,11 +352,13 @@ func _button(bar:Control, text:String, cb:String):
 	b.connect("mouse_entered", sfx, "play", ["click-short.ogg", -10.0])
 	b.connect("pressed", self, cb)
 	bar.add_child(b)
+	return b
 
 func _status() -> Array:
 	if run.replay: return ["REPLAY", Color("#9ad0ff")]
-	if run.end_type != Globals.END_PASS: return ["FAILED" if run.end_type == Globals.END_FAIL else "GAVE UP", load("res://mods/replay/Look.gd").CRIT.lightened(0.15) if mono else Color("#ff6b6b")]
+	if run.end_type != Globals.END_PASS: return [("FAILED" if run.end_type == Globals.END_FAIL else "GAVE UP") + (" (resumed)" if run.get("resumed") else ""), load("res://mods/replay/Look.gd").CRIT.lightened(0.15) if mono else Color("#ff6b6b")]
 	if run.pauses > 0: return ["DISQUALIFIED (paused)", Color("#ffb35e")]
+	if run.get("resumed"): return ["PASSED (resumed)", Color("#ffb35e")]
 	return ["PASSED", Color("#6ff1a0")]
 
 func _grade(acc:float) -> Array: # [shown, skin image, colour] (EndInfo.gd thresholds)
@@ -443,6 +450,18 @@ func _retry():
 	closing = true
 	sfx.play("menuhit.mp3", -6.0)
 	Rhythia.replaying = false
+	_go("res://scenes/loaders/songload.tscn")
+
+# Checkpoint.gd: the same map from the last exact snapshot before the fail, with its state back
+func _mmss(ms:float) -> String:
+	return "%d:%02d" % [int(ms / 60000), int(ms / 1000) % 60]
+
+func _retry_resume():
+	if closing or !run.get("resume"): return
+	closing = true
+	sfx.play("menuhit.mp3", -6.0)
+	Rhythia.replaying = false
+	load("res://mods/replay/Checkpoint.gd").start(run.resume)
 	_go("res://scenes/loaders/songload.tscn")
 
 func _watch():

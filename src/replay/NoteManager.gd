@@ -533,9 +533,11 @@ func _ready():
 	SFXManager.setup()
 	
 	
-	if !Rhythia.replaying and Rhythia.record_replays:
+	if !Rhythia.replaying and Rhythia.record_replays and !Engine.has_meta("rr_resume"):
 		Rhythia.replay = Replay.new()
 		Rhythia.replay.start_recording(Rhythia.selected_song)
+	elif !Rhythia.replaying and Engine.has_meta("rr_resume"): # retry from the fail point: no replay (it can't start mid-map)
+		Rhythia.replay = Replay.new()
 	
 	if Rhythia.replaying and !Rhythia.replay.autoplayer and !Rhythia.queue_active:
 		replay_viewer = load("res://mods/replay/ReplayViewer.gd").new()

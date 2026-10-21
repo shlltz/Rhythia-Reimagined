@@ -62,13 +62,13 @@ GitHub releases + signed manifest ──> updater (download, verify, back up, sw
 - [x] `.phxm` export (zip writer, CRC-32 from the native gzip trailer, the rewrite's metadata keys and note rule); map page "..." menu on both menus
 - [x] `.phxm` effect sections: counted where a layout is known, kept byte for byte (`user://rr_phxm_extra`), reported as not playable; rating / artist link / platform / mapper list / artist-title split kept too
 - [x] `.phxm` round-trip tests: PhxmTest.gd (59 checks, own + share), phxm_check.py (Python zip reader + rewrite-style decode); a real rewrite map round-trips byte-identical (objects, audio, cover, metadata)
-- [ ] Rewrite library importer (whole maps folder, preview, duplicates, progress, report)
-- [ ] live star rating in the editor
-- [ ] retry from the failure moment
-- [ ] duplicate finder (exact = same notes + audio size, possible = same normalised name / length)
-- [ ] tags + bulk tag / rename with preview, collision checks, undo journal
-- [ ] smart playlists from real history and ratings
-- [ ] library statistics + cleanup preview (missing audio, broken maps, caches)
+- [x] Rewrite library importer (Library > Import from rewrite): finds the rewrite's user folder (incl. its moved-folder pointer), scans maps/<set>/*.phxm + cache/maps/<id>/ (merged), installed / possible duplicate / new, converts on a worker (frames < 10 ms while importing; one ~65 ms list refresh at the end), report of skipped / failed
+- [x] live star rating in the editor (worker, 0.4 s debounce, skipped when the notes didn't change; same numbers as the map list; + average / peak nps)
+- [x] retry from the failure moment: exact checkpoints (gaps longer than the hit window), "From fail point" on the failed results, state restored; resumed runs are marked, record no replay, can't set a PB. Chaos mod: later notes sit elsewhere (its generator only advances for played notes)
+- [x] duplicate finder: exact = note fingerprint (works across editors), possible = same title + length within 2 s; also files the library hides (same id inside); recycle by path after a confirmation
+- [x] tags (+ `tag=` search) + bulk rename of the name stored in the map (templates, preview, renumbering on collisions, journal with file copies, undo byte-identical). Files are not renamed: their name is the map id that scores / replays / collections use
+- [x] smart playlists (rules: stars, played / unplayed, failed in N days, added in N days, favourites, untagged, tag, sort, limit) in the map list's collection filter
+- [x] library statistics + cleanup preview (caches / leftovers only, to the recycle bin after a confirmation)
 - [ ] skin profiles + skin editor with a live preview
 
 ### Phase 3: editor
