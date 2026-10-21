@@ -16,7 +16,7 @@ const W = 1060.0
 const H = 680.0
 const TABS = [["trail", "Cursor trail", "style, colour, opacity"], ["hud", "HUD layout", "move & scale panels"],
 	["skin", "Skin", "border, icons, logo"], ["collections", "Collections", "map packs"],
-	["interface", "Interface", "map list & clutter"], ["device", "Device", "touch, gyro, low-end"], ["storage", "Storage", "user folder location"],
+	["interface", "Interface", "map list & clutter"], ["device", "Device", "touch, gyro, low-end"], ["storage", "Storage", "user folder, updates"],
 	["logs", "Logs", "for bug reports"]]
 const UserDir = preload("res://mods/replay/UserDir.gd")
 const Dev = preload("res://mods/replay/Device.gd")
@@ -881,8 +881,96 @@ func _logs_copy():
 	OS.clipboard = _log_text()
 	log_msg.text = "Copied"
 
+# ------------------------------------------------------------------ updates (Updater.gd)
+var upd_w:Dictionary = {}
+func _updater():
+	return get_tree().root.get_node_or_null("RRUpdater")
+
+func _build_updates(p:Control):
+	var U = load("res://mods/replay/Updater.gd")
+	_heading(p, "Updates", "This is Rhythia-reimagined v@@VERSION@@. New versions come from the project's GitHub releases; an update is only installed after its signature and file hash check out, and the old version is kept so you can roll back.")
+	if U.channel() == "own":
+		p.add_child(_label("Personal build: update it with the mod tool, not from here.", 14, Color(1, 1, 1, 0.5)))
+		return
+	_check(p, "Check for a new version when the game starts (once a day at most)", R.val("update_check"), "_upd_auto")
+	var h = HBoxContainer.new()
+	h.add_constant_override("separation", 8)
+	for b in [["CHECK NOW", "_upd_check"], ["INSTALL", "_upd_install"], ["RELEASE PAGE", "_upd_page"], ["ROLL BACK", "_upd_rollback"]]:
+		var btn = Button.new()
+		btn.text = b[0]
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.rect_min_size = Vector2(150, 36)
+		btn.connect("pressed", self, b[1])
+		h.add_child(btn)
+		upd_w[b[1]] = btn
+	p.add_child(h)
+	var st = _label("", 14, Color(1, 1, 1, 0.7))
+	st.autowrap = true
+	st.rect_min_size.x = content.rect_size.x
+	p.add_child(st)
+	upd_w.status = st
+	_upd_refresh()
+
+func _upd_refresh(text:String = ""):
+	if !upd_w.has("status"): return
+	var U = load("res://mods/replay/Updater.gd")
+	var up = _updater()
+	var r = up.last if up else {}
+	var lu = U.state().get("last_update", {})
+	upd_w._upd_install.disabled = !(r.get("state", "") == "available" and !U.target().has("why"))
+	upd_w._upd_rollback.disabled = !(lu is Dictionary and File.new().file_exists(str(lu.get("backup", ""))) and !U.target().has("why"))
+	upd_w._upd_install.text = ("INSTALL %s" % r.version) if r.get("state", "") == "available" else "INSTALL"
+	upd_w._upd_rollback.text = ("ROLL BACK TO %s" % lu.from) if lu is Dictionary and lu.has("from") else "ROLL BACK"
+	if text == "":
+		match r.get("state", ""):
+			"available": text = "Version %s is out.%s%s" % [r.version, ("  " + r.notes) if r.notes != "" else "", ("  " + U.target().why) if U.target().has("why") else ""]
+			"current": text = "Up to date (v%s)." % r.version + (("  " + r.note) if r.has("note") else "")
+			"error": text = "Couldn't check: %s" % r.error
+			_:
+				var lc = int(U.state().get("last_check", 0))
+				var d = OS.get_datetime_from_unix_time(lc)
+				text = "Last checked: " + (("%04d-%02d-%02d %02d:%02d UTC" % [d.year, d.month, d.day, d.hour, d.minute]) if lc > 0 else "never")
+	upd_w.status.text = text
+
+func _upd_auto(on:bool):
+	R.set_val("update_check", on)
+
+func _upd_check():
+	var up = _updater()
+	if !up or up.busy: return
+	_upd_refresh("Checking...")
+	yield(up.check(), "completed")
+	_upd_refresh()
+
+func _upd_install():
+	var up = _updater()
+	if !up or up.busy or up.last.get("state", "") != "available": return
+	if !up.is_connected("progress", self, "_upd_refresh"): up.connect("progress", self, "_upd_refresh")
+	var r = yield(up.apply(up.last.manifest), "completed")
+	if r.has("error"):
+		_upd_refresh("Not installed: " + r.error)
+		return
+	_upd_refresh("Installing: the game closes and starts again on the new version...")
+	yield(get_tree().create_timer(1.0), "timeout")
+	get_tree().quit()
+
+func _upd_page():
+	OS.shell_open(load("res://mods/replay/Updater.gd").PAGE)
+
+func _upd_rollback():
+	var up = _updater()
+	if !up: return
+	var r = up.rollback()
+	if r.has("error"):
+		_upd_refresh("Can't roll back: " + r.error)
+		return
+	_upd_refresh("Rolling back: the game closes and starts again...")
+	yield(get_tree().create_timer(1.0), "timeout")
+	get_tree().quit()
+
 func _build_storage():
 	var p = _page("storage")
+	_build_updates(p)
 	_heading(p, "User folder", "Your maps, replays, scores, skins and settings. Move it to another drive to free space: the game closes, a window copies everything, checks the copy, links the old place to the new folder (so everything keeps working) and starts the game again. Nothing is deleted until the copy is checked.")
 	if !UserDir.supported():
 		p.add_child(_label("Only available on Windows.", 15, Color(1, 1, 1, 0.5)))

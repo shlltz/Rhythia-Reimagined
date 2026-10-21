@@ -23,6 +23,10 @@ const KEEP_LOADED = ["res://mods/replay/Reimagined.gd", "res://mods/replay/Look.
 
 func _ready():
 	get_tree().paused = false
+	if !get_tree().root.has_node("RRUpdater") and ResourceLoader.exists("res://mods/replay/Updater.gd"): # (once per session: updates, Updater.gd)
+		var up = load("res://mods/replay/Updater.gd").new()
+		up.name = "RRUpdater"
+		get_tree().root.call_deferred("add_child", up)
 	if !Engine.has_meta("rr_keep_loaded"):
 		var keep = []
 		for p in KEEP_LOADED:

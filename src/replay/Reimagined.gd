@@ -40,6 +40,7 @@ const DEFAULTS = {
 	"gyro_inv_y": false,
 	"touch_big": "auto",        # bigger buttons for fingers: auto (touch screens) | on | off
 	"perf_saved": {},           # low-end profile on: the settings it replaced (Device.gd restores them)
+	"update_check": true,       # look for a new release when the game starts, at most once a day (Updater.gd; public builds)
 }
 # side panels the layout editor moves: sprite, label, default centre (world x, y), size (w, h)
 const HUD_ITEMS = [
