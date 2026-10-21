@@ -19,4 +19,8 @@ func _ready():
 
 func _stage(s, _last = false):
 	Rhythia.disable_update = true
+	# a Rewrite Feel run was cut off (game closed / crashed): own settings back before the menu
+	# reads them (replay mod, RewriteFeel.gd; settings.json has been read by this stage)
+	if str(s).begins_with("Init default assets") and ResourceLoader.exists("res://mods/replay/RewriteFeel.gd"):
+		load("res://mods/replay/RewriteFeel.gd").restore()
 	if str(s) == "Waiting for menu": call_deferred("queue_free") # (init's last stage)

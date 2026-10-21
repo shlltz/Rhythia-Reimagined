@@ -30,6 +30,7 @@ func _ready():
 	load("res://mods/replay/CrashWatch.gd").start(get_tree())
 	if !get_tree().root.has_node("RRMultiplayer") and ResourceLoader.exists(MULTI):
 		load("res://mods/replay/MPClient.gd").recover() # a multiplayer match was cut off: own settings back
+	if ResourceLoader.exists("res://mods/replay/RewriteFeel.gd"): load("res://mods/replay/RewriteFeel.gd").restore() # (fallback; normally done as the menu enters the tree)
 	call_deferred("_crash_prompt")
 	if Rhythia.arcw_mode:
 		get_tree().change_scene("res://w.tscn")

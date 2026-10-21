@@ -166,7 +166,11 @@ func note_reposition(i:int):
 		var fade_in:float = 1
 		var fade_out:float = 1
 		
-		if fade_in_enabled or fade_out_enabled:
+		if rw_feel:
+			var p = 1.0 - max(0.0, (current_dist + grid_pushback) / (c_spawn_distance + grid_pushback))
+			var o = min(1.0, p / 0.1) - (1.0 - min(1.0, (1.0 - p) / 0.75))
+			alpha = pow(clamp(o * c_note_opacity, 0.0, 1.0), 1.25)
+		elif fade_in_enabled or fade_out_enabled:
 			
 			if fade_in_enabled: 
 				fade_in = (pow(linstep(fade_in_start,fade_in_end,current_dist), 1.3)) * c_note_opacity
@@ -234,6 +238,10 @@ func note_check_collision(i:int):
 # part of that frame inside the note's hit window. Same box, same window: only the gaps between
 # frames are closed. Replays store their hit results, so they play back the same either way.
 var sweep_on:bool = false
+# Rewrite Feel (RewriteFeel.gd): the rewrite's note fade (NoteRenderer.cs: fade in over the first
+# 10% of the approach, fade out over the last 75% incl. the hit window, opacity ^ 1.25) and its
+# pushback (notes keep moving through the 55 ms window). Mods that fade notes keep their own fade.
+var rw_feel:bool = false
 var sweep_from:Vector2 = Vector2()
 var sweep_from_ms:float = -1e9
 var sweep_to:Vector2 = Vector2()
@@ -500,6 +508,8 @@ func _ready():
 		grid_pushback = pushback_defaults.do_pushback
 	else:
 		grid_pushback = pushback_defaults.never
+	rw_feel = Engine.has_meta("rr_feel_saved") and !Rhythia.mod_ghost and !Rhythia.mod_nearsighted
+	if rw_feel: grid_pushback = 55.0 * approach_rate / 1000.0
 
 	if Rhythia.speed_hitwindow:
 		hit_window = Rhythia.get("hitwindow_ms") * speed_multi

@@ -183,6 +183,18 @@ func _add_hitbox_mode():
 	sw.get_parent().add_child(c)
 	sw.get_parent().move_child(c, (hw.get_index() + 1) if hw else sw.get_index())
 
+	var rf:CheckBox = sw.duplicate(0)
+	rf.name = "RewriteFeel"
+	rf.text = "Rewrite Feel"
+	rf.hint_tooltip = "[def. off] Play maps with the Rhythia rewrite's default look: approach rate 30 at distance 15, FoV 70, more camera sway (the grid and HUD stay still), and the rewrite's note fade (notes fade out as they reach the grid) with pushback through the hit window. Your own settings aren't changed: they apply again when this is off. Applies on the next map."
+	rf.pressed = bool(load("res://mods/replay/Reimagined.gd").val("rewrite_feel"))
+	rf.connect("toggled", self, "_feel_changed")
+	sw.get_parent().add_child(rf)
+	sw.get_parent().move_child(rf, c.get_index() + 1)
+
+func _feel_changed(on:bool):
+	load("res://mods/replay/Reimagined.gd").set_val("rewrite_feel", on)
+
 func _swept_changed(on:bool):
 	load("res://mods/replay/Reimagined.gd").set_val("swept_hitbox", on)
 

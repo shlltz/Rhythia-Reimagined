@@ -18,6 +18,7 @@ var shown_at:int = 0
 
 func _ready():
 	print("song loading")
+	if ResourceLoader.exists("res://mods/replay/RewriteFeel.gd"): load("res://mods/replay/RewriteFeel.gd").apply()
 	get_tree().paused = false
 	if Rhythia.vr:
 		Rhythia.vr_player.transform.origin = Vector3(0,-2.5,4.5)
