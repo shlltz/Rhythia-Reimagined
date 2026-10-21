@@ -54,6 +54,9 @@ func sspm_count() -> int:
 	d.list_dir_end()
 	return n
 
+func b64(b:PoolByteArray) -> String:
+	return Marshalls.raw_to_base64(b)
+
 func run_btn(menu):
 	var stack = [menu]
 	while !stack.empty():
@@ -143,6 +146,72 @@ func run():
 	r = P.import(fd)
 	ok("rewrite map folder imports", r is Song and r.id == "phxm_test_dir", r.id if r is Song else r)
 	if r is Song: ok("notes (folder)", same(notes_of(r), on) == "", same(notes_of(r), on))
+
+	# ---- export: back to the rewrite's format, and round trips
+	var keys = ["ID", "Artist", "ArtistLink", "ArtistPlatform", "Title", "Rating", "Mappers", "Difficulty", "DifficultyName", "Length", "HasAudio", "HasCover", "HasVideo", "AudioExt"]
+	t0 = OS.get_ticks_usec()
+	var ex = P.export(orig, "@@OUT@@/x_orig.phxm")
+	out("export: %.1f ms" % ((OS.get_ticks_usec() - t0) / 1000.0))
+	ok("export: .sspm -> .phxm", ex is Dictionary, ex)
+	if ex is Dictionary:
+		var z = P._read_zip(ex.path)
+		ok("export: zip readable, entries", z is Dictionary and z.has("metadata.json") and z.has("objects.phxmo") and z.has("audio.mp3") and (z.has("cover.png") == orig.has_cover), z.keys() if z is Dictionary else z)
+		var md = parse_json(z["metadata.json"].get_string_from_utf8())
+		var ks = md.keys()
+		ks.sort()
+		var want_k = keys.duplicate()
+		want_k.sort()
+		ok("export: metadata keys = the rewrite's", str(ks) == str(want_k), ks)
+		ok("export: metadata values", md.ID == orig.id and md.Artist == "DunkMemer" and md.Title == "Dancing Roach Autotune" and str(md.Mappers) == str(["BatBrice"]) and int(md.Difficulty) == orig.difficulty + 1 and md.AudioExt == "mp3" and int(md.Length) == int(on[-1][2]), md)
+		r = P.import(ex.path, "x_orig_back")
+		ok("export -> import: same notes", r is Song and same(notes_of(r), on) == "", same(notes_of(r), on) if r is Song else r)
+	# effects + extra metadata survive import -> export
+	var src = P._read_zip(dir + "t_fx.phxm")
+	var src_md = parse_json(src["metadata.json"].get_string_from_utf8())
+	var src_obj = P.parse_objects(src["objects.phxmo"])
+	r = P.import(dir + "t_fx.phxm")
+	ok("fx map imports", r is Song, r)
+	ok("fx: effects counted", P.effect_report(src_obj.tail).hash() == {"brightness": 1, "text": 1}.hash(), P.effect_report(src_obj.tail))
+	if r is Song:
+		ex = P.export(r, "@@OUT@@/x_fx.phxm")
+		ok("fx: export", ex is Dictionary, ex)
+		if ex is Dictionary:
+			out("  warnings: " + str(ex.warnings))
+			var z = P._read_zip(ex.path)
+			var md = parse_json(z["metadata.json"].get_string_from_utf8())
+			var o = P.parse_objects(z["objects.phxmo"])
+			ok("fx: effect sections byte-identical", b64(o.tail) == b64(src_obj.tail), "%d vs %d bytes" % [o.tail.size(), src_obj.tail.size()])
+			var diffs = []
+			for k in keys:
+				if k != "Length" and str(md.get(k)) != str(src_md.get(k)): diffs.append("%s: %s vs %s" % [k, md.get(k), src_md.get(k)])
+			ok("fx: metadata round trip (rating, link, platform, mappers, difficulty name, artist / title)", diffs.empty(), diffs)
+			ok("fx: same notes", same(notes_of(P.import(ex.path, "x_fx_back")), on) == "")
+			ok("fx: the export says what can't play here", str(ex.warnings).find("brightness") != -1)
+		# renamed after the import: the new name is what gets exported
+		r.name = "New Artist - New Title"
+		ex = P.export(r, "@@OUT@@/x_renamed.phxm")
+		if ex is Dictionary:
+			var md = parse_json(P._read_zip(ex.path)["metadata.json"].get_string_from_utf8())
+			ok("renamed: artist / title from the new name", md.Artist == "New Artist" and md.Title == "New Title", md)
+	# a timing point (no layout defined anywhere): reported as unknown, kept byte for byte
+	src = P._read_zip(dir + "t_tp.phxm")
+	src_obj = P.parse_objects(src["objects.phxmo"])
+	ok("timing point: reported as unknown layout", P.effect_report(src_obj.tail).has("unknown"), P.effect_report(src_obj.tail))
+	r = P.import(dir + "t_tp.phxm")
+	if r is Song:
+		ex = P.export(r, "@@OUT@@/x_tp.phxm")
+		ok("timing point: kept byte for byte", ex is Dictionary and b64(P.parse_objects(P._read_zip(ex.path)["objects.phxmo"]).tail) == b64(src_obj.tail))
+	# quantum / off-grid positions survive both ways
+	src = P._read_zip(dir + "t_rtq.phxm")
+	r = P.import(dir + "t_rtq.phxm")
+	if r is Song:
+		ex = P.export(r, "@@OUT@@/x_rtq.phxm")
+		var back = P.import(ex.path, "x_rtq_back") if ex is Dictionary else null
+		ok("quantum: round trip", back is Song and same(notes_of(back), notes_of(r)) == "", same(notes_of(back), notes_of(r)) if back is Song else ex)
+		if ex is Dictionary:
+			var a = P._read_zip(ex.path)["objects.phxmo"]
+			var b = src["objects.phxmo"]
+			ok("quantum: grid / quantum flags as the rewrite writes them", a.size() == b.size() and a[8 + 4] == b[8 + 4] and a[8 + 4 + 5 + 8] == b[8 + 4 + 5 + 8], "%d vs %d bytes" % [a.size(), b.size()])
 
 	# drag and drop: new menu
 	var menu = get_tree().current_scene
