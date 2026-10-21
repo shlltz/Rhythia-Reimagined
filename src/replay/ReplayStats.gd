@@ -248,11 +248,11 @@ static func analyse(rp:Dictionary, song_notes:Array, opts:Dictionary) -> Diction
 	var aims = PoolVector2Array()
 	var delays = PoolRealArray()
 	var unknown_delay = 0
-	var per_note = []   # [song ms, hit, aim dx, aim dy, delay (-1 = unknown), delay resolution] per judged note
+	var per_note = []   # [song ms, hit, aim dx, aim dy, delay (-1 = unknown), delay resolution, note x, note y] per judged note
 	for jd in judged:
 		var n = ns[jd[0]]
 		if !jd[3]:
-			per_note.append([n[1], false, 0.0, 0.0, -1.0, 0.0])
+			per_note.append([n[1], false, 0.0, 0.0, -1.0, 0.0, n[0].x, n[0].y])
 			continue
 		var rx = jd[1] - max(0.0, jd[2] - n[1]) / max(speed, 0.01) # (replay time the song crossed the note's time)
 		var c = _cursor_at(ct, cxs, cys, rx)
@@ -273,7 +273,7 @@ static func analyse(rp:Dictionary, song_notes:Array, opts:Dictionary) -> Diction
 			k += 1
 		if dl >= 0: delays.append(dl)
 		else: unknown_delay += 1
-		per_note.append([n[1], true, aim.x, aim.y, dl, dres])
+		per_note.append([n[1], true, aim.x, aim.y, dl, dres, n[0].x, n[0].y])
 	var nb = int(ceil(max(1.0, sms_at[sms_at.size() - 1] - (so - 3000.0 * speed)) / SPEED_BIN)) + 1
 	var t_from = so - 3000.0 * speed
 	var dist = PoolRealArray()
@@ -329,7 +329,7 @@ static func analyse(rp:Dictionary, song_notes:Array, opts:Dictionary) -> Diction
 		"rows": rows, "per_note": per_note, "aim_mean": mean_aim, "aim_err": mean_err,
 		"delay_median": dsort[dsort.size() / 2] if dsort.size() > 0 else -1.0, "delay_known": delays.size(),
 		"delay_unknown": unknown_delay, "speed_curve": spd_curve, "speed_bin": SPEED_BIN,
-		"heat": heat, "heat_n": HEAT, "sample_ms": gaps[gaps.size() / 2] if gaps.size() > 0 else 0.0, "travelled": travelled, "avg_speed": travelled / max(moving_s, 0.001),
+		"hitbox_half": hbs, "heat": heat, "heat_n": HEAT, "sample_ms": gaps[gaps.size() / 2] if gaps.size() > 0 else 0.0, "travelled": travelled, "avg_speed": travelled / max(moving_s, 0.001),
 		"sms_at": sms_at, "dt": DT}
 
 static func _by_time(a, b) -> bool:

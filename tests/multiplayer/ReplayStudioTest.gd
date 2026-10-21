@@ -8,7 +8,7 @@ extends Node
 const OUT = "@@OUT@@/replay_studio.txt"
 const AIM = Vector2(0.2, 0.1)   # grid units (x right, y down)
 const LATE = 40.0
-const HIT_UNTIL = 15000.0
+var HIT_UNTIL = 15000.0
 const HOLD = 30.0
 var passed = 0
 var failed = 0
@@ -33,7 +33,12 @@ func ok(n, c, d = ""):
 func wait(s):
 	yield(get_tree().create_timer(s, true), "timeout")
 
-func shot(n):
+func shot(n): # (after the frame is drawn: reading the texture earlier can return an old frame)
+	if OS.window_minimized: # (a minimized window isn't drawn: its texture is an old frame)
+		out("  (window minimized: no %s screenshot)" % n)
+		yield(get_tree(), "idle_frame")
+		return
+	yield(VisualServer, "frame_post_draw")
 	var img = get_viewport().get_texture().get_data(); img.flip_y(); img.save_png("@@OUT@@/rs_" + n + ".png")
 
 func _ready():
@@ -65,6 +70,28 @@ func _process(_d):
 	clock_max = max(clock_max, d)
 	if clock_log.size() < 4000: clock_log.append([sp.rms, sp.ms])
 
+func _play():
+	var t = 0.0
+	while t < 30 and !game:
+		yield(wait(0.1), "completed"); t += 0.1
+		var sc = get_tree().current_scene
+		if sc and sc.has_node("Game"): game = sc.get_node("Game")
+	drive = true
+	t = 0.0
+	while t < 70 and is_instance_valid(game) and !game.ending:
+		yield(get_tree(), "idle_frame")
+		t += get_process_delta_time()
+	drive = false
+	t = 0.0
+	while t < 20 and !get_tree().root.has_node("Menu/ResultsScreen"):
+		yield(wait(0.25), "completed"); t += 0.25
+	yield(wait(0.5), "completed")
+
+func _all(n:Node) -> Array:
+	var out = [n]
+	for c in n.get_children(): out += _all(c)
+	return out
+
 func run():
 	Directory.new().remove(OUT)
 	yield(wait(6.0), "completed")
@@ -84,20 +111,8 @@ func run():
 		if i % 4 == 1 and ns[i][2] < HIT_UNTIL - 500 and ns[i][2] - ns[i - 1][2] > 150 and ns[i + 1][2] - ns[i][2] > 150: late_ids[i] = true
 	out("late on purpose: %d notes" % late_ids.size())
 	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	yield(_play(), "completed")
 	var t = 0.0
-	while t < 30 and !game:
-		yield(wait(0.1), "completed"); t += 0.1
-		var sc = get_tree().current_scene
-		if sc and sc.has_node("Game"): game = sc.get_node("Game")
-	drive = true
-	t = 0.0
-	while t < 70 and is_instance_valid(game) and !game.ending:
-		yield(get_tree(), "idle_frame")
-		t += get_process_delta_time()
-	drive = false
-	t = 0.0
-	while t < 20 and !get_tree().root.has_node("Menu/ResultsScreen"):
-		yield(wait(0.25), "completed"); t += 0.25
 	var rs = get_tree().root.get_node_or_null("Menu/ResultsScreen")
 	var run = rs.run if rs and rs.get("run") is Dictionary else {}
 	out("game: end %s score %d hits %d misses %d total %d max combo %d pauses %d, replay %s" % [run.get("end_type"), run.get("score", 0), run.get("hits", 0), run.get("misses", 0), run.get("total", 0), run.get("combo", 0), run.get("pauses", 0), run.get("replay_path", "")])
@@ -174,5 +189,98 @@ func run():
 	var junk = S.parse(tmp)
 	ok("a non-replay is refused", !junk.ok and junk.error == "not a replay file", junk.error)
 	Directory.new().remove(tmp)
+	# ---- a second, shorter run; the studio opened from its results screen, compared with the best
+	HIT_UNTIL = 8000.0
+	late_ids = {}
+	game = null
+	Rhythia.select_song(song)
+	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	yield(_play(), "completed")
+	rs = get_tree().root.get_node_or_null("Menu/ResultsScreen")
+	var run2 = rs.run if rs and rs.get("run") is Dictionary else {}
+	ok("second run recorded too", run2.get("replay_path", "") != "" and run2.get("score", 0) < run.get("score", 0), "%d vs %d" % [run2.get("score", 0), run.get("score", 0)])
+	var has_btn = false
+	for b in _all(rs):
+		if b is Button and b.text == "Analyse": has_btn = true
+	ok("results screen: Analyse button", has_btn)
+	rs._analyse()
+	var studio = get_tree().root.get_node_or_null("Menu/ReplayStudio")
+	t = 0.0
+	while t < 10 and (!studio or studio.A == null):
+		yield(wait(0.1), "completed"); t += 0.1
+	ok("studio opens on the run just played", studio and studio.A and studio.A.st.score == run2.get("score", -1), studio.A.st.score if studio and studio.A else "-")
+	ok("its compare list has the other replay", studio and studio.cmp_paths.size() == 2 and studio.cmp_paths[1] == path)
+	studio._cmp_best()
+	t = 0.0
+	while t < 10 and studio.B == null:
+		yield(wait(0.1), "completed"); t += 0.1
+	ok("best of this map = the first run", studio.B and studio.B.st.score == run.get("score", -1) and studio.B.of == 1)
+	ok("miss list filled", studio.miss_ms.size() == studio.A.st.misses and studio.miss_list.get_item_count() == studio.A.st.misses)
+	studio._jump_miss(1)
+	ok("N picks the first miss", studio.pick_ms == studio.miss_ms[0] and !studio.btn_from.disabled)
+	yield(wait(0.5), "completed")
+	yield(shot("studio"), "completed")
+	var want = S.rms_of(studio.A.st, max(studio.pick_ms - 2000.0, studio.A.st.song_from + 1.0))
+	studio._watch(true)
+	game = null
+	t = 0.0
+	while t < 30 and !game:
+		yield(wait(0.1), "completed"); t += 0.1
+		var sc = get_tree().current_scene
+		if sc and sc.has_node("Game"): game = sc.get_node("Game")
+	t = 0.0
+	var seeked = false
+	var got = 0.0
+	while t < 15 and is_instance_valid(game) and !seeked:
+		yield(get_tree(), "idle_frame")
+		t += get_process_delta_time()
+		got = game.get_node("Spawn").rms
+		seeked = !Engine.has_meta("rr_replay_seek") and got >= want - 50.0
+	ok("WATCH FROM opens the viewer at the picked time (2 s before the miss)", seeked and got < want + 1500.0, "replay at %.0f, wanted %.0f" % [got, want])
+	yield(wait(1.0), "completed")
+	yield(shot("viewer"), "completed")
+	# ---- a 2 s clip of the first run: GIF + MP4 (ffmpeg is on PATH here)
+	for n in _all(get_tree().root):
+		if n.get_script() and str(n.get_script().resource_path).ends_with("ReplayViewer.gd"):
+			n.leave()
+			break
+	t = 0.0
+	while t < 20 and !get_tree().root.has_node("Menu"):
+		yield(wait(0.25), "completed"); t += 0.25
+	yield(wait(2.0), "completed")
+	var menu = get_tree().root.get_node("Menu")
+	if menu.has_node("ResultsScreen"): menu.get_node("ResultsScreen").queue_free()
+	studio = load("res://mods/replay/ReplayStudio.gd").open(menu, path)
+	t = 0.0
+	while t < 10 and studio.A == null:
+		yield(wait(0.1), "completed"); t += 0.1
+	var ff = load("res://mods/replay/ClipExport.gd").has_ffmpeg()
+	ok("ffmpeg found on PATH (this machine has it)", ff)
+	var req = studio.clip_request(5000.0, 2000.0, ff)
+	ok("clip request in replay time", req.size() > 0 and abs(req.to_rms - req.from_rms - 2000.0) < 0.5 and req.audio_ok)
+	OS.window_minimized = false # (a minimized window isn't drawn: no frames to record)
+	Engine.set_meta("rr_clip", req)
+	if Engine.has_meta("rr_clip_result"): Engine.remove_meta("rr_clip_result")
+	var t_clip = OS.get_ticks_msec()
+	studio._watch(false)
+	t = 0.0
+	while t < 90 and !Engine.has_meta("rr_clip_result"):
+		yield(wait(0.25), "completed"); t += 0.25
+	var cres = Engine.get_meta("rr_clip_result") if Engine.has_meta("rr_clip_result") else {"error": "no result in 90 s"}
+	out("clip: %s in %.1f s" % [str(cres), (OS.get_ticks_msec() - t_clip) / 1000.0])
+	ok("clip written", !cres.has("error"), cres.get("error", ""))
+	if cres.has("gif"):
+		var po = []
+		OS.execute("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames,width,height", "-of", "csv=p=0", ProjectSettings.globalize_path(cres.gif)], true, po, true)
+		var parts = str(po[0] if po.size() > 0 else "").strip_edges().split(",")
+		ok("GIF: 400 x 225, 2 s at 20 fps (40 frames)", parts.size() == 3 and parts[0] == "400" and parts[1] == "225" and abs(int(parts[2]) - 40) <= 1, str(parts))
+	if cres.has("mp4"):
+		var po2 = []
+		OS.execute("ffprobe", ["-v", "error", "-count_frames", "-show_entries", "stream=codec_type,nb_read_frames:format=duration", "-of", "csv=p=0", ProjectSettings.globalize_path(cres.mp4)], true, po2, true)
+		var txt = str(po2[0] if po2.size() > 0 else "")
+		out("mp4 probe: %s" % txt.replace("\n", " | "))
+		ok("MP4: 60 video frames + the song's audio", txt.find("video,60") >= 0 or txt.find("video,59") >= 0 or txt.find("video,61") >= 0, txt)
+		ok("MP4 has sound", cres.get("mp4_audio", false) and txt.find("audio") >= 0)
+	ok("frame folder cleaned up", !Directory.new().dir_exists("user://clips/%s_frames" % req.name))
 	out("== totals: %d passed, %d failed" % [passed, failed])
 	OS.kill(OS.get_process_id())

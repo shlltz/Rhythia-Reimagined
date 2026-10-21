@@ -208,7 +208,12 @@ func _ready():
 		if rb: rb.hint_tooltip = "Retry from %s: the last exact checkpoint at least 2 s before you failed.\nScore, combo and health as they were there. Can't set a personal best; no replay." % _mmss(run.resume.snap.at)
 		bar.margin_left -= 85 # (a 4th / 5th button: the bar grows instead of squeezing the labels)
 		bar.margin_right += 85
-	if run.replay_path != "" and File.new().file_exists(run.replay_path): _button(bar, "Watch replay", "_watch")
+	if run.replay_path != "" and File.new().file_exists(run.replay_path):
+		_button(bar, "Watch replay", "_watch")
+		if ResourceLoader.exists("res://mods/replay/ReplayStudio.gd"):
+			_button(bar, "Analyse", "_analyse")
+			bar.margin_left -= 85
+			bar.margin_right += 85
 
 	_cover(true)
 	UIAnim.play(root, Vector2.ZERO, Vector2.ZERO, 0.0, 1.0, 0.3)
@@ -433,6 +438,7 @@ func _layout():
 # ------------------------------------------------------------------ actions
 func _input(ev):
 	if closing or !(ev is InputEventKey) or !ev.pressed or ev.echo: return
+	if menu.has_node("ReplayStudio"): return # (Esc closes the studio over it first)
 	if ev.scancode == KEY_ESCAPE: _back()
 	elif ev.scancode == KEY_QUOTELEFT: _retry()
 	else: return
@@ -472,6 +478,12 @@ func _watch():
 	Rhythia.replaying = true
 	Rhythia.replay_path = run.replay_path
 	_go("res://scenes/loaders/songload.tscn")
+
+# Replay Studio (ReplayStudio.gd) over the results: graphs, heatmap, aim of the run just played
+func _analyse():
+	if closing or menu.has_node("ReplayStudio"): return
+	sfx.play("menuhit.mp3", -6.0)
+	load("res://mods/replay/ReplayStudio.gd").open(menu, run.replay_path)
 
 func _go(scene:String):
 	if "black_fade_target" in menu: menu.black_fade_target = true

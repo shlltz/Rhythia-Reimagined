@@ -78,11 +78,11 @@ GitHub releases + signed manifest ──> updater (download, verify, back up, sw
 - [x] Quantum Editor parity (docs/EDITOR.md, checked against its own default keybinds): grid keys QWE/ASD/ZXC + numpad, Shift+H / Shift+V flips, Ctrl+Q free positions, Ctrl+T / Ctrl+B, timing points (BPM changes; Ctrl+Shift+B), Bezier curve through the selection (Shift+D). Not done, with reasons, listed there (EditorParityTest.gd 29/29 own + share)
 
 ### Phase 4: Replay Studio
-- [ ] offline replay parser + per-note timing / judgement timeline
-- [ ] accuracy / combo / score graphs, miss markers, cursor heatmap, speed graph
-- [ ] jump to event, playback controls (existing viewer)
-- [ ] side-by-side comparison (best vs latest)
-- [ ] clip export (GIF built in; video through ffmpeg when it is installed)
+- [x] offline replay parser + judgement timeline (ReplayStats.gd): song clock rebuilt exactly as the viewer steps it; score / hits / misses / max combo equal what the game counted on a real recorded run; per-note aim + hit delay reconstructed from the cursor samples (as fine as the recording interval, shown per note; unknown when no sample says)
+- [x] Replay Studio (ReplayStudio.gd; replay browser "Studio", results screen "Analyse"): accuracy (overall + last 25), combo and cursor speed over the song with misses and pauses marked, hover readout, cursor heatmap with misses, aim scatter against the hitbox
+- [x] jump to event: miss list, N / Shift+N, WATCH FROM (2 s before the picked time; the viewer seeks on open); playback controls were already in the viewer
+- [x] comparison: any other replay of the map, or BEST OF THIS MAP (highest score), as a second column + overlaid curves
+- [x] clip export (ClipRecorder.gd / ClipExport.gd): 3-10 s, recorded at half speed from the drawn frames; GIF always (GifWriter.gd, verified pixel-exact by ffmpeg decoding), MP4 with the song when ffmpeg is on PATH (never downloaded); a minimized window gives no frames, so the clip is cancelled with a message (ReplayStudioTest.gd 31/31 own + share, GifTest.gd)
 
 ### Phase 5: platform and distribution
 - [ ] mobile: touch targets, gyro / drag cursor modes (where the device has a gyroscope), performance profile

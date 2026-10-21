@@ -261,6 +261,12 @@ func _ready():
 
 	build_keys_panel()
 	apply_ui_state()
+	if Engine.has_meta("rr_clip") and ResourceLoader.exists("res://mods/replay/ClipRecorder.gd"): # (Replay Studio: record a clip)
+		var rec = load("res://mods/replay/ClipRecorder.gd").new()
+		rec.viewer = self
+		rec.clip = Engine.get_meta("rr_clip")
+		Engine.remove_meta("rr_clip")
+		add_child(rec)
 
 # keybind panel: one row per function, key shown as an outlined key cap
 func build_keys_panel():
@@ -490,6 +496,11 @@ func bench_step(delta):
 
 func _process(delta):
 	if bench_t >= 0: bench_step(delta)
+	if Engine.has_meta("rr_replay_seek") and spawn and spawn.notes_loaded: # (Replay Studio's WATCH FROM)
+		var sk = Engine.get_meta("rr_replay_seek") # ([replay ms, label in song time] or replay ms)
+		Engine.remove_meta("rr_replay_seek")
+		do_seek(float(sk[0]) if sk is Array else float(sk))
+		flash(sk[1] if sk is Array else "FROM %s" % fmt(float(sk)))
 	_calc_misses()
 	# Esc is also polled, in case the key event never reaches _input
 	var esc = Input.is_key_pressed(KEY_ESCAPE)
