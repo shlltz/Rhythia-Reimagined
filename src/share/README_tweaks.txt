@@ -28,6 +28,8 @@ WHAT YOU GET
               osu!-style search: every word must match (title, mapper, difficulty; "quotes" keep
               words together) + filters stars>10  bpm<=180  length<2:30  notes>3000  mapper=name,
               imported map files go to the Recycle Bin after a successful import,
+              .phxm maps (the Rhythia rewrite's format) import too: drag and drop, Content
+              Manager > Sound Space Plus Map, or a rewrite map folder (converted to .sspm),
               map cache fix (faster library loading)
   Browse      "Browse" (sidebar or title screen): online map browser that slides up
               from the bottom - search rhythia.com, Any / Ranked / Approved / Unranked, sort
