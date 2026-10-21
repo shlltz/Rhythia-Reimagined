@@ -70,6 +70,8 @@ var box_sel = null                   # {a: ms, b: ms, add: bool}
 
 # waveform (peaks per BIN ms, 0..1; captured by playing the song muted at 4x)
 var wave:PoolRealArray = PoolRealArray()
+var env_lo:PoolRealArray = PoolRealArray()  # low / high band energy per BIN (audio analysis, EditorAuto.gd)
+var env_hi:PoolRealArray = PoolRealArray()
 var wave_n:int = 0                   # bins captured so far
 var wave_state:String = "none"       # none | loading | ready | failed
 var wave_player:AudioStreamPlayer
@@ -201,6 +203,7 @@ func _exit_tree():
 	if eb >= 0: AudioServer.set_bus_effect_enabled(eb, 0, false)
 	_wave_cleanup()
 	if star_thread and star_thread.is_active(): star_thread.wait_to_finish()
+	if auto_thread and auto_thread.is_active(): auto_thread.wait_to_finish()
 
 # ------------------------------------------------------------------ live difficulty
 # The game's own star rating (stars/StarRating.gd, the same numbers the map list shows), redone on a
@@ -433,12 +436,12 @@ func _build_left():
 	tabs.add_constant_override("separation", 4)
 	v.add_child(tabs)
 	var grp = ButtonGroup.new()
-	for t in [["props", "PROPS"], ["timing", "TIMING"], ["notes", "NOTES"], ["checks", "CHECKS"]]:
-		var b = _btn(t[1], "_page_tab", [t[0]], true, 74)
+	for t in [["props", "PROPS"], ["timing", "TIMING"], ["notes", "NOTES"], ["auto", "AUTO"], ["checks", "CHECKS"]]:
+		var b = _btn(t[1], "_page_tab", [t[0]], true, 60)
 		b.group = grp
 		tabs.add_child(b)
 		page_btns[t[0]] = b
-	for id in ["props", "timing", "notes", "checks"]:
+	for id in ["props", "timing", "notes", "auto", "checks"]:
 		var sc = ScrollContainer.new()
 		sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		sc.scroll_horizontal_enabled = false
@@ -452,6 +455,7 @@ func _build_left():
 	_build_props(pages.props[1])
 	_build_timing(pages.timing[1])
 	_build_notes(pages.notes[1])
+	_build_auto(pages.auto[1])
 	_build_checks(pages.checks[1])
 	_page("props")
 	page_btns.props.pressed = true
@@ -690,7 +694,11 @@ func _snap_pos(v:Vector2) -> Vector2:
 	return Vector2(clamp(stepify(v.x, 0.01), -0.5, 2.5), clamp(stepify(v.y, 0.01), -0.5, 2.5))
 
 func _place_ms() -> int:
-	return m.snap(pos, m.bpm, m.offset, m.div) if time_snap else int(round(pos))
+	return m.snap(pos, m.bpm, m.offset, m.div) if _snapping() else int(round(pos))
+
+# time snap, unless Alt is held (a precise placement / drag without switching the snap off)
+func _snapping() -> bool:
+	return time_snap and !Input.is_key_pressed(KEY_ALT)
 
 func _drop_focus(ev):
 	if ev is InputEventMouseButton and ev.pressed:
@@ -975,6 +983,7 @@ func _draw_tl():
 		tt += tstep
 	# waveform
 	_draw_wave(c, lane)
+	_draw_auto(c, lane, t0, t1)
 	# note ticks
 	_draw_ticks(c, lane)
 	# bookmarks
@@ -1207,7 +1216,7 @@ func _tl_input(ev):
 				tl.update()
 			"move":
 				var want = _t_of(ev.position.x) - _t_of(tl_drag.x0)
-				drag_dt = _snap_time(tl_drag.grab + want) - int(tl_drag.grab) if time_snap else int(round(want))
+				drag_dt = _snap_time(tl_drag.grab + want) - int(tl_drag.grab) if _snapping() else int(round(want))
 				tl.update()
 			"pan":
 				view0 = tl_drag.v0 - (ev.position.x - tl_drag.x0) / ppm
@@ -1216,7 +1225,7 @@ func _tl_input(ev):
 				_tl_dirty = true
 
 func _snap_time(t:float) -> int:
-	if time_snap: return m.snap(max(t, 0.0), m.bpm, m.offset, m.div)
+	if _snapping(): return m.snap(max(t, 0.0), m.bpm, m.offset, m.div)
 	return int(round(max(t, 0.0)))
 
 func _tick_at(p:Vector2, lane:Rect2):
@@ -1743,17 +1752,19 @@ func _refresh_state():
 	for h in m.history(): hist_list.add_item("%s  (%d)" % [h[0], h[1]])
 
 # ------------------------------------------------------------------ waveform (muted capture)
-func _wave_begin():
+func _wave_begin(force:bool = false):
 	_wave_cleanup()
 	wave = PoolRealArray()
 	wave_n = 0
 	wave_lines = null
+	env_lo = PoolRealArray()
+	env_hi = PoolRealArray()
 	if !stream or audio_len <= 0:
 		wave_state = "none"
 		return
 	var cache = _wave_cache_path()
 	var f = File.new()
-	if cache != "" and f.file_exists(cache) and f.open(cache, File.READ) == OK:
+	if !force and cache != "" and f.file_exists(cache) and f.open(cache, File.READ) == OK:
 		var n = f.get_32()
 		var len_ms = f.get_32()
 		if n > 0 and abs(len_ms - int(audio_len)) < 50 and n == int(ceil(audio_len / BIN)) + 2:
@@ -1764,6 +1775,7 @@ func _wave_begin():
 			for i in min(n, buf.size()): wave[i] = buf[i] / 255.0
 			wave_n = n
 			wave_state = "ready"
+			_env_load(n)
 			return
 		f.close()
 	# two buses: the capture bus (0 dB, the peak meter reads it) sends into a muted one. A bus can only
@@ -1782,10 +1794,20 @@ func _wave_begin():
 		bus = AudioServer.get_bus_count() - 1
 		AudioServer.set_bus_name(bus, "RRWave")
 	AudioServer.set_bus_send(AudioServer.get_bus_index("RRWave"), "RRMute")
+	if AudioServer.get_bus_effect_count(AudioServer.get_bus_index("RRWave")) == 0: # band energies for the audio analysis (EditorAuto.gd)
+		var an = AudioEffectSpectrumAnalyzer.new()
+		an.fft_size = AudioEffectSpectrumAnalyzer.FFT_SIZE_256 # (~6 ms window: 23 ms of song at 4x)
+		an.buffer_length = 0.1
+		AudioServer.add_bus_effect(AudioServer.get_bus_index("RRWave"), an)
 	if AudioServer.get_bus_index("RRWave") < AudioServer.get_bus_index("RRMute"): # (cannot happen on a fresh start)
 		AudioServer.move_bus(AudioServer.get_bus_index("RRMute"), AudioServer.get_bus_index("RRWave"))
 	wave.resize(int(ceil(audio_len / BIN)) + 2)
 	for i in wave.size(): wave[i] = 0.0
+	env_lo.resize(wave.size())
+	env_hi.resize(wave.size())
+	for i in wave.size():
+		env_lo[i] = 0.0
+		env_hi[i] = 0.0
 	wave_player = AudioStreamPlayer.new()
 	var cs = _load_stream(m.meta.audio) # (its own stream object: not shared with the editing playback)
 	if cs is AudioStreamOGGVorbis or cs is AudioStreamMP3: cs.loop = false
@@ -1806,8 +1828,14 @@ func _wave_step():
 	var pk = max(AudioServer.get_bus_peak_volume_left_db(bus, 0), AudioServer.get_bus_peak_volume_right_db(bus, 0))
 	var v = clamp(db2linear(pk), 0.0, 1.0)
 	v = pow(v, 0.7)
+	var inst = AudioServer.get_bus_effect_instance(bus, 0) if AudioServer.get_bus_effect_count(bus) > 0 else null
+	var lo = _band(inst, 40.0, 180.0) if inst else 0.0     # kick / bass (song Hz: x4 at the capture pitch)
+	var hi = _band(inst, 2500.0, 5500.0) if inst else 0.0  # snares / hats
 	for i in range(_wave_last, min(cur + 1, wave.size())):
 		wave[i] = max(wave[i], v)
+		if i < env_lo.size():
+			env_lo[i] = max(env_lo[i], lo)
+			env_hi[i] = max(env_hi[i], hi)
 	_wave_last = max(_wave_last, cur)
 	wave_n = min(cur, wave.size())
 	if !wave_player.playing or t >= audio_len - 40.0:
@@ -1815,6 +1843,7 @@ func _wave_step():
 		wave_state = "ready"
 		_wave_cleanup()
 		_wave_save()
+		if auto_pending: call_deferred("_auto_run")
 	wave_frame += 1
 	if wave_frame % 8 == 0 or wave_state == "ready":
 		wave_lines = null
@@ -1831,9 +1860,47 @@ func _wave_cache_path() -> String:
 	if !m or m.meta.audio == "": return ""
 	return m.meta.audio.get_base_dir() + "/wave.bin"
 
+func _band(inst, a:float, b:float) -> float:
+	var mg = inst.get_magnitude_for_frequency_range(a * WAVE_PITCH, min(b * WAVE_PITCH, 22000.0), AudioEffectSpectrumAnalyzerInstance.MAGNITUDE_MAX)
+	return clamp((linear2db(max(max(mg.x, mg.y), 1e-7)) + 70.0) / 70.0, 0.0, 1.0)
+
+# band envelopes cache (env.bin next to wave.bin: count, then a byte per bin for each band)
+func _env_path() -> String:
+	var p = _wave_cache_path()
+	return p.get_base_dir() + "/env.bin" if p != "" else ""
+
+func _env_load(n:int):
+	var f = File.new()
+	var p = _env_path()
+	if p == "" or !f.file_exists(p) or f.open(p, File.READ) != OK: return
+	if f.get_32() == n:
+		var a = f.get_buffer(n)
+		var b = f.get_buffer(n)
+		if a.size() == n and b.size() == n:
+			env_lo.resize(n)
+			env_hi.resize(n)
+			for i in n:
+				env_lo[i] = a[i] / 255.0
+				env_hi[i] = b[i] / 255.0
+	f.close()
+
+func _env_save():
+	var p = _env_path()
+	if p == "" or env_lo.size() != wave.size(): return
+	var f = File.new()
+	if f.open(p, File.WRITE) != OK: return
+	f.store_32(env_lo.size())
+	for arr in [env_lo, env_hi]:
+		var buf = PoolByteArray()
+		buf.resize(arr.size())
+		for i in arr.size(): buf[i] = int(clamp(arr[i] * 255.0, 0.0, 255.0))
+		f.store_buffer(buf)
+	f.close()
+
 func _wave_save():
 	var p = _wave_cache_path()
 	if p == "" or wave_state != "ready": return
+	_env_save()
 	var f = File.new()
 	if f.open(p + ".tmp", File.WRITE) != OK: return
 	f.store_32(wave.size())
@@ -2434,6 +2501,11 @@ func _input(ev):
 		return
 	if typing: return
 	var handled = true
+	if ev.shift and m and ev.scancode >= KEY_1 and ev.scancode <= KEY_9: # pattern slots (AUTO tab)
+		if ev.control: _slot_store(ev.scancode - KEY_0)
+		else: _slot_recall(ev.scancode - KEY_0)
+		get_tree().set_input_as_handled()
+		return
 	if ev.control:
 		match ev.scancode:
 			KEY_S: if m: _save_pressed()
@@ -2478,3 +2550,288 @@ func _step_from(t:float, dir:int) -> float:
 	var k = (t - m.offset) / step
 	var kk = floor(k + 0.001) + 1 if dir > 0 else ceil(k - 0.001) - 1
 	return m.offset + kk * step
+
+# ------------------------------------------------------------------ AUTO tab: audio analysis, patterns, transforms
+# Audio analysis (EditorAuto.gd): BPM / offset estimates + onset markers from the muted capture;
+# nothing changes until a candidate is applied, and "preview grid" draws it over the timeline first.
+# Patterns (EditorPatterns.gd): generated at the playhead on the current grid step, inserted as one
+# undo step and selected. Pattern slots: Ctrl+Shift+1..9 stores the selection, Shift+1..9 puts it
+# at the playhead. Alt held while placing / dragging = no time snap.
+const Auto = preload("res://mods/replay/EditorAuto.gd")
+const Pat = preload("res://mods/replay/EditorPatterns.gd")
+var auto_pending:bool = false
+var auto_thread:Thread = null
+var auto_res:Dictionary = {}
+var auto_lbl:Label
+var auto_cands:VBoxContainer
+var auto_preview = null          # [bpm, offset] drawn over the timeline, or null
+var show_onsets:bool = true
+var pat_ui:Dictionary = {}
+var slots:Dictionary = {}        # 1..9 -> notes relative to the first one
+
+func _build_auto(p:Control):
+	p.add_child(_lbl("AUDIO ANALYSIS (BPM / OFFSET ESTIMATE)", 12, Look.TEXT_3))
+	var r = HBoxContainer.new()
+	r.add_constant_override("separation", 4)
+	r.add_child(_btn("ANALYSE AUDIO", "_auto_start", [], false, 150))
+	var ck = CheckBox.new()
+	ck.text = "beat markers"
+	ck.pressed = true
+	ck.focus_mode = Control.FOCUS_NONE
+	ck.add_font_override("font", _font(13))
+	ck.connect("toggled", self, "_auto_onsets")
+	r.add_child(ck)
+	p.add_child(r)
+	auto_lbl = _lbl("Estimates the tempo and the first beat from the song. Check it by ear: it can come out at half / double speed.", 12, Look.TEXT_2)
+	auto_lbl.autowrap = true
+	auto_lbl.rect_min_size.x = 290
+	p.add_child(auto_lbl)
+	auto_cands = VBoxContainer.new()
+	auto_cands.add_constant_override("separation", 4)
+	p.add_child(auto_cands)
+	# patterns
+	p.add_child(_lbl("PATTERN AT THE PLAYHEAD (ONE GRID STEP APART)", 12, Look.TEXT_3))
+	var kind = OptionButton.new()
+	for k in ["stream", "jumps", "circle", "spiral"]: kind.add_item(k)
+	_field_row(p, "Pattern", kind)
+	pat_ui.kind = kind
+	var path = OptionButton.new()
+	for k in Pat.PATHS: path.add_item(k)
+	path.select(Pat.PATHS.find("snake"))
+	_field_row(p, "Stream path", path)
+	pat_ui.path = path
+	for f in [["count", "Notes", 2, 256, 1, 8], ["every", "Grid steps between notes", 1, 16, 1, 1], ["dist", "Jumps: min distance (cells)", 0.5, 2.9, 0.1, 1.5],
+			["seed", "Jumps: variation", 1, 9999, 1, 1], ["r0", "Circle / spiral: radius from", 0.1, 1.5, 0.05, 1.0],
+			["r1", "Spiral: radius to", 0.0, 1.5, 0.05, 0.3], ["turns", "Circle / spiral: turns", 0.25, 8, 0.25, 1.0]]:
+		var sp = SpinBox.new()
+		sp.min_value = f[2]
+		sp.max_value = f[3]
+		sp.step = f[4]
+		sp.value = f[5]
+		_field_row(p, f[1], sp)
+		pat_ui[f[0]] = sp
+	var cw = CheckBox.new()
+	cw.text = "clockwise"
+	cw.pressed = true
+	cw.focus_mode = Control.FOCUS_NONE
+	cw.add_font_override("font", _font(13))
+	p.add_child(cw)
+	pat_ui.cw = cw
+	p.add_child(_btn("GENERATE AT PLAYHEAD", "_pat_generate"))
+	# transforms
+	p.add_child(_lbl("TRANSFORM THE SELECTION", 12, Look.TEXT_3))
+	var piv = CheckBox.new()
+	piv.text = "about the selection's centre (else the grid's)"
+	piv.focus_mode = Control.FOCUS_NONE
+	piv.add_font_override("font", _font(13))
+	p.add_child(piv)
+	pat_ui.pivot = piv
+	var ang = SpinBox.new()
+	ang.min_value = -360
+	ang.max_value = 360
+	ang.step = 1
+	ang.value = 45
+	ang.suffix = "°"
+	_field_row(p, "Rotate by", ang)
+	pat_ui.angle = ang
+	var scl = SpinBox.new()
+	scl.min_value = 0.1
+	scl.max_value = 4
+	scl.step = 0.05
+	scl.value = 0.5
+	_field_row(p, "Scale by", scl)
+	pat_ui.scale = scl
+	var g = GridContainer.new()
+	g.columns = 2
+	g.add_constant_override("hseparation", 4)
+	g.add_constant_override("vseparation", 4)
+	for b in [["ROTATE", "_pat_tf", ["rotate"]], ["SCALE", "_pat_tf", ["scale"]], ["REVERSE TIME", "_pat_tf", ["reverse"]],
+			["MIRROR SECTION X", "_pat_mirror_section", ["x"]], ["MIRROR SECTION Y", "_pat_mirror_section", ["y"]],
+			["REPEAT x4 ROTATING", "_pat_repeat", ["rotate"]]]:
+		var bt = _btn(b[0], b[1], b[2])
+		bt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		g.add_child(bt)
+	p.add_child(g)
+	var help = _lbl("Slots: Ctrl+Shift+1..9 store the selection, Shift+1..9 put it at the playhead. Hold Alt to place / drag without time snap.", 12, Look.TEXT_3)
+	help.autowrap = true
+	help.rect_min_size.x = 290
+	p.add_child(help)
+
+func _auto_onsets(on:bool):
+	show_onsets = on
+	tl.update()
+
+func _auto_start():
+	if !m or !stream:
+		msg("open a map with audio first", true)
+		return
+	if auto_thread and auto_thread.is_active(): return
+	auto_pending = true
+	if wave_state == "ready" and env_lo.size() == wave.size() and env_lo.size() > 0:
+		_auto_run()
+		return
+	auto_lbl.text = "Listening to the song (muted, 4x speed)..."
+	_wave_begin(true) # (a waveform from the cache has no band energies: capture again)
+
+func _auto_run():
+	auto_pending = false
+	if env_lo.size() == 0:
+		auto_lbl.text = "No band energies were captured for this audio."
+		return
+	auto_lbl.text = "Analysing..."
+	auto_thread = Thread.new()
+	auto_thread.start(self, "_auto_work", [env_lo, env_hi, wave])
+
+func _auto_work(a:Array):
+	call_deferred("_auto_done", Auto.analyse(a[0], a[1], a[2], BIN))
+
+func _auto_done(res:Dictionary):
+	if auto_thread and auto_thread.is_active(): auto_thread.wait_to_finish()
+	auto_res = res
+	for c in auto_cands.get_children(): c.queue_free()
+	if res.bpm <= 0:
+		auto_lbl.text = "Couldn't find a steady beat (%d onsets). Set the BPM by ear (TAP BPM on the TIMING tab)." % res.onsets.size()
+		tl.update()
+		return
+	auto_lbl.text = "%d onsets found. Estimates (best first; confidence = how much more the beats line up than at a random phase):" % res.onsets.size()
+	for c in res.candidates:
+		var h = HBoxContainer.new()
+		h.add_constant_override("separation", 4)
+		var l = _lbl("%.2f BPM  offset %d ms  (%.1fx)" % [c[0], c[1], c[2]], 13, Look.TEXT)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		h.add_child(l)
+		h.add_child(_btn("PREVIEW", "_auto_preview", [c], false, 76))
+		h.add_child(_btn("USE", "_auto_apply", [c], false, 50))
+		auto_cands.add_child(h)
+	tl.update()
+
+func _auto_preview(c:Array):
+	auto_preview = null if auto_preview == c else c
+	msg(("preview grid: %.2f BPM from %d ms (accent lines; USE to keep it)" % [c[0], c[1]]) if auto_preview else "preview off")
+	tl.update()
+
+func _auto_apply(c:Array):
+	auto_preview = null
+	sp_bpm.value = c[0]
+	sp_off.value = c[1]
+	_timing_changed(0)
+	msg("BPM %.2f, offset %d ms (editor grid; notes not moved - SNAP SELECTION TO GRID does that)" % [c[0], c[1]])
+	tl.update()
+
+# onset markers + the previewed grid over the timeline
+func _draw_auto(c:Control, lane:Rect2, t0:float, t1:float):
+	if show_onsets and auto_res.has("onsets"):
+		var ons = auto_res.onsets
+		var i = _bsearch(ons, t0)
+		while i < ons.size() and ons[i] <= t1:
+			var x = _x_of(ons[i])
+			c.draw_line(Vector2(x, lane.position.y), Vector2(x, lane.position.y + 10), Color(1, 0.8, 0.3, 0.8), 2.0)
+			i += 1
+	if auto_preview:
+		var bpm = auto_preview[0]
+		var off = auto_preview[1]
+		var per = 60000.0 / bpm
+		var k = floor((t0 - off) / per)
+		var n = 0
+		while n < 4000:
+			var t = off + k * per
+			if t > t1: break
+			var x = _x_of(t)
+			c.draw_line(Vector2(x, lane.position.y), Vector2(x, lane.end.y), Color(0.3, 0.9, 1.0, 0.45 if posmod(int(k), 4) == 0 else 0.22), 1.0)
+			k += 1
+			n += 1
+
+func _bsearch(arr:Array, t:float) -> int:
+	var lo = 0
+	var hi = arr.size()
+	while lo < hi:
+		var mid = (lo + hi) / 2
+		if arr[mid] < t: lo = mid + 1
+		else: hi = mid
+	return lo
+
+func _insert_notes(name:String, ns:Array):
+	if ns.empty(): return
+	m.begin(name)
+	var n = m.run(["add", ns])
+	m.end()
+	sel = {}
+	for x in ns:
+		var key = Model.key_of([float(x[0]), float(x[1]), int(round(x[2]))])
+		if m.keys.has(key): sel[key] = [float(x[0]), float(x[1]), int(round(x[2]))]
+	_sel_changed()
+	var oob = Pat.out_of_bounds(ns)
+	msg("%s: %d notes%s%s" % [name, n, (" (%d were already there)" % (ns.size() - n)) if n < ns.size() else "", ("  - %d outside the playable area" % oob) if oob > 0 else ""], oob > 0)
+
+func _pat_generate():
+	if !m: return
+	var step = Model.step_ms(m.bpm, m.div) * pat_ui.every.value
+	var t0 = m.snap(pos, m.bpm, m.offset, m.div) if time_snap else pos
+	var n = int(pat_ui.count.value)
+	var ns = []
+	match pat_ui.kind.get_item_text(pat_ui.kind.selected):
+		"stream": ns = Pat.stream(t0, step, n, Pat.PATHS[pat_ui.path.selected])
+		"jumps": ns = Pat.jumps(t0, step, n, pat_ui.dist.value, int(pat_ui.seed.value))
+		"circle": ns = Pat.spiral(t0, step, n, pat_ui.r0.value, pat_ui.r0.value, pat_ui.turns.value, pat_ui.cw.pressed)
+		"spiral": ns = Pat.spiral(t0, step, n, pat_ui.r0.value, pat_ui.r1.value, pat_ui.turns.value, pat_ui.cw.pressed)
+	_insert_notes(pat_ui.kind.get_item_text(pat_ui.kind.selected), ns)
+
+func _pivot(ns:Array) -> Vector2:
+	return Pat.centroid(ns) if pat_ui.pivot.pressed else Pat.CENTER
+
+func _replace_sel(name:String, news:Array):
+	var ns = _sel_notes()
+	if ns.empty():
+		msg("select notes first")
+		return
+	m.begin(name)
+	m.run(["del", ns])
+	m.run(["add", news])
+	m.end()
+	sel = {}
+	for x in news: sel[Model.key_of(x)] = x
+	_sel_changed()
+	var oob = Pat.out_of_bounds(news)
+	msg(name + (("  - %d notes now outside the playable area" % oob) if oob > 0 else ""), oob > 0)
+
+func _pat_tf(op:String):
+	var ns = _sel_notes()
+	if ns.empty():
+		msg("select notes first")
+		return
+	var amt = pat_ui.angle.value if op == "rotate" else (pat_ui.scale.value if op == "scale" else 0.0)
+	_replace_sel("%s%s" % [op, (" %s" % str(amt)) if op != "reverse" else ""], Pat.transform(ns, op, amt, _pivot(ns)))
+
+func _pat_mirror_section(axis:String):
+	var ns = _sel_notes()
+	if ns.empty():
+		msg("select notes first")
+		return
+	_insert_notes("mirror section " + axis, Pat.mirror_section(ns, axis, Model.step_ms(m.bpm, m.div)))
+
+func _pat_repeat(op:String):
+	var ns = _sel_notes()
+	if ns.empty():
+		msg("select notes first")
+		return
+	var t_min = ns[0][2]
+	var t_max = ns[0][2]
+	for x in ns:
+		t_min = min(t_min, x[2])
+		t_max = max(t_max, x[2])
+	var period = t_max - t_min + Model.step_ms(m.bpm, m.div)
+	_insert_notes("repeat x4 rotating", Pat.repeat(ns, 3, period, op, 90.0))
+
+func _slot_store(k:int):
+	var ns = _sel_notes()
+	if ns.empty():
+		msg("select notes to store in slot %d" % k)
+		return
+	slots[k] = Pat.to_slot(ns)
+	msg("slot %d: %d notes stored (Shift+%d puts them at the playhead)" % [k, ns.size(), k])
+
+func _slot_recall(k:int):
+	if !slots.has(k):
+		msg("slot %d is empty (Ctrl+Shift+%d stores the selection)" % [k, k])
+		return
+	_insert_notes("slot %d" % k, Pat.from_slot(slots[k], m.snap(pos, m.bpm, m.offset, m.div) if time_snap else pos))
