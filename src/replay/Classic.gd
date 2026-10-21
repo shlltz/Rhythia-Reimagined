@@ -4,7 +4,8 @@ extends Node
 # SongInfoScreen) instead of the list + modded page. Static helpers give every mod the right node for
 # either layout; an instance (added by menu2.gd on the classic menu) brings the modded page's extras
 # to the classic one: star ratings (page + grid tiles), PICK FOR LOBBY, the map editor / collection
-# actions, the slowest speed button and the touch speed pad.
+# actions, the slowest speed button and the touch speed pad, the hype cover visualizer, and covers
+# loaded off the main thread (grid thumbnails, the page's full cover) - the look stays stock.
 
 const CLASSIC = "res://scenes/menu/oldmenu2.tscn"
 const INFO = "Main/Results/Results"
@@ -56,6 +57,12 @@ var coll_popup:PopupMenu
 var coll_new:PopupPanel
 var tile_font:Font
 var _t:float = 0.0
+var bg:Node = null            # BgLoad (fixes mod): covers / preview audio on a worker thread
+var preview_btn:Node = null
+var page_routed:bool = false
+var preview_routed:bool = false
+var pending_page = null
+var pending_preview = null
 
 func _ready():
 	name = "RRClassic"
@@ -69,16 +76,95 @@ func _ready():
 		_add_slowest_speed(mods)
 		_touch_speed(mods)
 	_actions_menu()
+	_bg_setup()
+	if ResourceLoader.exists("res://mods/hype/Hype.gd") and !si.has_node("Hype"): # cover visualizer (hype mod)
+		var hy = load("res://mods/hype/Hype.gd").new()
+		hy.name = "Hype"
+		hy.bars = false # (pulse only here, no spectrum bars)
+		si.add_child(hy)
 	if ResourceLoader.exists(StarBadge):
 		Rhythia.connect("selected_song_changed", self, "_update_stars")
 		Rhythia.connect("mods_changed", self, "_update_stars")
 		_update_stars()
 
 func _process(delta):
+	_grid_mode()
 	_t += delta
 	if _t < 0.25: return
 	_t = 0.0
 	_tile_stars()
+	_tile_covers()
+
+func _exit_tree():
+	if Engine.has_meta("rr_grid_thumbs"): Engine.remove_meta("rr_grid_thumbs")
+
+# ---- covers off the main thread
+# The grid read every tile's full cover on the main thread (~170 ms per page of 20 tiles, again on
+# every page / search keystroke: only 6 full covers stay loaded). While the grid shows, Song.cover
+# hands it the list thumbnail instead (Song.gd checks rr_grid_thumbs) and the thumbnails are decoded
+# on the worker. The stock song page and its preview button ran on the selection signal and read
+# the full cover / audio there: they now run once the worker has them (a few ms later).
+func _grid_mode():
+	var g = menu.get_node_or_null(GRID)
+	var on = bg != null and g != null and g.is_visible_in_tree()
+	if on == Engine.has_meta("rr_grid_thumbs"): return
+	if on: Engine.set_meta("rr_grid_thumbs", true)
+	else: Engine.remove_meta("rr_grid_thumbs")
+
+func _tile_covers():
+	var g = menu.get_node_or_null(GRID)
+	if !bg or !g or !g.is_visible_in_tree() or g.get("btns") == null: return
+	for b in g.btns:
+		if !is_instance_valid(b) or !(b.get("song") is Object) or !b.song.has_cover: continue
+		var c = b.get_node_or_null("Cover")
+		if !c: continue
+		if b.song.thumb:
+			if !c.texture: c.texture = b.song.thumb
+		else: bg.request_thumb(b.song)
+
+func _thumb_done(_map):
+	_tile_covers()
+
+func _bg_setup():
+	var p = "res://mods/fixes/BgLoad.gd"
+	if !ResourceLoader.exists(p) or !load(p).available(): return
+	bg = load(p).new()
+	add_child(bg)
+	bg.connect("loaded", self, "_bg_done")
+	bg.connect("thumb_loaded", self, "_thumb_done")
+	if Rhythia.is_connected("selected_song_changed", si, "update"):
+		Rhythia.disconnect("selected_song_changed", si, "update")
+		page_routed = true
+	preview_btn = si.get_node_or_null("Info/M/V/Buttons/Control/PreviewMusic")
+	if preview_btn and Rhythia.is_connected("selected_song_changed", preview_btn, "upd"):
+		Rhythia.disconnect("selected_song_changed", preview_btn, "upd")
+		preview_routed = true
+	if page_routed or preview_routed: Rhythia.connect("selected_song_changed", self, "_on_song")
+
+func _on_song(s = null):
+	var map = s if s is Object else Rhythia.selected_song
+	if !(map is Object): return
+	var need = false
+	if page_routed:
+		if !map.has_cover or map.loaded_cover(): si.update(map)
+		else:
+			pending_page = map
+			need = true
+	if preview_routed:
+		if map.rr_stream or !(map.sspm_song_stored or !map.musicFile.begins_with("res://")): preview_btn.upd(map)
+		else:
+			pending_preview = map
+			need = true
+	if need: bg.request(map)
+
+func _bg_done(map):
+	if map != Rhythia.selected_song: return # (picked something else meanwhile)
+	if pending_page == map:
+		pending_page = null
+		si.update(map) # (if the worker couldn't decode it, the stock page reads it as before)
+	if pending_preview == map:
+		pending_preview = null
+		preview_btn.upd(map)
 
 # ---- star ratings
 func _update_stars(_x = null):

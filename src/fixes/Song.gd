@@ -82,6 +82,9 @@ func _get_cover():
 	if is_instance_valid(cover):
 		_cover_used()
 		return cover
+	# the classic map grid (stock v2MapList) is building its tiles: the list thumbnail, decoded on a
+	# worker (Classic.gd / BgLoad) - full covers on the main thread took ~170 ms per page of tiles
+	if Engine.has_meta("rr_grid_thumbs"): return thumb
 	var img = _cover_image()
 	if img is Image: _set_cover_image(img)
 	elif img is Texture: cover = img
