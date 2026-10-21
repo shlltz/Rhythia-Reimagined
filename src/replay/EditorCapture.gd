@@ -43,6 +43,7 @@ var _p_hi:float = 0.0
 var _p_al:float = 0.0
 var _dropped:int = 0
 var _quiet:float = 0.0
+var worst_us:int = 0                # longest time one frame's reading + processing took
 
 # the two buses (created once per session: removing them under a player crashed the game) and the
 # capture effect. A bus can only send to a bus with a LOWER index, so the muted one comes first.
@@ -97,6 +98,7 @@ func start(stream:AudioStream, length_ms:float, wbin:float = 25.0):
 	_p_hi = 0.0
 	_p_al = 0.0
 	_quiet = 0.0
+	worst_us = 0
 	_player = AudioStreamPlayer.new()
 	_player.stream = stream
 	_player.bus = BUS
@@ -129,12 +131,14 @@ func _ready():
 
 func _process(delta):
 	if state != "loading": return
+	var us = OS.get_ticks_usec()
 	var avail = _cap.get_frames_available()
 	if avail > 0:
 		_quiet = 0.0
 		_feed(_cap.get_buffer(avail))
 	else:
 		_quiet += delta
+	worst_us = max(worst_us, OS.get_ticks_usec() - us)
 	var d = _cap.get_discarded_frames()
 	if d > _dropped: # (dropped while the buffer was full: they came after everything read so far)
 		_skip(d - _dropped)

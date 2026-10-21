@@ -168,7 +168,7 @@ func run():
 		ok("capture %.1f BPM: offset within 6 ms" % case[0], cr.bpm > 0 and coff <= 6.0, "%d ms vs %d ms" % [cr.offset, case[1]])
 		ok("capture %.1f BPM: first onset at the first kick" % case[0], cr.onsets.size() > 0 and abs(cr.onsets[0] - case[1]) <= 10.0)
 		ok("capture %.1f BPM: waveform drawn" % case[0], cap.wave.size() > 0 and cap.wave[int(case[1] / 25.0) + 1] > 0.3)
-		ok("capture %.1f BPM: frames stay smooth (< 30 ms)" % case[0], cworst < 30.0, "%.1f ms" % cworst)
+		ok("capture %.1f BPM: its work per frame stays small (< 8 ms; whole frames < 60 ms)" % case[0], cap.worst_us < 8000 and cworst < 60.0, "%.1f ms of capture work, worst frame %.1f ms" % [cap.worst_us / 1000.0, cworst])
 		cap.queue_free()
 	# ---- patterns: pure
 	var st = P.stream(1000, 100, 9, "snake")

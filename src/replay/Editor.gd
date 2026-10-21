@@ -98,6 +98,9 @@ var note_list_filter:LineEdit
 var diag_list:ItemList
 var hist_list:ItemList
 var book_list:ItemList
+var pt_list:ItemList                 # timing points (TIMING tab)
+var sp_pt:SpinBox
+var pos_btns:Dictionary = {}         # note position snap buttons by mode
 var insp:Dictionary = {}
 var start_panel:Control
 var lib_list:ItemList
@@ -564,6 +567,7 @@ func _build_timing(p:Control):
 		b.group = g
 		b.pressed = s[0] == "cell"
 		pr.add_child(b)
+		pos_btns[s[0]] = b
 	p.add_child(pr)
 	var ck2 = CheckBox.new()
 	ck2.text = "Advance one grid step after placing"
@@ -591,6 +595,24 @@ func _build_timing(p:Control):
 	r1.add_child(_btn("OFFSET = HERE", "_offset_here", [], false, 150))
 	p.add_child(r1)
 	p.add_child(_btn("SNAP SELECTION TO GRID", "_snap_selection"))
+	p.add_child(_lbl("TIMING POINTS (BPM CHANGES, CTRL+SHIFT+B)", 12, Look.TEXT_3))
+	var tr = HBoxContainer.new()
+	tr.add_constant_override("separation", 4)
+	tr.add_child(_btn("ADD HERE", "_point_add", [], false, 110))
+	tr.add_child(_btn("REMOVE", "_point_remove", [], false, 90))
+	p.add_child(tr)
+	pt_list = ItemList.new()
+	pt_list.rect_min_size = Vector2(0, 70)
+	pt_list.connect("item_selected", self, "_point_pick")
+	_style_input(pt_list)
+	p.add_child(pt_list)
+	sp_pt = SpinBox.new()
+	sp_pt.min_value = 20
+	sp_pt.max_value = 400
+	sp_pt.step = 0.001
+	sp_pt.editable = false
+	sp_pt.connect("value_changed", self, "_point_bpm")
+	_field_row(p, "BPM from the selected point", sp_pt)
 	p.add_child(_lbl("BOOKMARKS", 12, Look.TEXT_3))
 	var br = HBoxContainer.new()
 	br.add_constant_override("separation", 4)
@@ -700,7 +722,7 @@ func _snap_pos(v:Vector2) -> Vector2:
 	return Vector2(clamp(stepify(v.x, 0.01), -0.5, 2.5), clamp(stepify(v.y, 0.01), -0.5, 2.5))
 
 func _place_ms() -> int:
-	return m.snap(pos, m.bpm, m.offset, m.div) if _snapping() else int(round(pos))
+	return m.snap_t(pos) if _snapping() else int(round(pos))
 
 # time snap, unless Alt is held (a precise placement / drag without switching the snap off)
 func _snapping() -> bool:
@@ -750,7 +772,7 @@ func _field_input(ev):
 				sel.erase(Model.key_of(hit2))
 				_sel_changed()
 		elif ev.button_index in [BUTTON_WHEEL_UP, BUTTON_WHEEL_DOWN] and ev.pressed:
-			_seek(pos + (1 if ev.button_index == BUTTON_WHEEL_UP else -1) * (60000.0 / (m.bpm * m.div) if time_snap else 10.0))
+			_seek(_step_from(pos, 1 if ev.button_index == BUTTON_WHEEL_UP else -1))
 
 func _field_exit():
 	hover_cell = Vector2(-9, -9)
@@ -782,7 +804,7 @@ func _place_note(g:Vector2):
 	m.run(["add", [n]])
 	m.end()
 	sel = {Model.key_of(n): n}
-	if advance: _seek(ms + Model.step_ms(m.bpm, m.div))
+	if advance: _seek(m.grid_next(ms, 1))
 	_sel_changed()
 
 # where the pattern cursor is at time t (grid units): rests on a note, then glides to the next one and
@@ -830,6 +852,9 @@ func _draw_field():
 	Look.brackets(c, g.grow(10), 22.0, Look.hot(0.7) if Look.fx_on() else Look.LINE_HI, 2.0)
 	if !m:
 		return
+	var lf = _font(12)
+	for k in 9: # (grid key of each cell)
+		c.draw_string(lf, Vector2(g.position.x + (k % 3) * cell + 6, g.position.y + (k / 3) * cell + 16), GRID_LETTERS[k], Color(1, 1, 1, 0.16))
 	# ghost under the mouse
 	if hover_cell.x > -5:
 		var sp = _snap_pos(hover_cell)
@@ -961,26 +986,24 @@ func _draw_tl():
 	# ruler + beat grid
 	c.draw_rect(Rect2(0, 0, sz.x, RULER), Look.SURFACE)
 	var beat_px = 60000.0 / m.bpm * ppm
-	var b0 = int(floor(m.ms_beat(t0, m.bpm, m.offset)))
-	var b1 = int(ceil(m.ms_beat(t1, m.bpm, m.offset)))
+	for pt in m.points: beat_px = min(beat_px, 60000.0 / pt[1] * ppm) # (the densest section decides the stride)
 	var bstep = 1
 	while beat_px * bstep < 7.0: bstep *= 2
-	var sub_on = beat_px / m.div >= 6.0
-	var b = b0 - posmod(b0, bstep)
 	var font = _font(11)
-	var sub_n = 0
-	while b <= b1 and sub_n < 6000:
-		var x = _x_of(m.beat_ms(b, m.bpm, m.offset))
-		var measure = posmod(b, 4) == 0
-		if x >= -2 and x <= sz.x + 2:
-			c.draw_line(Vector2(x, RULER - (10 if measure else 5)), Vector2(x, RULER), Look.TEXT_2 if measure else Look.TEXT_3, 1.0)
-			c.draw_line(Vector2(x, lane.position.y), Vector2(x, lane.end.y), Color(1, 1, 1, 0.13 if measure else 0.06), 1.0)
-		if sub_on and bstep == 1:
-			for s in range(1, m.div):
-				var sx = _x_of(m.beat_ms(b + float(s) / m.div, m.bpm, m.offset))
-				if sx >= 0 and sx <= sz.x: c.draw_line(Vector2(sx, lane.position.y), Vector2(sx, lane.end.y), Color(1, 1, 1, 0.03), 1.0)
-		b += bstep
-		sub_n += 1
+	for gl in m.grid_lines(t0, t1, beat_px / m.div >= 6.0, bstep):
+		var x = _x_of(gl[0])
+		if gl[1] == 2:
+			c.draw_line(Vector2(x, lane.position.y), Vector2(x, lane.end.y), Color(1, 1, 1, 0.03), 1.0)
+			continue
+		var measure = gl[1] == 0
+		c.draw_line(Vector2(x, RULER - (10 if measure else 5)), Vector2(x, RULER), Look.TEXT_2 if measure else Look.TEXT_3, 1.0)
+		c.draw_line(Vector2(x, lane.position.y), Vector2(x, lane.end.y), Color(1, 1, 1, 0.13 if measure else 0.06), 1.0)
+	# timing points (BPM changes): a line through the lane + the new BPM on the ruler
+	for pt in m.points:
+		if pt[0] < t0 or pt[0] > t1: continue
+		var px = _x_of(pt[0])
+		c.draw_line(Vector2(px, 0), Vector2(px, lane.end.y), Color(0.3, 0.9, 1.0, 0.7), 2.0)
+		c.draw_string(font, Vector2(px + 4, RULER - 2), "%s BPM" % _num_txt(pt[1]), Color(0.3, 0.9, 1.0))
 	# time labels (every ~120 px)
 	var tstep = _nice_step(120.0 / ppm)
 	var tt = ceil(t0 / tstep) * tstep
@@ -1231,7 +1254,7 @@ func _tl_input(ev):
 				_tl_dirty = true
 
 func _snap_time(t:float) -> int:
-	if _snapping(): return m.snap(max(t, 0.0), m.bpm, m.offset, m.div)
+	if _snapping(): return m.snap_t(max(t, 0.0))
 	return int(round(max(t, 0.0)))
 
 func _tick_at(p:Vector2, lane:Rect2):
@@ -1341,7 +1364,7 @@ func _op_step(dir:int):
 	if sel.empty(): return
 	var ns = _sel_notes()
 	var first = ns[0][2]
-	var target = Model.snap(first + dir * Model.step_ms(m.bpm, m.div) * 0.6, m.bpm, m.offset, m.div)
+	var target = int(round(m.grid_next(first, dir)))
 	if target == first: target = first + dir
 	_move_selection(Vector2.ZERO, int(target - first), "shift %d step" % dir)
 
@@ -1352,7 +1375,7 @@ func _snap_selection():
 		return
 	var pairs = []
 	for n in ns:
-		var s = m.snap(n[2], m.bpm, m.offset, m.div)
+		var s = m.snap_t(n[2])
 		if s != int(n[2]): pairs.append([n, [n[0], n[1], max(s, 0)]])
 	if pairs.empty():
 		msg("already on the grid")
@@ -1369,7 +1392,7 @@ func _op_repeat(times:int):
 	var ns = _sel_notes()
 	if ns.empty(): return
 	var span = ns[ns.size() - 1][2] - ns[0][2]
-	var step = Model.step_ms(m.bpm, m.div)
+	var step = m.step_at(ns[0][2])
 	var len_ms = max(ceil((span + 1) / step) * step, step)
 	var added = []
 	m.begin("repeat x%d" % times)
@@ -1411,7 +1434,7 @@ func _cut():
 func _duplicate():
 	var ns = _sel_notes()
 	if ns.empty(): return
-	var step = Model.step_ms(m.bpm, m.div)
+	var step = m.step_at(ns[0][2])
 	var span = ns[ns.size() - 1][2] - ns[0][2]
 	var dm = max(ceil((span + 1) / step) * step, step)
 	var group = []
@@ -1618,7 +1641,69 @@ func _bookmark_go(i:int):
 func _refresh_bookmarks():
 	book_list.clear()
 	for b in m.bookmarks: book_list.add_item(Model.fmt_time(int(b)))
+	_refresh_points()
 	tl.update()
+
+# timing points: a new section (its own BPM, grid and measures) from the snapped playhead on
+func _point_add():
+	if !m: return
+	var t = m.snap_t(pos) if time_snap else int(round(pos))
+	if !m.add_point(t, m.bpm_at(t)):
+		msg("a timing point goes after the offset (first beat) and not on another one", true)
+		return
+	m.dirty = true
+	_refresh_points()
+	for i in m.points.size():
+		if int(m.points[i][0]) == t:
+			pt_list.select(i)
+			_point_pick(i)
+	msg("timing point at %s: set its BPM below" % Model.fmt_time(t))
+
+func _point_remove():
+	var si = pt_list.get_selected_items()
+	if !m or m.points.empty(): return
+	var k = si[0] if !si.empty() else -1
+	if k < 0: # (the one at or before the playhead)
+		for i in m.points.size():
+			if m.points[i][0] <= pos + 0.5: k = i
+	if k < 0: return
+	m.points.remove(k)
+	m.rev += 1
+	m.dirty = true
+	_refresh_points()
+	tl.update()
+
+func _point_pick(i:int):
+	if !m or i < 0 or i >= m.points.size(): return
+	_lock_ui = true
+	sp_pt.editable = true
+	sp_pt.value = m.points[i][1]
+	_lock_ui = false
+	_seek(m.points[i][0])
+	_center_view()
+
+func _point_bpm(v:float):
+	var si = pt_list.get_selected_items()
+	if _lock_ui or !m or si.empty() or si[0] >= m.points.size(): return
+	m.points[si[0]][1] = clamp(v, 20.0, 400.0)
+	m.rev += 1
+	m.dirty = true
+	pt_list.set_item_text(si[0], _point_txt(m.points[si[0]]))
+	tl.update()
+
+func _refresh_points():
+	if !pt_list: return
+	pt_list.clear()
+	for pt in m.points: pt_list.add_item(_point_txt(pt))
+	sp_pt.editable = false
+
+func _point_txt(pt:Array) -> String:
+	return "%s   %s BPM" % [Model.fmt_time(int(pt[0])), _num_txt(pt[1])]
+
+static func _num_txt(v:float) -> String:
+	var t = "%.3f" % v
+	while t.ends_with("0"): t = t.substr(0, t.length() - 1)
+	return t.trim_suffix(".")
 
 func _sync_timing_ui():
 	_lock_ui = true
@@ -1740,7 +1825,7 @@ func _process(delta):
 	if _auto_t > 15.0:
 		_auto_t = 0.0
 		if m.dirty and _auto_rev != m.rev: _autosave()
-	time_lbl.text = "%s / %s     beat %.2f     %d notes" % [Model.fmt_time(int(pos)), Model.fmt_time(int(audio_len)), m.ms_beat(pos, m.bpm, m.offset), m.notes.size()]
+	time_lbl.text = "%s / %s     beat %.2f%s     %d notes" % [Model.fmt_time(int(pos)), Model.fmt_time(int(audio_len)), m.beat_at(pos), (" @ %s BPM" % _num_txt(m.bpm_at(pos))) if !m.points.empty() else "", m.notes.size()]
 
 func _play_sounds(a:float, b:float):
 	if b <= a: return
@@ -1756,9 +1841,9 @@ func _play_sounds(a:float, b:float):
 				fired = true
 			i += 1
 	if metronome:
-		var ba = int(floor(m.ms_beat(a, m.bpm, m.offset))) + 1
-		if m.beat_ms(ba, m.bpm, m.offset) <= b and m.beat_ms(ba, m.bpm, m.offset) > a:
-			click_player.pitch_scale = 1.5 if posmod(ba, 4) == 0 else 1.0
+		var gl = m.grid_lines(a + 0.001, b, false, 1, 1)
+		if !gl.empty():
+			click_player.pitch_scale = 1.5 if gl[0][1] == 0 else 1.0
 			click_player.play()
 
 func _refresh_state():
@@ -2000,7 +2085,7 @@ func _autosave():
 # per-map editor settings (grid / bookmarks are not part of the .sspm): DIR/<id>/meta.json
 func _sidecar_write():
 	if !m or str(m.meta.id) == "": return
-	_write_json("%s/meta.json" % _work_dir(str(m.meta.id)), {"bpm": m.bpm, "offset": m.offset, "div": m.div, "bookmarks": m.bookmarks})
+	_write_json("%s/meta.json" % _work_dir(str(m.meta.id)), {"bpm": m.bpm, "offset": m.offset, "div": m.div, "bookmarks": m.bookmarks, "points": m.points})
 
 func _sidecar_read(model):
 	var f = File.new()
@@ -2014,6 +2099,7 @@ func _sidecar_read(model):
 	model.offset = int(d.get("offset", 0))
 	model.div = int(clamp(int(d.get("div", 4)), 1, 16))
 	if typeof(d.get("bookmarks")) == TYPE_ARRAY: model.bookmarks = d.bookmarks
+	model.set_points(d.get("points", []))
 
 func _write_json(path:String, d:Dictionary) -> bool:
 	var f = File.new()
@@ -2491,6 +2577,17 @@ func _input(ev):
 		else: _slot_recall(ev.scancode - KEY_0)
 		get_tree().set_input_as_handled()
 		return
+	if ev.shift and !ev.control and m: # (Quantum Editor bindings: flips, curve)
+		var sh = true
+		match ev.scancode:
+			KEY_H: _op_mirror(true)
+			KEY_V: _op_mirror(false)
+			KEY_D: _bezier()
+			KEY_C: _toggle_cursor()
+			_: sh = false
+		if sh:
+			get_tree().set_input_as_handled()
+			return
 	if ev.control:
 		match ev.scancode:
 			KEY_S: if m: _save_pressed()
@@ -2503,11 +2600,24 @@ func _input(ev):
 			KEY_V: _paste()
 			KEY_D: _duplicate()
 			KEY_A: _select_all()
-			KEY_LEFT: if m: _seek(m.beat_ms(floor(m.ms_beat(pos - 1, m.bpm, m.offset) / 4.0) * 4.0, m.bpm, m.offset))
-			KEY_RIGHT: if m: _seek(m.beat_ms((floor(m.ms_beat(pos + 1, m.bpm, m.offset) / 4.0) + 1) * 4.0, m.bpm, m.offset))
+			KEY_T: _page("timing")
+			KEY_B:
+				if ev.shift: _point_add()
+				else:
+					_page("timing")
+					book_list.grab_focus()
+			KEY_Q: _toggle_quantum()
+			KEY_LEFT: if m: _seek(m.grid_next(pos, -1, 0.25)) # (one measure)
+			KEY_RIGHT: if m: _seek(m.grid_next(pos, 1, 0.25))
 			_: handled = false
 	else:
 		if !m:
+			return
+		var gk = GRID_KEYS.find(ev.scancode)
+		if gk < 0: gk = PAD_KEYS.find(ev.scancode)
+		if gk >= 0 and !ev.shift: # a note on that cell at the (snapped) playhead
+			_place_note(Vector2(gk % 3, gk / 3))
+			get_tree().set_input_as_handled()
 			return
 		match ev.scancode:
 			KEY_SPACE: _toggle_play()
@@ -2520,7 +2630,6 @@ func _input(ev):
 			KEY_PERIOD: _jump_note(1)
 			KEY_B: _bookmark_add()
 			KEY_L: _set_loop(!loop_on)
-			KEY_C: _toggle_cursor()
 			KEY_BRACKETLEFT: _loop_mark(true)
 			KEY_BRACKETRIGHT: _loop_mark(false)
 			KEY_F5: _test(ev.shift)
@@ -2529,12 +2638,21 @@ func _input(ev):
 			_: handled = false
 	if handled: get_tree().set_input_as_handled()
 
+# grid keys (the Quantum Editor's layout): Q W E / A S D / Z X C, or the numpad, = the 3x3 cells
+const GRID_KEYS = [KEY_Q, KEY_W, KEY_E, KEY_A, KEY_S, KEY_D, KEY_Z, KEY_X, KEY_C]
+const PAD_KEYS = [KEY_KP_7, KEY_KP_8, KEY_KP_9, KEY_KP_4, KEY_KP_5, KEY_KP_6, KEY_KP_1, KEY_KP_2, KEY_KP_3]
+const GRID_LETTERS = ["Q", "W", "E", "A", "S", "D", "Z", "X", "C"]
+
+# Ctrl+Q: free note positions (the Quantum Editor's "quantum") <-> grid cells
+func _toggle_quantum():
+	var to = "cell" if pos_snap == "free" else "free"
+	pos_snap = to
+	if pos_btns.has(to): pos_btns[to].pressed = true
+	msg("note positions: free (quantum)" if to == "free" else "note positions: grid cells")
+
 func _step_from(t:float, dir:int) -> float:
-	var step = Model.step_ms(m.bpm, m.div)
 	if !time_snap: return t + dir * 10.0
-	var k = (t - m.offset) / step
-	var kk = floor(k + 0.001) + 1 if dir > 0 else ceil(k - 0.001) - 1
-	return m.offset + kk * step
+	return m.grid_next(t, dir)
 
 # ------------------------------------------------------------------ AUTO tab: audio analysis, patterns, transforms
 # Audio analysis (EditorAuto.gd): BPM / offset estimates + onset markers from the muted capture;
@@ -2632,12 +2750,12 @@ func _build_auto(p:Control):
 	g.add_constant_override("vseparation", 4)
 	for b in [["ROTATE", "_pat_tf", ["rotate"]], ["SCALE", "_pat_tf", ["scale"]], ["REVERSE TIME", "_pat_tf", ["reverse"]],
 			["MIRROR SECTION X", "_pat_mirror_section", ["x"]], ["MIRROR SECTION Y", "_pat_mirror_section", ["y"]],
-			["REPEAT x4 ROTATING", "_pat_repeat", ["rotate"]]]:
+			["REPEAT x4 ROTATING", "_pat_repeat", ["rotate"]], ["CURVE THROUGH SELECTION", "_bezier", []]]:
 		var bt = _btn(b[0], b[1], b[2])
 		bt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		g.add_child(bt)
 	p.add_child(g)
-	var help = _lbl("Slots: Ctrl+Shift+1..9 store the selection, Shift+1..9 put it at the playhead. Hold Alt to place / drag without time snap.", 12, Look.TEXT_3)
+	var help = _lbl("Slots: Ctrl+Shift+1..9 store the selection, Shift+1..9 put it at the playhead. Curve (Shift+D): the selected notes are its control points, notes on every grid step from the first to the last. Hold Alt to place / drag without time snap.", 12, Look.TEXT_3)
 	help.autowrap = true
 	help.rect_min_size.x = 290
 	p.add_child(help)
@@ -2750,8 +2868,8 @@ func _insert_notes(name:String, ns:Array):
 
 func _pat_generate():
 	if !m: return
-	var step = Model.step_ms(m.bpm, m.div) * pat_ui.every.value
-	var t0 = m.snap(pos, m.bpm, m.offset, m.div) if time_snap else pos
+	var t0 = m.snap_t(pos) if time_snap else pos
+	var step = m.step_at(t0) * pat_ui.every.value
 	var n = int(pat_ui.count.value)
 	var ns = []
 	match pat_ui.kind.get_item_text(pat_ui.kind.selected):
@@ -2792,7 +2910,7 @@ func _pat_mirror_section(axis:String):
 	if ns.empty():
 		msg("select notes first")
 		return
-	_insert_notes("mirror section " + axis, Pat.mirror_section(ns, axis, Model.step_ms(m.bpm, m.div)))
+	_insert_notes("mirror section " + axis, Pat.mirror_section(ns, axis, m.step_at(ns[0][2])))
 
 func _pat_repeat(op:String):
 	var ns = _sel_notes()
@@ -2804,8 +2922,28 @@ func _pat_repeat(op:String):
 	for x in ns:
 		t_min = min(t_min, x[2])
 		t_max = max(t_max, x[2])
-	var period = t_max - t_min + Model.step_ms(m.bpm, m.div)
+	var period = t_max - t_min + m.step_at(t_min)
 	_insert_notes("repeat x4 rotating", Pat.repeat(ns, 3, period, op, 90.0))
+
+# Bezier curve: the selection (2+ notes, by time) are the control points; the curve gets a note on
+# every grid step from the first note's time to the last's and replaces them (one undo step)
+func _bezier():
+	var ns = _sel_notes()
+	if ns.size() < 2:
+		msg("select 2 or more notes: the curve starts on the first, ends on the last and bends toward the others")
+		return
+	var t0 = float(ns[0][2])
+	var t1 = float(ns[ns.size() - 1][2])
+	if t1 - t0 < 1.0:
+		msg("the selected notes need different times", true)
+		return
+	var times = []
+	var t = t0
+	while t < t1 - 0.5 and times.size() < 4000:
+		times.append(int(round(t)))
+		t = m.grid_next(t, 1) if time_snap else t + m.step_at(t)
+	times.append(int(t1))
+	_replace_sel("curve (%d notes)" % times.size(), Pat.bezier(ns, times))
 
 func _slot_store(k:int):
 	var ns = _sel_notes()
@@ -2819,4 +2957,4 @@ func _slot_recall(k:int):
 	if !slots.has(k):
 		msg("slot %d is empty (Ctrl+Shift+%d stores the selection)" % [k, k])
 		return
-	_insert_notes("slot %d" % k, Pat.from_slot(slots[k], m.snap(pos, m.bpm, m.offset, m.div) if time_snap else pos))
+	_insert_notes("slot %d" % k, Pat.from_slot(slots[k], m.snap_t(pos) if time_snap else pos))

@@ -115,6 +115,24 @@ static func mirror_section(ns:Array, axis:String, gap_ms:float) -> Array:
 		t_max = max(t_max, n[2])
 	return transform(transform(ns, "shift", t_max - t_min + gap_ms), "mirror_x" if axis == "x" else "mirror_y")
 
+# a Bezier curve through control notes (by time): one note per time in `times`, the curve parameter
+# going linearly in time from the first control note to the last (de Casteljau)
+static func bezier(ctrl:Array, times:Array) -> Array:
+	var out = []
+	if ctrl.size() < 2 or times.empty(): return out
+	var t0 = float(ctrl[0][2])
+	var t1 = float(ctrl[ctrl.size() - 1][2])
+	for t in times:
+		var u = clamp((t - t0) / max(t1 - t0, 1.0), 0.0, 1.0)
+		var pts = []
+		for c in ctrl: pts.append(Vector2(c[0], c[1]))
+		while pts.size() > 1:
+			var nx = []
+			for i in pts.size() - 1: nx.append(pts[i].linear_interpolate(pts[i + 1], u))
+			pts = nx
+		out.append([_tidy(pts[0].x), _tidy(pts[0].y), int(round(t))])
+	return out
+
 # selection centroid (pivot for rotate / scale "about the selection")
 static func centroid(ns:Array) -> Vector2:
 	if ns.empty(): return CENTER

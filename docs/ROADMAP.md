@@ -75,7 +75,7 @@ GitHub releases + signed manifest ──> updater (download, verify, back up, sw
 - [x] BPM / offset estimate, beat markers, preview grid, USE (AUTO tab). The song is captured sample-exact (EditorCapture.gd: AudioEffectCapture on a muted 4x bus; the old per-frame peak meter was ~70 ms of song per value). Click tracks through the real capture: exact tempo, offset within 1 ms; synthetic envelopes within 5 ms; noise: no tempo claimed. Real test song: 150.08 BPM (its notes: 150 / 300), notes 11 ms from the estimated grid (EditorToolsTest.gd, own + share)
 - [x] snap override: hold Alt = no time snap
 - [x] pattern tools (EditorPatterns.gd: stream paths, jumps, circle, spiral, rotate / scale / reverse, mirror section, repeat rotating, slots 1-9), one undo step each; undo / redo now select what they put back (EditorToolsTest.gd)
-- [ ] workflow parity items from the Quantum Editor (list kept in EDITOR.md)
+- [x] Quantum Editor parity (docs/EDITOR.md, checked against its own default keybinds): grid keys QWE/ASD/ZXC + numpad, Shift+H / Shift+V flips, Ctrl+Q free positions, Ctrl+T / Ctrl+B, timing points (BPM changes; Ctrl+Shift+B), Bezier curve through the selection (Shift+D). Not done, with reasons, listed there (EditorParityTest.gd 29/29 own + share)
 
 ### Phase 4: Replay Studio
 - [ ] offline replay parser + per-note timing / judgement timeline
