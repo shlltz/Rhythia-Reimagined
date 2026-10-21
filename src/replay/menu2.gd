@@ -18,7 +18,8 @@ func idle_status():
 # Reimagined.gd two times a frame. Held here for the whole session, load() is a cache hit.
 const KEEP_LOADED = ["res://mods/replay/Reimagined.gd", "res://mods/replay/Look.gd", "res://mods/replay/UIAnim.gd",
 	"res://mods/replay/Icons.gd", "res://mods/replay/Ring.gd", "res://mods/stars/RecentPlays.gd",
-	"res://mods/replay/CrashWatch.gd", "res://mods/replay/OsuSfx.gd", "res://mods/stars/StarCache.gd"]
+	"res://mods/replay/CrashWatch.gd", "res://mods/replay/OsuSfx.gd", "res://mods/stars/StarCache.gd",
+	"res://mods/replay/Library.gd", "res://mods/fixes/Phxm.gd"]
 
 func _ready():
 	get_tree().paused = false
@@ -266,6 +267,8 @@ func _add_replay_button():
 		last = _sidebar_button(l, "Editor", "res://assets/images/ui/cloud_32.png", last.name, "open_editor")
 	if ResourceLoader.exists(MULTI):
 		last = _sidebar_button(l, "Multiplayer", "res://assets/images/ui/cloud_32.png", last.name, "open_multiplayer")
+	if ResourceLoader.exists(LIBRARY):
+		last = _sidebar_button(l, "Library", "res://assets/images/ui/cloud_32.png", last.name, "open_library")
 	# Rhythia-reimagined customize panel (icon drawn: three sliders)
 	var cz = _sidebar_button(l, "Customize", "res://assets/images/ui/cloud_32.png", last.name, "open_customize")
 	var tex = cz.get_node("Tex")
@@ -347,6 +350,15 @@ func _crash_prompt():
 		open_customize()
 		var p = get_node_or_null("ReimaginedPanel")
 		if p: p.call_deferred("show_tab", "logs", false)
+
+# library tools (LibraryPanel.gd): sidebar button
+const LIBRARY = "res://mods/replay/LibraryPanel.gd"
+func open_library():
+	if has_node("LibraryPanel") or !ResourceLoader.exists(LIBRARY): return
+	if has_node("Press"): get_node("Press").play()
+	var p = load(LIBRARY).new()
+	p.name = "LibraryPanel"
+	add_child(p)
 
 func open_customize():
 	if has_node("ReimaginedPanel"): return

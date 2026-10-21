@@ -49,8 +49,9 @@ static func import(path:String, sid:String = ""):
 	return added
 
 # A Song set up from the map, not saved yet (the import screen edits it first): notes, cover, and
-# the audio copied to TMP, where convert_to_sspm reads it. Returns the Song or an error String.
-static func load_song(path:String, sid:String = ""):
+# the audio copied to `tmp`, where convert_to_sspm reads it. Returns the Song or an error String.
+# tex = false (worker threads): the cover stays a plain Image (Song.rr_cover_image) - no GPU texture.
+static func load_song(path:String, sid:String = "", tex:bool = true, tmp:String = TMP):
 	var files = _read_dir(path) if Directory.new().dir_exists(path) else _read_zip(path)
 	if files is String: return files
 	if !files.has("metadata.json") or !files.has("objects.phxmo"): return "not a .phxm map (no metadata.json / objects.phxmo)"
@@ -67,10 +68,10 @@ static func load_song(path:String, sid:String = ""):
 	if fmt != "mp3" and fmt != "ogg": return "unsupported audio (only mp3 and ogg play here)"
 
 	if sid == "": sid = _id(meta, path, files["objects.phxmo"])
-	_clear_tmp()
+	_clear_tmp(tmp)
 	var d = Directory.new()
-	d.make_dir_recursive(Globals.p(TMP))
-	var music = Globals.p(TMP) + "/%s.%s" % [sid, fmt]
+	d.make_dir_recursive(Globals.p(tmp))
+	var music = Globals.p(tmp) + "/%s.%s" % [sid, fmt]
 	var f = File.new()
 	if f.open(music, File.WRITE) != OK: return "can't write the audio to " + music
 	f.store_buffer(audio)
@@ -91,7 +92,10 @@ static func load_song(path:String, sid:String = ""):
 	for k in files:
 		if k.begins_with("cover."):
 			var img = _image(files[k])
-			if img:
+			if img and !tex:
+				s.rr_cover_image = img
+				s.has_cover = true
+			elif img:
 				var t = ImageTexture.new()
 				t.create_from_image(img)
 				s.cover = t
@@ -366,10 +370,23 @@ static func _id(meta:Dictionary, path:String, objects:PoolByteArray) -> String:
 	if out.replace("_", "").length() < 3: out = "phxm_" + Marshalls.raw_to_base64(objects).md5_text().substr(0, 12)
 	return out.substr(0, 100)
 
-static func _wanted(name:String) -> bool:
+static func _wanted(name:String, only:Array = []) -> bool:
+	if !only.empty(): return only.has(name)
 	return name == "metadata.json" or name == "objects.phxmo" or name.begins_with("audio.") or name.begins_with("cover.")
 
-static func _read_dir(path:String) -> Dictionary:
+# just metadata.json + objects.phxmo (previews: no audio / cover read); {meta, notes, last} or a String
+static func peek(path:String):
+	var only = ["metadata.json", "objects.phxmo"]
+	var files = _read_dir(path, only) if Directory.new().dir_exists(path) else _read_zip(path, only)
+	if files is String: return files
+	if !files.has("metadata.json") or !files.has("objects.phxmo"): return "not a .phxm map"
+	var meta = parse_json(files["metadata.json"].get_string_from_utf8())
+	if typeof(meta) != TYPE_DICTIONARY: return "unreadable metadata.json"
+	var o = files["objects.phxmo"]
+	var n = _u32(o, 4) if o.size() >= 8 else 0
+	return {"meta": meta, "notes": n, "id": _id(meta, path, o), "length": int(meta.get("Length", 0))}
+
+static func _read_dir(path:String, only:Array = []) -> Dictionary:
 	var out = {}
 	var d = Directory.new()
 	if d.open(path) != OK: return out
@@ -377,7 +394,7 @@ static func _read_dir(path:String) -> Dictionary:
 	d.list_dir_begin(true, true)
 	var n = d.get_next()
 	while n != "":
-		if !d.current_is_dir() and _wanted(n.to_lower()) and f.open(path.plus_file(n), File.READ) == OK:
+		if !d.current_is_dir() and _wanted(n.to_lower(), only) and f.open(path.plus_file(n), File.READ) == OK:
 			out[n.to_lower()] = f.get_buffer(f.get_len())
 			f.close()
 		n = d.get_next()
@@ -395,7 +412,7 @@ static func _le32(v:int) -> PoolByteArray:
 
 # the wanted entries of the zip ({lower-case file name: bytes}, folders inside the zip ignored)
 # or an error String
-static func _read_zip(path:String):
+static func _read_zip(path:String, only:Array = []):
 	var f = File.new()
 	if f.open(path, File.READ) != OK: return "can't open " + path.get_file()
 	var n = f.get_len()
@@ -428,7 +445,7 @@ static func _read_zip(path:String):
 		var loc = _u32(c, p + 42)
 		var name = c.subarray(p + 46, p + 45 + nlen).get_string_from_utf8().get_file().to_lower() if nlen > 0 else ""
 		p += 46 + nlen + _u16(c, p + 30) + _u16(c, p + 32)
-		if !_wanted(name) or out.has(name): continue
+		if !_wanted(name, only) or out.has(name): continue
 		f.seek(loc)
 		var h = f.get_buffer(30)
 		if h.size() < 30 or _u32(h, 0) != 0x04034b50: return "broken zip entry " + name
@@ -456,9 +473,9 @@ static func _image(buf:PoolByteArray):
 	elif buf[8] == 0x57 and buf[9] == 0x45: err = img.load_webp_from_buffer(buf)
 	return img if err == OK else null
 
-static func _clear_tmp():
+static func _clear_tmp(tmp:String = TMP):
 	var d = Directory.new()
-	var dir = Globals.p(TMP)
+	var dir = Globals.p(tmp)
 	if d.open(dir) != OK: return
 	d.list_dir_begin(true, true)
 	var n = d.get_next()
