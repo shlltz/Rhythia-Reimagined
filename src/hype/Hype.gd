@@ -43,6 +43,7 @@ var bolts:Array = []          # [points, branches, age]
 var strike_queue:Array = []   # seconds until the next strike
 var shake_last:Dictionary = {} # node -> [offset applied, position we left it at]
 var viz:Control = null
+var bars:bool = true       # spectrum bars around the cover (off on the classic page: pulse only)
 var run_hover:bool = false
 
 func _ready():
@@ -54,9 +55,17 @@ func _ready():
 	cache = load("res://mods/stars/StarCache.gd").get_instance(get_tree())
 	Rhythia.connect("selected_song_changed", self, "_on_song")
 
+# the page's nodes: the modded map page, or the stock classic one (Classic.gd adds this there too)
 func _cover():
-	var c = page.get_node_or_null("RS/H1/Right/ButtonDisp")
-	return c if c else page.get_node_or_null("RS/H1/ButtonDisp")
+	for p in ["RS/H1/Right/ButtonDisp", "RS/H1/ButtonDisp", "ButtonDisp"]:
+		var c = page.get_node_or_null(p)
+		if c: return c
+	return null
+
+func _preview_song():
+	var cb = page.get("ctrl_box")
+	var pm = cb.get_node_or_null("PreviewMusic") if cb else page.get_node_or_null("Info/M/V/Buttons/Control/PreviewMusic")
+	return pm.get_node_or_null("Song") if pm else null
 
 # the map page's preview player (PreviewMusic/Song); the menu music is PreviewMusic/MenuSong
 # first accent at or after `ms`
@@ -70,11 +79,12 @@ func _acc_index(ms:float) -> int:
 	return lo
 
 func _map_song_playing() -> bool:
-	var p = page.ctrl_box.get_node_or_null("PreviewMusic/Song")
+	var p = _preview_song()
 	return p != null and p.playing and !p.stream_paused
 
 func _run():
-	return page.run_btn
+	var r = page.get("run_btn")
+	return r if r else page.get_node_or_null("Info/M/V/Run/Run")
 
 func _on_song(_s = null):
 	song = Rhythia.selected_song
@@ -87,6 +97,9 @@ func _on_song(_s = null):
 func _check_stars():
 	if song == null or !cache: return
 	var b = page.get("star_badge") # rating at the current speed (speed mods raise / lower it)
+	if b == null:
+		var cl = get_tree().root.get_node_or_null("Menu/RRClassic")
+		if cl: b = cl.star_badge
 	var s = b.stars if b and b.song == song and b.stars >= 0 else cache.get_stars(song)
 	if s == stars: return
 	if stars >= 0 and s > stars + 0.005: # sped up: power surge
@@ -129,7 +142,7 @@ func _process(delta):
 	# preview position + time since the last mix - output latency. Spectrum guessing only as a
 	# fallback while the note times load.
 	if accents == null and song: accents = cache.get_onsets(song)
-	var pl = page.ctrl_box.get_node_or_null("PreviewMusic/Song")
+	var pl = _preview_song()
 	if accents != null and accents.size() > 0 and pl and pl.playing and !pl.stream_paused:
 		var heard = (pl.get_playback_position() + AudioServer.get_time_since_last_mix() - AudioServer.get_output_latency()) * 1000.0
 		if heard < last_heard - 60.0 or heard > last_heard + 1000.0: acc_i = _acc_index(heard) # seek / loop / restart
@@ -154,7 +167,7 @@ func _process(delta):
 	side = max(max(e, punch * 0.9), side - delta * 1.6)
 	var cover = _cover()
 	var run = _run()
-	if cover and !viz:
+	if cover and !viz and bars:
 		viz = CoverViz.new()
 		viz.hype = self
 		cover.add_child(viz)
@@ -174,7 +187,7 @@ func _process(delta):
 	# cover: pulse with the bass, quake on hype maps
 	if cover:
 		cover.rect_pivot_offset = cover.rect_size / 2
-		var s = COVER_SCALE * (1.0 + bass * 0.012 + 0.08 * surge * surge) # (steady bob kept small: the hits carry the beat)
+		var s = (COVER_SCALE if bars else 1.0) * (1.0 + bass * 0.012 + 0.08 * surge * surge) # (steady bob kept small: the hits carry the beat)
 		s *= 1.0 + 0.11 * punch # the hit
 		cover.rect_scale = Vector2(s, s)
 		_shake(cover, (2.0 + bass * 3.0 + kick * 5.0) if hype else 0.0)
@@ -272,7 +285,7 @@ func _fx_off():
 	_fx_free(fx_card); fx_card = null
 
 func _map_card():
-	var ml = get_tree().root.get_node_or_null("Menu/Main/Maps/MapRegistry/S/VBoxContainer")
+	var ml = load("res://mods/replay/Classic.gd").map_list(get_tree().root.get_node_or_null("Menu"))
 	if !ml or !ml.is_visible_in_tree(): return null
 	for b in ml.get("btns") if ml.get("btns") != null else []:
 		if is_instance_valid(b) and b.get("song") == song and b.is_visible_in_tree(): return b

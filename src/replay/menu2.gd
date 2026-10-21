@@ -64,6 +64,8 @@ func _ready():
 		
 		get_tree().create_timer(300).connect("timeout",self,"idle_status")
 	
+	if Classic.is_classic(self): add_child(Classic.new()) # classic map grid: the mods' extras on its pages
+	elif Rhythia.menu_target == Classic.CLASSIC: Rhythia.menu_target = ProjectSettings.get_setting("application/config/default_menu_target")
 	call_deferred("_add_replay_button")
 	call_deferred("_add_topo_background")
 	call_deferred("_add_animations")
@@ -121,9 +123,8 @@ func _input(ev):
 		open_customize()
 		return
 	if !(ev is InputEventKey) or !ev.pressed or ev.echo or ev.scancode != KEY_ESCAPE: return
-	var maps = get_node_or_null("Main/Maps")
 	var st = get_node_or_null("Main/Settings")
-	if !(maps and maps.is_visible_in_tree()) and !(st and st.is_visible_in_tree()): return
+	if !Classic.map_pages_visible(self) and !(st and st.is_visible_in_tree()): return
 	for n in ["ResultsScreen", "ReplayBrowser", "ReimaginedPanel", "Editor", "Multiplayer"]:
 		if has_node(n): return
 	var mb = get_node_or_null("MapBrowser")
@@ -135,10 +136,15 @@ func _input(ev):
 		f.release_focus() # first Esc just leaves the search box
 		return
 	get_tree().set_input_as_handled()
+	var info = get_node_or_null("Main/Results")
+	if Classic.is_classic(self) and info and info.is_visible_in_tree():
+		Classic.show_page(self, "maps") # classic song page: Esc steps back to the grid first
+		return
 	show_title()
 
 # ---------------------------------------------------------------- animations
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
+const Classic = preload("res://mods/replay/Classic.gd")
 const PAGE_RISE = Vector2(0, 18)
 const MAP_SLIDE = Vector2(48, 0)
 const TAB_SLIDE = Vector2(24, 0)
@@ -160,6 +166,7 @@ func _page_shown(page:Control):
 
 func _map_picked(_song = null):
 	var info = get_node_or_null("Main/Maps/Results/Results")
+	if !info: info = get_node_or_null(Classic.INFO)
 	if info and info.is_visible_in_tree(): UIAnim.play(info, MAP_SLIDE, Vector2.ZERO, 0.0, 1.0, 0.28)
 
 func _settings_tab(_tab:int, tabs:TabContainer):

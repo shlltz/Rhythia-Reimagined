@@ -850,7 +850,9 @@ func finish_map():
 			$Finish/Error.text = result
 			$Finish/Error.visible = true
 		$Finish/ok.visible = true
-	var list = $"/root/Menu/Main/Maps/MapRegistry/S/VBoxContainer"
+	var list = get_node_or_null("/root/Menu/Main/Maps/MapRegistry/S/VBoxContainer")
+	if !list: list = get_node_or_null("/root/Menu/Main/MapRegistry/S/G") # classic map grid
+	if !list: return
 	list.prepare_songs()
 	list.reload_to_current_page()
 

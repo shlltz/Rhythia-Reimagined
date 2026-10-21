@@ -669,7 +669,7 @@ func _get_pressed(b:Dictionary):
 	if s == null:
 		_download(b)
 		return
-	var ml = get_tree().root.get_node_or_null("Menu/Main/Maps/MapRegistry/S/VBoxContainer")
+	var ml = load("res://mods/replay/Classic.gd").map_list(get_tree().root.get_node_or_null("Menu"))
 	if !ml or !ml.has_method("switch_to_play_screen") or !is_instance_valid(s) or !(s is Song): return
 	Rhythia.select_song(s)
 	var tm = get_tree().root.get_node_or_null("Menu/TitleMenu")
@@ -1064,7 +1064,7 @@ static func _unzip(path:String, dir:String) -> String:
 	return ""
 
 func _refresh_library():
-	var list = get_tree().root.get_node_or_null("Menu/Main/Maps/MapRegistry/S/VBoxContainer")
+	var list = load("res://mods/replay/Classic.gd").map_list(get_tree().root.get_node_or_null("Menu"))
 	if list and list.has_method("prepare_songs"):
 		list.prepare_songs()
 		list.build_list()

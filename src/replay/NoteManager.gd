@@ -365,7 +365,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 						0.002
 					)
 
-					missEffect.duplicate().spawn(self,pos,notes[i][3],miss_id,true)
+					_fx_take(missEffect).spawn(self,pos,notes[i][3],miss_id,true)
 				emit_signal("miss",notes[i][3])
 				prev_ms = notems
 			elif result:
@@ -397,11 +397,11 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 						pos.x = (global_transform * notes[i][5]).origin.x
 						pos.y = (global_transform * notes[i][5]).origin.y
 
-					hitEffect.duplicate().spawn(get_parent(),pos,notes[i][3],hit_id,false)
+					_fx_take(hitEffect).spawn(get_parent(),pos,notes[i][3],hit_id,false)
 				emit_signal("hit",notes[i][3])
 				var score:int = get_parent().hit(notes[i][3])
 				if Rhythia.score_popup:
-					scoreEffect.duplicate().spawn(get_parent(),pos,notes[i][3],score)
+					_fx_take(scoreEffect).spawn(get_parent(),pos,notes[i][3],score)
 
 				prev_ms = notems
 		elif ms > (notems + hit_window) + 100:
@@ -411,8 +411,8 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 #	$Label.text += "last note is visible!"
 	notes_mm_node.multimesh.visible_instance_count = notes.size() - current_note
 	if asq: asq_node.multimesh.visible_instance_count = notes.size() - current_note
-	if c_spawn_effect: spawnfx_node.multimesh.instance_count = notes.size() - current_note
-	
+	if c_spawn_effect: spawnfx_node.multimesh.visible_instance_count = notes.size() - current_note # (stock set instance_count: a buffer reallocation every frame once the last notes were in view)
+
 	if rerun_required: reposition_notes()
 	return note_passed
 
@@ -464,12 +464,31 @@ func spawn_notes(note_array:Array):
 	
 	var last_ms = note_array[-1][2]
 	var inst_count = max(35,ceil(10000 * (float(notes.size()) / float(last_ms))))
+	var peak = _peak_window_notes()
+	if peak > 0: inst_count = peak + 4
 	$Notes.multimesh.instance_count = inst_count
 	if asq:
 		$ASq.multimesh.instance_count = inst_count
+	if c_spawn_effect:
+		$SpawnEffect.multimesh.instance_count = inst_count
 		
 	notes_loaded = true
 	call_deferred("reposition_notes",true)
+
+# Most notes the reposition window ever holds (Rhythia-reimagined, after the rewrite's NoteRenderer,
+# which sizes its MultiMesh once instead of growing it in play). The stock size was an average
+# density guess; dense bursts grew the buffers 10 at a time mid-song - each growth reallocates and
+# clears them and re-runs the whole reposition pass in that frame. A note sits in the window from
+# its spawn distance until hit_window + 100 ms after its time. 0 = no fixed window (approach <= 0).
+func _peak_window_notes() -> int:
+	if approach_rate <= 0 or speed_multi <= 0 or notes.empty(): return 0
+	var w = Rhythia.get("spawn_distance") * 1000.0 * speed_multi / approach_rate + hit_window + 150.0
+	var peak = 0
+	var lo = 0
+	for hi in notes.size():
+		while notes[hi][1] - notes[lo][1] > w: lo += 1
+		peak = max(peak, hi - lo + 1)
+	return peak
 
 
 func _ready():
@@ -769,7 +788,35 @@ func _set_rec_interval(delta:float):
 	
 	last_cursor_position = newpos
 
+# Effect copies made ahead (Rhythia-reimagined): every hit copied the hit effect scene (0.3-1.2 ms
+# on a desktop, several times that on phones) - and the score popup when that's on - inside the hit
+# frame. A few copies are kept ready, made at most one per frame in frames without a hit, so the hit
+# frame only places one. Each copy is still used once and frees itself as before.
+const FX_READY = 6
+var fx_ready:Dictionary = {} # source effect -> copies not used yet
+var fx_used_frame:bool = false
+
+func _fx_take(src:Spatial):
+	fx_used_frame = true
+	var a = fx_ready.get(src)
+	if a and a.size() > 0: return a.pop_back()
+	return src.duplicate()
+
+func _fx_refill():
+	if fx_used_frame:
+		fx_used_frame = false
+		return
+	for src in [hitEffect, missEffect, scoreEffect]:
+		if src == hitEffect and !Rhythia.show_hit_effect: continue
+		if src == missEffect and !Rhythia.show_miss_effect: continue
+		if src == scoreEffect and !Rhythia.score_popup: continue
+		if !fx_ready.has(src): fx_ready[src] = []
+		if fx_ready[src].size() < FX_READY:
+			fx_ready[src].append(src.duplicate())
+			return
+
 func _process(delta:float):
+	_fx_refill()
 	var u = OS.get_ticks_usec()
 	delta = float(u - last_usec) / 1_000_000.0
 	last_usec = u
@@ -1129,6 +1176,9 @@ func replay_seek(target:float, dry:bool = false):
 func _exit_tree():
 	# Remove anything sitting outside of the tree
 	scoreEffect.queue_free()
+	for a in fx_ready.values():
+		for n in a: n.free()
+	fx_ready.clear()
 	for n in noteCache:
 		n.queue_free()
 

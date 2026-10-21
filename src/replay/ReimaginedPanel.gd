@@ -540,8 +540,7 @@ func _coll_show(n:String, _b):
 	var t = menu.get_node_or_null("TitleMenu")
 	if t and t.visible and t.has_method("_close"): t._close("")
 	else:
-		var sb = menu.get_node_or_null("Sidebar")
-		if sb and sb.has_method("press"): sb.press(0, true)
+		load("res://mods/replay/Classic.gd").show_page(menu, "maps")
 	close()
 
 func _coll_delete(n:String, b:Button):

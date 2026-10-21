@@ -127,6 +127,8 @@ func _ready():
 				ls.color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.45)
 				ls.thickness = 2
 				sl.add_stylebox_override("separator", ls)
+	_add_search(card)
+	_hide_removed()
 	_add_half_ghost_fade()
 	_add_hitbox_mode()
 	scroll.connect("resized", self, "_fit")
@@ -135,6 +137,15 @@ func _ready():
 	tabs.connect("tab_changed", self, "_tab_changed")
 	_fit()
 	_tab_changed(tabs.current_tab)
+
+# the stock intro cutscene and update check are gone (fixes mod: NoCutscene.gd, Boot.gd): their
+# buttons / switches would do nothing (or reload init)
+func _hide_removed():
+	var f = scroll.get_node("F")
+	for p in ["TopButtons/TopButtonsHBox/CheckForUpdate", "TabContainer/Replays & Misc/Recording/Group/H/DisableAutoUpdate",
+			"TabContainer/Replays & Misc/Experimental/Group/H/Intro", "TabContainer/Replays & Misc/Experimental/Group/H/DisableIntro"]:
+		var n = f.get_node_or_null(p)
+		if n is CanvasItem: n.visible = false
 
 # Rhythia-reimagined setting right under the game's Fade Length (Notes tab): a copy of that row
 # without its script, saved to reimagined.json (NoteManager reads it when Half Ghost is on)
@@ -237,6 +248,128 @@ func _tab_changed(i:int):
 	for k in buttons.size():
 		buttons[k].selected = k == i
 		buttons[k].update()
+
+# ---------------------------------------------------------------- search (osu!-style)
+# A box in the header filters every tab at once: rows that don't match hide, sections left empty
+# hide, each tab button shows how many rows match (dimmed at 0) and the page jumps to the first tab
+# with a match. Typing anywhere on the page goes into the box; Esc clears it. Only nodes hidden
+# here are shown again (rows the game hides itself, like VR-only ones, are left alone).
+var search:LineEdit
+var search_info:Label
+var hidden_by_search:Array = []
+var tab_titles:Array = []
+
+func _add_search(card:Control):
+	search = LineEdit.new()
+	search.name = "RRSearch"
+	search.placeholder_text = "search settings..."
+	search.clear_button_enabled = true
+	search.add_font_override("font", _font(20))
+	search.anchor_left = 0.5; search.anchor_right = 0.5
+	search.margin_left = -170; search.margin_right = 250; search.margin_top = 32; search.margin_bottom = 76
+	search.connect("text_changed", self, "_search")
+	card.add_child(search)
+	search_info = _label("", 14, Color(1, 1, 1, 0.42))
+	search_info.anchor_left = 0.5; search_info.anchor_right = 0.5
+	search_info.margin_left = -168; search_info.margin_right = 250; search_info.margin_top = 80; search_info.margin_bottom = 100
+	card.add_child(search_info)
+	for b in buttons: tab_titles.append(b.title)
+
+func _input(ev):
+	if !search or !settings.is_visible_in_tree() or !(ev is InputEventKey) or !ev.pressed: return
+	var f = settings.get_focus_owner()
+	if ev.scancode == KEY_ESCAPE and search.text != "":
+		get_tree().set_input_as_handled()
+		search.text = ""
+		_search("")
+		search.release_focus()
+		return
+	if f is LineEdit or ev.control or ev.alt or ev.command or ev.unicode < 32 or ev.unicode == 127: return
+	for n in ["ReimaginedPanel", "Editor", "Multiplayer", "ReplayBrowser", "TitleMenu", "ColorsetMaker"]:
+		var o = menu.get_node_or_null(n)
+		if o and o.get("visible") != false: return # (some are CanvasLayers: visible, but not CanvasItems)
+	search.grab_focus() # typing anywhere starts a search (the key itself lands in the box)
+
+func _search(q:String):
+	for n in hidden_by_search:
+		if is_instance_valid(n): n.visible = true
+	hidden_by_search.clear()
+	var terms = []
+	for w in q.to_lower().split(" ", false): terms.append(w)
+	var counts = []
+	for t in tabs.get_children():
+		var n = 0
+		if t is Control: n = _filter_tab(t, terms)
+		counts.append(n)
+	var total = 0
+	for k in buttons.size():
+		var b = buttons[k]
+		var c = counts[k] if k < counts.size() else 0
+		total += c
+		b.title = tab_titles[k] if terms.empty() else "%s  (%d)" % [tab_titles[k], c]
+		b.modulate.a = 1.0 if terms.empty() or c > 0 else 0.35
+		b.update()
+	search_info.text = "" if terms.empty() else ("no settings match" if total == 0 else "%d matching setting%s" % [total, "" if total == 1 else "s"])
+	if !terms.empty() and total > 0 and counts[tabs.current_tab] == 0:
+		for k in counts.size():
+			if counts[k] > 0:
+				_pick(k)
+				break
+	scroll.scroll_vertical = 0
+
+func _hide(n:CanvasItem):
+	if n.visible:
+		n.visible = false
+		hidden_by_search.append(n)
+
+# sections = children of the tab with a Group/H grid of rows; returns the number of rows shown
+func _filter_tab(tab:Control, terms:Array) -> int:
+	if terms.empty(): return 0
+	var shown = 0
+	for sec in tab.get_children():
+		var grid = sec.get_node_or_null("Group/H") if sec is Control else null
+		if !grid:
+			if sec is HSeparator: _hide(sec)
+			continue
+		if !sec.visible: continue
+		var head = _text_of(sec.get_node("SectionTitle")) if sec.has_node("SectionTitle") else ""
+		var all = _matches(head + " " + sec.name.to_lower(), terms) # section name matches: keep all its rows
+		var n = 0
+		for row in grid.get_children():
+			if !(row is Control) or !row.visible: continue
+			if row is Separator:
+				_hide(row)
+				continue
+			if all or _matches(_text_of(row) + " " + _words(row.name), terms): n += 1
+			else: _hide(row)
+		if n == 0: _hide(sec)
+		shown += n
+	return shown
+
+static func _matches(text:String, terms:Array) -> bool:
+	for t in terms:
+		if !(t in text): return false
+	return true
+
+# everything a row says: its labels, button text and menu choices, raw and translated (not the long
+# tooltips: nearly every word is in one of them)
+func _text_of(n:Node) -> String:
+	var out = ""
+	if n is Label or n is Button: out += " " + n.text + " " + tr(n.text)
+	if n is MenuButton or n is OptionButton:
+		var p = n.get_popup()
+		for i in p.get_item_count(): out += " " + p.get_item_text(i)
+	for c in n.get_children(): out += _text_of(c)
+	return out.to_lower()
+
+# "HitFOVAmplifier" -> "hit fov amplifier"
+static func _words(s:String) -> String:
+	var out = ""
+	for i in s.length():
+		var ch = s[i]
+		if i > 0 and ch != ch.to_lower() and s[i - 1] == s[i - 1].to_lower(): out += " "
+		out += ch
+	return out.to_lower()
 
 # the bottom visualizer would sit over the card: hide it while the settings page is open
 func _visibility():

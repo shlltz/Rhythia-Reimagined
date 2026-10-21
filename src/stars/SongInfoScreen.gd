@@ -74,6 +74,12 @@ func update(_s=null):
 		$RS/HMid/Hitboxes.text = txt + "\nHave you seen the Dyamo easter egg?\nHold D Y A when starting the game!"
 
 	
+	var cover_now = null
+	if map.has_cover:
+		cover_now = map.loaded_cover() if map.has_method("loaded_cover") else map.cover
+		if !cover_now: # not decoded yet: the list thumbnail now, the full cover from the worker
+			cover_now = map.get("thumb")
+			_bg_request(map)
 	for i in range(difficulty_btns.size()):
 		var n:Panel = difficulty_btns[i]
 		n.visible = (map.difficulty == i-1)
@@ -81,7 +87,7 @@ func update(_s=null):
 		if map.has_cover:
 			n.get_node("Name").visible = false
 			n.get_node("Cover").visible = true
-			n.get_node("Cover").texture = map.cover
+			n.get_node("Cover").texture = cover_now
 		else:
 			n.get_node("Cover").visible = false
 			n.get_node("Name").visible = true
@@ -624,6 +630,7 @@ func _ready():
 	Rhythia.connect("mods_changed",self,"update")
 	Rhythia.connect("speed_mod_changed",self,"update")
 	Rhythia.connect("favorite_songs_changed",self,"update")
+	_bg_start()
 #	$ButtonDisp/Select.connect("pressed",self,"return_to_song_select")
 	if Rhythia.selected_song: update()
 	else:
@@ -632,6 +639,50 @@ func _ready():
 		run_btn.disabled = true
 		ctrl_box.get_node("Actions").disabled = true
 		ctrl_box.get_node("PreviewMusic").disabled = true
+
+# ---------------------------------------------------------------- background loading
+# Picking a map decoded its full cover (5-28 ms) and built its preview stream (4-20 ms) on the main
+# thread: a hitch on every click / arrow key in the list. BgLoad (fixes mod, after the Rhythia
+# rewrite's MapCache.cs: decode on a Task, CallDeferred back) does both on a worker for the latest
+# selection; the page shows the list thumbnail until the cover lands, and the stock preview button
+# (PlaySong.upd) is called once the stream is ready, so its stream() call is instant.
+var bg:Node = null
+var preview_btn:Node = null
+var preview_for = null # the map whose preview waits for the worker
+
+func _bg_start():
+	var p = "res://mods/fixes/BgLoad.gd"
+	if !ResourceLoader.exists(p) or !load(p).available(): return
+	bg = load(p).new()
+	add_child(bg)
+	bg.connect("loaded", self, "_bg_done")
+	preview_btn = ctrl_box.get_node_or_null("PreviewMusic")
+	if preview_btn and Rhythia.is_connected("selected_song_changed", preview_btn, "upd"):
+		Rhythia.disconnect("selected_song_changed", preview_btn, "upd")
+		Rhythia.connect("selected_song_changed", self, "_bg_preview")
+	else: preview_btn = null
+
+func _bg_preview(s = null):
+	var map = s if s is Object else Rhythia.selected_song
+	if !(map is Object): return
+	if map.rr_stream or !(map.sspm_song_stored or !map.musicFile.begins_with("res://")):
+		preview_btn.upd(map) # ready (or a built-in map): as before
+	else:
+		preview_for = map
+		_bg_request(map)
+
+func _bg_request(map):
+	if bg: bg.request(map)
+
+func _bg_done(map):
+	if map != Rhythia.selected_song: return # (picked something else meanwhile)
+	var tex = map.loaded_cover()
+	if tex:
+		for n in difficulty_btns:
+			if n.get_node("Cover").visible: n.get_node("Cover").texture = tex
+	if preview_btn and preview_for == map: # (no stream built: the stock path loads it, as before)
+		preview_for = null
+		preview_btn.upd(map)
 
 # star rating (Steam Rhythia formula) next to length/notes; shows the speed-mod rating when one is on
 const StarBadge = preload("res://mods/stars/StarBadge.gd")

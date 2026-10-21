@@ -256,17 +256,17 @@ func _after_close(then:String):
 		var ml = menu.get_node_or_null("Main/Maps/MapRegistry/S/VBoxContainer")
 		if ml and ml.has_method("rr_slide_in"): ml.rr_slide_in()
 	match then:
-		"settings": _sidebar(1)
+		"settings": _sidebar("settings")
 		"browse":
-			_sidebar(0)
+			_sidebar("maps")
 			menu.open_map_browser()
 		"editor":
-			_sidebar(0)
+			_sidebar("maps")
 			menu.open_editor()
 		"multiplayer":
-			_sidebar(0)
+			_sidebar("maps")
 			menu.open_multiplayer()
-		_: _sidebar(0)
+		_: _sidebar("maps")
 
 func apply_bg():
 	var style = load("res://mods/replay/Reimagined.gd").val("title_bg")
@@ -286,9 +286,8 @@ func apply_skin():
 	logo.texture = t if t else load("res://assets/images/branding/icon.png")
 	tilt = _measure_tilt(logo.texture)
 
-func _sidebar(page:int):
-	var sb = menu.get_node_or_null("Sidebar")
-	if sb and sb.has_method("press"): sb.press(page, true)
+func _sidebar(page:String):
+	load("res://mods/replay/Classic.gd").show_page(menu, page) # (page numbers differ on the classic menu)
 
 # hide the menu pages underneath (their search box grabs typing, the map list the wheel)
 func _cover(on:bool):

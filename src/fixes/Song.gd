@@ -82,6 +82,9 @@ func _get_cover():
 	if is_instance_valid(cover):
 		_cover_used()
 		return cover
+	# the classic map grid (stock v2MapList) is building its tiles: the list thumbnail, decoded on a
+	# worker (Classic.gd / BgLoad) - full covers on the main thread took ~170 ms per page of tiles
+	if Engine.has_meta("rr_grid_thumbs"): return thumb
 	var img = _cover_image()
 	if img is Image: _set_cover_image(img)
 	elif img is Texture: cover = img
@@ -467,7 +470,34 @@ func get_music_buffer():
 			print("[file] %s: music ok" % id)
 			return mdata
 
+# Background audio (Rhythia-reimagined, after the Rhythia rewrite's MapCache / MapList: work on a
+# Task, result handed back with CallDeferred): the map page builds the preview stream on a worker
+# thread (make_stream_threaded) and stream() hands that one out, instead of reading + parsing the
+# audio on the main thread on every map selection (up to 20 ms). Kept for the last 2 maps.
+var rr_stream:AudioStream = null
+
+# any thread: MP3 / OGG built here (no shared loader state); null for anything else, which the main
+# thread loads as before
+func make_stream_threaded():
+	if !(sspm_song_stored or !musicFile.begins_with("res://")): return null
+	var buf = get_music_buffer()
+	if !(buf is PoolByteArray) or buf.size() < 4: return null
+	var s
+	if buf[0] == 0x4F and buf[1] == 0x67 and buf[2] == 0x67 and buf[3] == 0x53: s = AudioStreamOGGVorbis.new()
+	elif (buf[0] == 0x49 and buf[1] == 0x44 and buf[2] == 0x33) or (buf[0] == 0xFF and (buf[1] & 0xE0) == 0xE0): s = AudioStreamMP3.new()
+	else: return null
+	s.data = buf
+	s.loop = false
+	return s
+
+# main thread: keep a stream made by make_stream_threaded
+func set_prefetched_stream(s):
+	if !(s is AudioStream): return
+	rr_stream = s
+	_lru("rr_stream_lru", 2, "rr_stream")
+
 func stream() -> AudioStream:
+	if rr_stream: return rr_stream
 	if sspm_song_stored || !musicFile.begins_with("res://"):
 		var buf = get_music_buffer()
 		if buf:

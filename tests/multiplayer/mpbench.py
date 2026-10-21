@@ -5,6 +5,8 @@
 #  - a driver script (res://mods/bench/Driver.gd) added to the root by menu2.gd,
 # then starts all instances at once and waits until they exit (driver kills itself) or time out.
 # usage: mpbench.py own|share "A=DriverA.gd,B=DriverB.gd" [limit_s] [maps_for_A,...]
+# env: RR_KEEP=1 keeps each instance's user data (warm start), RR_NONET=1 turns the game's networking off,
+#      RR_INITPROBE=1 logs init stage texts + long frames (release builds only flush the log on errors)
 import sys, os, subprocess, time, shutil, struct, io, contextlib
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')))
 import ssp_mod as m
@@ -29,6 +31,28 @@ drv = '\nfunc _bench():\n\tif get_tree().root.has_node("RRTestDriver"): return\n
 assert '\tcall_deferred("_add_osu_screens")\n' in d
 d = d.replace('\tcall_deferred("_add_osu_screens")\n', '\tcall_deferred("_add_osu_screens")\n\tcall_deferred("_bench")\n', 1) + drv
 pk.new[p] = d.encode('utf-8')
+if os.environ.get('RR_INITPROBE'): # startup diagnosis: the intro (alive during init) reports stage texts + long frames as errors (release logs only flush on errors)
+    ip = 'res://mods/intro/Intro.gd'; di = pk.new[ip].decode('utf-8')
+    assert 'func _process(delta):\n' in di
+    di = di.replace('func _process(delta):\n', 'func _process(delta):\n\t_rr_probe()\n', 1) + '''
+var _rr_last_us = 0
+var _rr_texts = {}
+func _rr_probe():
+	var u = OS.get_ticks_usec()
+	var sc = get_tree().current_scene
+	var tag = sc.name if sc else "-"
+	if _rr_last_us > 0 and u - _rr_last_us > 500000: push_error("RRPROBE %d ms: frame took %d ms (scene %s)" % [OS.get_ticks_msec(), (u - _rr_last_us) / 1000, tag])
+	_rr_last_us = u
+	if sc:
+		var stack = [sc]
+		while !stack.empty():
+			var n = stack.pop_back()
+			if n is Label and n.is_visible_in_tree() and _rr_texts.get(n.get_path()) != n.text:
+				_rr_texts[n.get_path()] = n.text
+				push_error("RRPROBE %d ms: %s = %s" % [OS.get_ticks_msec(), n.name, n.text.substr(0, 60)])
+			for c in n.get_children(): stack.append(c)
+'''
+    pk.new[ip] = di.encode('utf-8')
 appdata = os.environ['APPDATA']
 
 def set_setting(b, key, payload):
@@ -47,12 +71,20 @@ base_pb = pk.read('res://project.binary')
 procs = []
 for name, script in insts:
     root = os.path.join(T, name)
-    if os.path.isdir(root): shutil.rmtree(root)
     ud = os.path.join(root, 'appdata', 'SoundSpacePlus')   # the instance runs with APPDATA = t/<inst>/appdata
-    os.makedirs(os.path.join(ud, 'maps'))
+    if os.environ.get('RR_KEEP') and os.path.isdir(ud): # warm start: keep the instance's user data from the last run
+        for fn in os.listdir(root):
+            if fn != 'appdata': (shutil.rmtree if os.path.isdir(os.path.join(root, fn)) else os.remove)(os.path.join(root, fn))
+    else:
+        if os.path.isdir(root): shutil.rmtree(root)
+        os.makedirs(os.path.join(ud, 'maps'))
+        # answer the stock first-launch "record replays?" prompt (its defaults), so init doesn't wait on it
+        open(os.path.join(ud, 'settings.json'), 'w').write('{"record_replays": false, "record_limit": 0}')
     for mp in extra_maps.get(name, []):
-        shutil.copyfile(mp, os.path.join(ud, 'maps', os.path.basename(mp)))
+        dst = os.path.join(ud, 'maps', os.path.basename(mp))
+        if not os.path.exists(dst): shutil.copyfile(mp, dst)
     b = set_setting(base_pb, 'logging/file_logging/log_path', s_payload(root.replace(chr(92), '/') + '/godot.log'))
+    if os.environ.get('RR_NONET'): b = set_setting(b, 'application/networking/enabled', struct.pack('<II', 1, 0)) # (bool false)
     pk.new['res://project.binary'] = b
     src = open(os.path.join(S, script), encoding='utf-8').read()
     src = src.replace('@@S@@', SP).replace('@@OUT@@', root.replace(chr(92), '/')).replace('@@NAME@@', name)
@@ -80,7 +112,9 @@ for pr in procs:
     if pr.poll() is None: pr.kill()
 for name, script in insts:
     root = os.path.join(T, name)
-    txt = open(os.path.join(root, 'stdout.txt'), encoding='utf-8', errors='replace').read()
+    txt = ''
+    for fn in ('stdout.txt', 'godot.log'): # (the game logs to godot.log; stdout is usually empty)
+        if os.path.exists(os.path.join(root, fn)): txt += open(os.path.join(root, fn), encoding='utf-8', errors='replace').read()
     errs = [l for l in txt.splitlines() if 'SCRIPT ERROR' in l or ('ERROR:' in l and 'localization' not in l and 'library' not in l and 'id == 0' not in l and 'File must be opened' not in l and 'arvr' not in l)]
     print('%s: %d error lines (%.0f s)' % (name, len(errs), time.time() - t0))
     for l in errs[:15]: print('  ' + l)

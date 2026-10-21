@@ -392,7 +392,7 @@ def friendly_settings(t, scale, hints=False):
 # ---------- script mods: text scripts added under res://mods/<dir>/, game scripts repointed to them ----------
 # name: (pck dir, {source file: game script it replaces}, [extra files])
 SCRIPT_MODS = {
-    'fixes': ('fixes', {'Song.gd': 'res://scripts/content/game/Song.gd'}, []),
+    'fixes': ('fixes', {'Song.gd': 'res://scripts/content/game/Song.gd'}, ['BgLoad.gd']),
     'stars': ('stars', {'SongInfoScreen.gd': 'res://scripts/ui/menu/SongInfoScreen.gd',
                         'v3MapList.gd': 'res://scripts/ui/menu/buttons/v3MapList.gd',
                         'StartOffset.gd': 'res://scripts/ui/menu/StartOffset.gd',
@@ -403,7 +403,7 @@ SCRIPT_MODS = {
                           'HUD.gd': 'res://scripts/game/HUD.gd', 'CursorTrail.gd': 'res://scripts/game/CursorTrail.gd',
                           'songload.gd': 'res://scripts/loaders/songload.gd', 'EndInfo.gd': 'res://scripts/ui/menu/buttons/EndInfo.gd'},
                ['ReplayViewer.gd', 'ReplayBrowser.gd', 'UIAnim.gd', 'VolumeOverlay.gd', 'LoadScreen.gd', 'AudioVisualizer.gd', 'PauseMenu.gd', 'UIJuice.gd', 'OsuSfx.gd', 'TitleMenu.gd', 'ResultsScreen.gd',
-                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd', 'CrashWatch.gd', 'QuickRetry.gd', 'Look.gd', 'Editor.gd', 'EditorModel.gd', 'ColorsetMaker.gd', 'MPProto.gd', 'MPLobby.gd', 'MPHost.gd', 'MPClient.gd', 'MPMenu.gd', 'MPOverlay.gd',
+                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd', 'CrashWatch.gd', 'QuickRetry.gd', 'Look.gd', 'Editor.gd', 'EditorModel.gd', 'ColorsetMaker.gd', 'Classic.gd', 'MPProto.gd', 'MPLobby.gd', 'MPHost.gd', 'MPClient.gd', 'MPMenu.gd', 'MPOverlay.gd',
                 'icons/uicons-solid-rounded.woff', 'icons/Flaticon-license.txt']),
     'browser': ('browser', {}, ['MapBrowser.gd']),
     'hype': ('hype', {}, ['Hype.gd', 'PassFx.gd']),     # cover visualizer, 7+/10+ star glow / quake / lightning, pass glow + zoom
@@ -476,15 +476,26 @@ def sharelook(pk, o):
 
 # ---------- startup intro (node injected into init.tscn) ----------
 INIT = 'res://scenes/init.tscn'
+def init_add_node(pk, script, name, rid, kind='Node'):                 # a script node in init.tscn (several mods add one)
+    t = pk.read(INIT).decode('utf-8')
+    end = t.index('\n', t.rfind('[ext_resource')) + 1
+    t = t[:end] + '[ext_resource path="%s" type="Script" id=%d]\n' % (script, rid) + t[end:]
+    pk.write(INIT, (t.rstrip('\n') + '\n\n[node name="%s" type="%s" parent="."]\nscript = ExtResource( %d )\n' % (name, kind, rid)).encode('utf-8'))
+
+# no stock intro cutscene (the floating cube one, scenes/Intro.tscn, played until disable_intro is
+# set): the scene Globals switches to goes straight back to init. No stock update check either
+# (Boot.gd; it offered to replace the modded game file with stock Rhythia).
+CUTSCENE = 'res://scenes/Intro.tscn'
+def boot_fixes(pk):
+    for f in ('Boot.gd', 'NoCutscene.gd'): pk.add('res://mods/fixes/' + f, src('fixes', f))
+    pk.write(CUTSCENE, b'[gd_scene load_steps=2 format=2]\n\n[ext_resource path="res://mods/fixes/NoCutscene.gd" type="Script" id=1]\n\n[node name="NoCutscene" type="Node"]\nscript = ExtResource( 1 )\n')
+    init_add_node(pk, 'res://mods/fixes/Boot.gd', 'RRBoot', 91)
 def intro(pk):
-    t = (pk.bak.get(INIT) or pk.read(INIT)).decode('utf-8')
     for f in ('Intro.gd', 'intro.mp3'):
         if f in OPTIONAL_ASSETS and not os.path.exists(os.path.join(SRC, 'intro', f)):
             print('  (no intro/%s - not in the public repo: the intro plays without sound)' % f); continue
         pk.add('res://mods/intro/' + f, src('intro', f))
-    end = t.index('\n', t.rfind('[ext_resource')) + 1
-    t = t[:end] + '[ext_resource path="res://mods/intro/Intro.gd" type="Script" id=90]\n' + t[end:]
-    pk.write(INIT, (t.rstrip('\n') + '\n\n[node name="Intro" type="CanvasLayer" parent="."]\nscript = ExtResource( 90 )\n').encode('utf-8'))
+    init_add_node(pk, 'res://mods/intro/Intro.gd', 'Intro', 90, 'CanvasLayer')
 
 # ---------- profile + rebuild ----------
 ORDER = ['font', 'theme', 'results', 'bigsettings', 'lang', 'border', 'sharelook', 'fixes', 'stars', 'replay', 'osuskin', 'browser', 'hype', 'discord', 'autodelete', 'intro']
@@ -505,7 +516,9 @@ def apply(pk, name, o):
     elif name == 'border': border(pk, path_arg(o['image']) if o.get('image') else None, o.get('opacity'))
     elif name == 'intro': intro(pk)
     elif name == 'sharelook': sharelook(pk, o)
-    else: script_mod(pk, name, o)
+    else:
+        script_mod(pk, name, o)
+        if name == 'fixes': boot_fixes(pk)
 def game_running():
     import subprocess
     r = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq SoundSpacePlus.exe', '/NH'], capture_output=True, text=True)
