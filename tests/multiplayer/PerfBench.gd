@@ -22,6 +22,7 @@ var mm_resizes = 0     # note MultiMesh buffer reallocations
 var last_pos = -1.0
 var last_pos_us = 0
 var last_inst = -1
+var hidden_frames = 0
 
 func _physics_process(_d):
 	phys_ticked = true
@@ -50,6 +51,7 @@ func _process(_d):
 			if h != last_hits: tag |= 2
 			last_hits = h
 		tags.append(tag)
+		if OS.window_minimized: hidden_frames += 1 # (Windows paces a minimized window to the display: not the game's cost)
 		_audio_frame(u)
 	phys_ticked = false
 	last_us = u
@@ -85,6 +87,7 @@ func begin():
 	last_inst = -1
 	last_pos = -1.0
 	last_us = 0
+	hidden_frames = 0
 	capturing = true
 
 func stats(tag:String) -> Dictionary:
@@ -103,7 +106,7 @@ func stats(tag:String) -> Dictionary:
 		if x > 33.3: spikes33 += 1
 	var d = {frames = n, avg_fps = stepify(1000.0 * n / tot, 0.1), p50 = stepify(med, 0.01),
 		p95 = stepify(f[int(n * 0.95)], 0.01), p99 = stepify(f[int(n * 0.99)], 0.01), max = stepify(f[n - 1], 0.01),
-		spikes_2x = spikes2, spikes_33ms = spikes33}
+		spikes_2x = spikes2, spikes_33ms = spikes33, minimized_frames = hidden_frames}
 	for k in [["phys", 1], ["hit", 2]]: # mean frame time with / without a physics tick or a hit in it
 		var a = [0.0, 0]
 		var b = [0.0, 0]
@@ -185,6 +188,15 @@ func run():
 	out("startup  %d ms (engine start -> menu ready)" % res.startup_ms)
 	yield(wait(8.0), "completed") # (star ratings / map cache settle)
 	yield(menu_ready(), "completed")
+	if OS.get_environment("RR_PERF_PROFILE") == "low" and ResourceLoader.exists("res://mods/replay/Device.gd"): # (Customize > Device: low-end profile)
+		out("profile: low-end (%d settings changed)" % load("res://mods/replay/Device.gd").apply_low())
+	for kv in OS.get_environment("RR_PERF_SET").split(";", false): # ("rh:render_scale=0.75;rr:lite_fx=true": one setting at a time)
+		var a = kv.split("=")
+		var w = a[0].split(":")
+		var v = parse_json(a[1]) if a[1] in ["true", "false"] or a[1].is_valid_float() else a[1]
+		if w[0] == "rr": load("res://mods/replay/Reimagined.gd").cfg()[w[1]] = v
+		else: Rhythia.set(w[1], v)
+		out("set %s = %s" % [kv, str(v)])
 	var quick = "@@NAME@@".begins_with("diag") # (gameplay only)
 	begin()
 	yield(wait(5.0), "completed")

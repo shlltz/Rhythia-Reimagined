@@ -85,6 +85,7 @@ func _ready():
 	_build_smart()
 	_build_import()
 	show_tab(Engine.get_meta("rr_lib_tab") if Engine.has_meta("rr_lib_tab") else "overview", false)
+	load("res://mods/replay/Device.gd").touch_fit(card) # (finger-sized buttons on touch screens)
 	UIAnim.play(card, Vector2(0, 26), Vector2.ZERO, 0.0, 1.0, 0.3)
 
 func _input(ev):

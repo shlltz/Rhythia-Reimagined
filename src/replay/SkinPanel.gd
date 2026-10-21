@@ -79,6 +79,7 @@ func _ready():
 		var ap = Engine.get_meta("rr_skin_applied")
 		Engine.remove_meta("rr_skin_applied")
 		_say(("\"%s\" is in use - it shows from the next map." % ap[0]) + (("  Not applied: " + PoolStringArray(ap[1]).join("; ")) if !ap[1].empty() else ""), !ap[1].empty())
+	load("res://mods/replay/Device.gd").touch_fit(card) # (finger-sized buttons on touch screens)
 	UIAnim.play(card, Vector2(0, 26), Vector2.ZERO, 0.0, 1.0, 0.3)
 
 func _input(ev):

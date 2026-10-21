@@ -16,9 +16,10 @@ const W = 1060.0
 const H = 680.0
 const TABS = [["trail", "Cursor trail", "style, colour, opacity"], ["hud", "HUD layout", "move & scale panels"],
 	["skin", "Skin", "border, icons, logo"], ["collections", "Collections", "map packs"],
-	["interface", "Interface", "map list & clutter"], ["storage", "Storage", "user folder location"],
+	["interface", "Interface", "map list & clutter"], ["device", "Device", "touch, gyro, low-end"], ["storage", "Storage", "user folder location"],
 	["logs", "Logs", "for bug reports"]]
 const UserDir = preload("res://mods/replay/UserDir.gd")
+const Dev = preload("res://mods/replay/Device.gd")
 
 var menu:Node
 var sfx:Node
@@ -103,7 +104,7 @@ func _ready():
 		b.sub = t[2]
 		b.font_big = _font(19)
 		b.font_small = _font(13)
-		b.rect_min_size = Vector2(220, 54)
+		b.rect_min_size = Vector2(220, 50)
 		b.connect("pressed", self, "show_tab", [t[0]])
 		b.connect("mouse_entered", sfx, "play", ["click-short.ogg", -12.0])
 		tabs.add_child(b)
@@ -130,9 +131,11 @@ func _ready():
 	_build_skin()
 	_build_collections()
 	_build_interface()
+	_build_device()
 	_build_storage()
 	_build_logs()
 	show_tab(Engine.get_meta("rr_tab") if Engine.has_meta("rr_tab") else "trail", false)
+	Dev.touch_fit(root)
 	# opening click = the game's own (menu2 open_customize plays Press)
 	UIAnim.play(card, Vector2(0, 26), Vector2.ZERO, 0.0, 1.0, 0.3)
 
@@ -579,6 +582,90 @@ func _coll_delete(n:String, b:Button):
 	_coll_rows()
 
 # ------------------------------------------------------------------ interface
+# ------------------------------------------------------------------ device: touch, gyroscope, low-end
+var dev_w:Dictionary = {}
+func _build_device():
+	var p = _page("device")
+	var cf = R.cfg()
+	_heading(p, "Device", "Phones and tablets: how the cursor is steered in a run, and lighter settings for slow devices.")
+	var mode = "gyro" if str(cf.cursor_input) == "gyro" else ("abs" if Rhythia.absolute_mode else "drag")
+	_row(p, "Cursor (touch)", _seg([["drag", "DRAG"], ["abs", "POSITION"], ["gyro", "GYROSCOPE"]], mode, "_dev_mode"))
+	var hint = _label("", 13, Color(1, 1, 1, 0.45))
+	hint.autowrap = true
+	hint.rect_min_size.x = content.rect_size.x - 20
+	p.add_child(hint)
+	dev_w.hint = hint
+	_row(p, "Gyro sensitivity", _slider(0.2, 3.0, 0.05, float(cf.gyro_sens), "_dev_sens", "%.2fx"))
+	var inv = HBoxContainer.new()
+	inv.add_constant_override("separation", 18)
+	_check(inv, "invert left / right", bool(cf.gyro_inv_x), "_dev_inv_x")
+	_check(inv, "invert up / down", bool(cf.gyro_inv_y), "_dev_inv_y")
+	_row(p, "", inv)
+	var gl = _label("", 13, Color(1, 1, 1, 0.45))
+	p.add_child(gl)
+	dev_w.gyro = gl
+	_heading(p, "Low-end device profile", "Lighter effects, no trails / bloom / glow / background effects / rainbow colours. The settings it replaces are kept: RESTORE puts them back.")
+	var r = HBoxContainer.new()
+	r.add_constant_override("separation", 8)
+	var on = Button.new()
+	on.text = "USE LOW-END PROFILE"
+	on.focus_mode = Control.FOCUS_NONE
+	on.rect_min_size = Vector2(230, 34)
+	on.connect("pressed", self, "_dev_low", [true])
+	r.add_child(on)
+	var off = Button.new()
+	off.text = "RESTORE MY SETTINGS"
+	off.focus_mode = Control.FOCUS_NONE
+	off.rect_min_size = Vector2(230, 34)
+	off.connect("pressed", self, "_dev_low", [false])
+	r.add_child(off)
+	p.add_child(r)
+	var st = _label("", 13, Color(1, 1, 1, 0.6))
+	p.add_child(st)
+	dev_w.low = st
+	dev_w.low_on = on
+	dev_w.low_off = off
+	_row(p, "Bigger buttons", _seg([["auto", "AUTO"], ["on", "ON"], ["off", "OFF"]], str(cf.touch_big), "_dev_touch"))
+	_dev_refresh()
+
+func _dev_refresh():
+	var m = str(R.val("cursor_input"))
+	dev_w.hint.text = ("Turn the phone left / right to move across, tilt it to move up / down; a second finger puts the cursor back in the centre. Touch drags don't move it. Needs a gyroscope." if m == "gyro"
+		else ("The cursor goes where your finger is." if Rhythia.absolute_mode else "Drag anywhere to move the cursor, like a trackpad."))
+	var g = Dev.gyro()
+	dev_w.gyro.text = ("gyroscope now: %.2f, %.2f, %.2f rad/s" % [g.x, g.y, g.z]) if OS.has_touchscreen_ui_hint() or Engine.has_meta("rr_fake_gyro") else "(this device has no touch screen: the mouse steers)"
+	var lo = Dev.low_on()
+	dev_w.low.text = ("Low-end profile on (%d settings changed)." % R.val("perf_saved").size()) if lo else "Your own settings are in use."
+	dev_w.low_on.disabled = lo
+	dev_w.low_off.disabled = !lo
+
+func _process(_d):
+	if cur == "device" and dev_w.has("gyro") and OS.has_touchscreen_ui_hint(): _dev_refresh()
+
+func _dev_mode(m:String):
+	R.set_val("cursor_input", "gyro" if m == "gyro" else "")
+	if m != "gyro":
+		Rhythia.absolute_mode = m == "abs"
+		Rhythia.save_settings()
+	_dev_refresh()
+
+func _dev_sens(v:float):
+	R.set_val("gyro_sens", v)
+
+func _dev_inv_x(on:bool):
+	R.set_val("gyro_inv_x", on)
+
+func _dev_inv_y(on:bool):
+	R.set_val("gyro_inv_y", on)
+
+func _dev_low(on:bool):
+	var n = Dev.apply_low() if on else Dev.restore_low()
+	if on and n == 0: dev_w.low.text = "Your settings are already that light: nothing to change."
+	else: _dev_refresh()
+
+func _dev_touch(v:String):
+	R.set_val("touch_big", v)
+
 func _build_interface():
 	var p = _page("interface")
 	var cf = R.cfg()

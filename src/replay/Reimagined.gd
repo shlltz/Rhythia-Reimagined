@@ -34,6 +34,12 @@ const DEFAULTS = {
 	"fx_telemetry": false,      # fps / frame time in the title status line
 	"title_bg": "rain",         # title screen background: rain | snow | waves (topographic)
 	"skin": "",                 # skin profile in use (Skins.gd: user://rr_skins/<name>), "" = none
+	"cursor_input": "",         # "" = the game's own (mouse / touch drag / touch position), "gyro" = gyroscope (Device.gd)
+	"gyro_sens": 1.0,
+	"gyro_inv_x": false,
+	"gyro_inv_y": false,
+	"touch_big": "auto",        # bigger buttons for fingers: auto (touch screens) | on | off
+	"perf_saved": {},           # low-end profile on: the settings it replaced (Device.gd restores them)
 }
 # side panels the layout editor moves: sprite, label, default centre (world x, y), size (w, h)
 const HUD_ITEMS = [

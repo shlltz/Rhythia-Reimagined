@@ -56,7 +56,7 @@ GitHub releases + signed manifest ──> updater (download, verify, back up, sw
 - [x] branch `major` off `perf`
 - [ ] contributor docs (CONTRIBUTING, architecture, testing, release), issue / PR templates
 - [ ] CI: Python checks of the mod tool + pure GDScript unit tests in headless Godot 3.6.2
-- [ ] baseline performance numbers (PerfBench) recorded
+- [x] baseline performance numbers (PerfBench) recorded: docs/PERF.md (PerfBench now counts minimized frames: a minimized window is paced to the display and measures nothing)
 
 ### Phase 2: core features
 - [x] `.phxm` export (zip writer, CRC-32 from the native gzip trailer, the rewrite's metadata keys and note rule); map page "..." menu on both menus
@@ -85,7 +85,7 @@ GitHub releases + signed manifest ──> updater (download, verify, back up, sw
 - [x] clip export (ClipRecorder.gd / ClipExport.gd): 3-10 s, recorded at half speed from the drawn frames; GIF always (GifWriter.gd, verified pixel-exact by ffmpeg decoding), MP4 with the song when ffmpeg is on PATH (never downloaded); a minimized window gives no frames, so the clip is cancelled with a message (ReplayStudioTest.gd 31/31 own + share, GifTest.gd)
 
 ### Phase 5: platform and distribution
-- [ ] mobile: touch targets, gyro / drag cursor modes (where the device has a gyroscope), performance profile
+- [~] mobile (Customize > Device): gyroscope cursor (GyroCursor.gd; turn / tilt, second finger recentres, touch drags blocked), drag / position modes (the game's own), finger-sized buttons in the mod panels on touch screens, low-end profile with RESTORE. DeviceTest.gd 16/16 own + share with the gyroscope and touch hint fed in on desktop; on a desktop the profile is within noise (docs/PERF.md). Not verified on a real phone: axis signs and sensitivity are reasoned, not felt
 - [!] Android device testing: no device or emulator here
 - [ ] auto-update: signed manifest on GitHub releases, verify, back up, swap with a helper after exit, roll back
 - [ ] packaging + release validation

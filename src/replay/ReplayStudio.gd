@@ -142,6 +142,7 @@ func _ready():
 	aim.rect_position = Vector2(878, 396)
 	aim.rect_size = Vector2(298, H - 396 - 20)
 	card.add_child(aim)
+	load("res://mods/replay/Device.gd").touch_fit(card) # (finger-sized buttons on touch screens)
 	UIAnim.play(card, Vector2(0, 26), Vector2.ZERO, 0.0, 1.0, 0.3)
 	_fill_compare()
 	_start([path], "a")

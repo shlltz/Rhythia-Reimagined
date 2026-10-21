@@ -335,6 +335,13 @@ func _ready():
 	if ResourceLoader.exists(ck_s) and !Rhythia.replaying and !Rhythia.queue_active and !(mp_ck and mp_ck.in_match()):
 		load(ck_s).apply(self)
 		add_child(load(ck_s).new())
+	# gyroscope cursor (Device.gd / GyroCursor.gd, Customize > Device; phones / tablets)
+	var dv = "res://mods/replay/Device.gd"
+	if ResourceLoader.exists(dv) and !Rhythia.replaying and load(dv).gyro_wanted():
+		var gc = load("res://mods/replay/GyroCursor.gd").new()
+		gc.name = "RRGyroCursor"
+		gc.cursor = $Spawn/Cursor
+		add_child(gc)
 	
 	
 	Rhythia.update_rpc_song()

@@ -89,6 +89,7 @@ func _ready():
 	_filter("")
 	search.grab_focus()
 	UIAnim.play(bg, Vector2.ZERO, Vector2.ZERO, 0.0, 1.0, 0.2)
+	if ResourceLoader.exists("res://mods/replay/Device.gd"): load("res://mods/replay/Device.gd").touch_fit(panel)
 	UIAnim.play(panel, POP_OFFSET, Vector2.ZERO, 0.0, 1.0, 0.3)
 
 func make_button(text:String, x:float, y:float) -> Button:
