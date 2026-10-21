@@ -33,6 +33,7 @@ const DEFAULTS = {
 	"fx_game": true,            # short effects in a run (red edge flash when a combo breaks)
 	"fx_telemetry": false,      # fps / frame time in the title status line
 	"title_bg": "rain",         # title screen background: rain | snow | waves (topographic)
+	"skin": "",                 # skin profile in use (Skins.gd: user://rr_skins/<name>), "" = none
 }
 # side panels the layout editor moves: sprite, label, default centre (world x, y), size (w, h)
 const HUD_ITEMS = [

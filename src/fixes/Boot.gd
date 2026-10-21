@@ -23,4 +23,11 @@ func _stage(s, _last = false):
 	# reads them (replay mod, RewriteFeel.gd; settings.json has been read by this stage)
 	if str(s).begins_with("Init default assets") and ResourceLoader.exists("res://mods/replay/RewriteFeel.gd"):
 		load("res://mods/replay/RewriteFeel.gd").restore()
+	# skin profile in use (replay mod, Skins.gd): its sounds + own note shape / colours, once the stock
+	# custom sounds and the registries are loaded
+	if str(s).begins_with("Load asset replacement 5/5") and ResourceLoader.exists("res://mods/replay/Skins.gd"):
+		call_deferred("_skin")
 	if str(s) == "Waiting for menu": call_deferred("queue_free") # (init's last stage)
+
+func _skin():
+	load("res://mods/replay/Skins.gd").restore_at_boot()

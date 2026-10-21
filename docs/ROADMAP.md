@@ -69,7 +69,7 @@ GitHub releases + signed manifest ──> updater (download, verify, back up, sw
 - [x] tags (+ `tag=` search) + bulk rename of the name stored in the map (templates, preview, renumbering on collisions, journal with file copies, undo byte-identical). Files are not renamed: their name is the map id that scores / replays / collections use
 - [x] smart playlists (rules: stars, played / unplayed, failed in N days, added in N days, favourites, untagged, tag, sort, limit) in the map list's collection filter
 - [x] library statistics + cleanup preview (caches / leftovers only, to the recycle bin after a confirmation)
-- [ ] skin profiles + skin editor with a live preview
+- [x] skin profiles + skin editor (Customize > Skin > Skin editor): notes (shape incl. own .obj, colour set or own colours, size, opacity, spin, note image), cursor (image, size, colour mode, spin, game / osu! trail, trail + touch images), effects (hit / miss effect, show, at cursor, miss flash), sounds (hit / miss mp3 / ogg, on / off, play), HUD (font, miss / score text colours); live preview from the game's own materials / meshes / effect scenes; save / duplicate / rename / delete (recycle bin) / reset group / revert; .rrskin import (validated in a temp folder) / export; the setup before skins kept as a profile; applied through a menu reload (the stock settings controls write their values back otherwise); survives restarts. Not skinnable here: HUD layout / grid / border / icons (already in Customize), WAV sounds (the game's loader can't read WAV files)
 
 ### Phase 3: editor
 - [ ] onset envelope + BPM / offset estimate, beat markers, manual adjust

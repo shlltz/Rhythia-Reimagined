@@ -433,6 +433,26 @@ func sort_note_nodes(a,b):
 func sort_note_queue(a,b):
 	return a[2] < b[2]
 
+# skin profiles (Skins.gd): the active skin's images instead of the user-folder ones; null = none
+func _skin_tex(slot:String):
+	if !ResourceLoader.exists("res://mods/replay/Skins.gd"): return null
+	return load("res://mods/replay/Skins.gd").texture(slot)
+
+# cursor / trail / touch images of the skin, on top of what Cursor.gd set up from the user folder
+func _skin_cursor():
+	var cur = get_node_or_null("Cursor")
+	if !cur: return
+	var c = _skin_tex("cursor")
+	var mat = cur.get_node("Mesh").get("material/0") if cur.has_node("Mesh") else null
+	if c and mat:
+		mat.albedo_color = Color(1, 1, 1)
+		mat.albedo_texture = c
+	var tr = get_node_or_null("../CursorTrail/Mesh")
+	var t = _skin_tex("trail")
+	if tr and (t or c): tr.get("material/0").albedo_texture = t if t else c
+	var touch = _skin_tex("touch")
+	if touch and cur.has_node("VisualPos/T"): cur.get_node("VisualPos/T").texture = touch
+
 func spawn_notes(note_array:Array):
 	note_array.sort_custom(self,"sort_note_queue")
 	
@@ -595,7 +615,7 @@ func _ready():
 	
 	
 	var mesh:Mesh
-	if "user://" in Rhythia.selected_mesh.path:
+	if "user://" in Rhythia.selected_mesh.path or !Rhythia.selected_mesh.path.begins_with("res://"): # (a moved user folder / a skin's mesh: absolute paths)
 		var m = ObjParse.load_obj(Rhythia.selected_mesh.path)
 		if m != null:
 			mesh = m
@@ -605,7 +625,9 @@ func _ready():
 		mesh = load(Rhythia.selected_mesh.path)
 	
 	
-	var img = Globals.imageLoader.load_if_exists("user://note")
+	var img = _skin_tex("note") # skin profile (Skins.gd), else the game's own user://note
+	if !img: img = Globals.imageLoader.load_if_exists("user://note")
+	_skin_cursor()
 	if img:
 		note_solid_mat.set_shader_param("image",img)
 		note_transparent_mat.set_shader_param("image",img)

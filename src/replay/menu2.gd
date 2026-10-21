@@ -19,7 +19,7 @@ func idle_status():
 const KEEP_LOADED = ["res://mods/replay/Reimagined.gd", "res://mods/replay/Look.gd", "res://mods/replay/UIAnim.gd",
 	"res://mods/replay/Icons.gd", "res://mods/replay/Ring.gd", "res://mods/stars/RecentPlays.gd",
 	"res://mods/replay/CrashWatch.gd", "res://mods/replay/OsuSfx.gd", "res://mods/stars/StarCache.gd",
-	"res://mods/replay/Library.gd", "res://mods/fixes/Phxm.gd"]
+	"res://mods/replay/Library.gd", "res://mods/fixes/Phxm.gd", "res://mods/replay/Skins.gd"]
 
 func _ready():
 	get_tree().paused = false
@@ -107,6 +107,14 @@ func _add_osu_screens():
 	elif !Engine.has_meta("title_seen"):
 		show_title()
 	Engine.set_meta("title_seen", true)
+	_reopen_skin_editor()
+
+# back from the reload that put a skin in use (Skins.use_and_reload): the skin editor again
+func _reopen_skin_editor():
+	if Engine.has_meta("rr_skin_reopen") and ResourceLoader.exists("res://mods/replay/SkinPanel.gd") and !has_node("SkinPanel"):
+		var e = load("res://mods/replay/SkinPanel.gd").new()
+		e.name = "SkinPanel"
+		add_child(e)
 
 func _add_settings_style():
 	var s = load("res://mods/replay/SettingsStyle.gd").new()

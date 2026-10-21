@@ -373,6 +373,14 @@ func _build_skin():
 	skin_list.add_constant_override("separation", 8)
 	sc.add_child(skin_list)
 	var h = HBoxContainer.new()
+	h.add_constant_override("separation", 8)
+	if ResourceLoader.exists("res://mods/replay/SkinPanel.gd"): # note shape / colours / cursor / sounds / HUD font profiles
+		var ed = Button.new()
+		ed.text = "Skin editor (notes, cursor, sounds)"
+		ed.focus_mode = Control.FOCUS_NONE
+		ed.rect_min_size = Vector2(300, 36)
+		ed.connect("pressed", self, "_open_skin_editor")
+		h.add_child(ed)
 	var open = Button.new()
 	open.text = "Open skin folder"
 	open.focus_mode = Control.FOCUS_NONE
@@ -381,6 +389,12 @@ func _build_skin():
 	h.add_child(open)
 	p.add_child(h)
 	_skin_rows()
+
+func _open_skin_editor():
+	if menu and menu.has_node("SkinPanel"): return
+	var e = load("res://mods/replay/SkinPanel.gd").new()
+	e.name = "SkinPanel"
+	(menu if menu else get_parent()).add_child(e)
 
 func _skin_slots() -> Array:
 	var out = []
