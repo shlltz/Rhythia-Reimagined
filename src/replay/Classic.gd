@@ -5,7 +5,7 @@ extends Node
 # either layout; an instance (added by menu2.gd on the classic menu) brings the modded page's extras
 # to the classic one: star ratings (page + grid tiles), PICK FOR LOBBY, the map editor / collection
 # actions, the slowest speed button and the touch speed pad, the hype cover visualizer, and covers
-# loaded off the main thread (grid thumbnails, the page's full cover) - the look stays stock.
+# loaded off the main thread (grid thumbnails, the page's full cover), and the card layout (ClassicLook.gd).
 
 const CLASSIC = "res://scenes/menu/oldmenu2.tscn"
 const INFO = "Main/Results/Results"
@@ -86,6 +86,8 @@ func _ready():
 		Rhythia.connect("selected_song_changed", self, "_update_stars")
 		Rhythia.connect("mods_changed", self, "_update_stars")
 		_update_stars()
+	if !si.has_node("RRLook"): # card layout (after the stars row exists: it moves it under the mapper)
+		si.add_child(load("res://mods/replay/ClassicLook.gd").new())
 
 func _process(delta):
 	_grid_mode()
