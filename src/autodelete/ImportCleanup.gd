@@ -5,6 +5,7 @@ extends Reference
 
 func trash(path:String) -> bool:
 	if path == "" or path.begins_with("res://"): return false
+	if OS.get_name() == "Android": return false # no Recycle Bin there: the file stays
 	var g = ProjectSettings.globalize_path(path).replace("\\", "/")
 	var user = ProjectSettings.globalize_path(Globals.p("user://")).replace("\\", "/").trim_suffix("/") + "/"
 	if g.to_lower().begins_with(user.to_lower()): return false

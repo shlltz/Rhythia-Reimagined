@@ -162,7 +162,7 @@ func select_type(type:int):
 		Globals.file_sel.open_file(
 			self,
 			"file_selected",
-			PoolStringArray(["*.sspm ; Sound Space Plus map"]),
+			PoolStringArray(["*.sspm, *.phxm ; Sound Space Plus / Rhythia map", "*.sspm ; Sound Space Plus map", "*.phxm ; Rhythia (rewrite) map"]),
 			false,
 			#"~/Downloads"
 			OS.get_system_dir(OS.SYSTEM_DIR_DOWNLOADS)
@@ -542,8 +542,22 @@ func file_selected(files:PoolStringArray):
 				$TxtFile/H/E/Cover/C.disabled = false
 				$TxtFile/H/E/Cover/C.pressed = true
 		FO_SSPM:
-			song = Song.new()
-			song.load_from_sspm(files[0])
+			var phxm = load("res://mods/fixes/Phxm.gd") # .phxm maps (the rewrite's format)
+			if phxm and phxm.is_map(files[0]):
+				var r = phxm.load_song(files[0])
+				if r is String:
+					$SelectType.visible = false
+					$Finish/Wait.visible = false
+					$Finish/Success.visible = false
+					$Finish/Error.text = r
+					$Finish/Error.visible = true
+					$Finish/ok.visible = true
+					$Finish.visible = true
+					return
+				song = r
+			else:
+				song = Song.new()
+				song.load_from_sspm(files[0])
 			import_source = files[0]
 			$SelectType.visible = false
 			populate_edit_screen()
@@ -870,6 +884,8 @@ func _ready():
 	
 	$SelectType/txt.connect("pressed",self,"select_type",[T_TXT])
 	$SelectType/sspm.connect("pressed",self,"select_type",[T_SSPM])
+	var dsc = $SelectType/sspm/Describe # .phxm maps (the rewrite's format) import here too
+	dsc.text = tr(dsc.text).replace(".sspm", ".sspm / .phxm")
 	$SelectType/vulnus.connect("pressed",self,"select_type",[T_VULNUS])
 	$SelectType/sspmr.connect("pressed",self,"select_type",[T_SSPMR])
 	$SelectType/cancel.connect("pressed",self,"back_to_menu")

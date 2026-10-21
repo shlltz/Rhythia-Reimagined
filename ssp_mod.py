@@ -392,7 +392,7 @@ def friendly_settings(t, scale, hints=False):
 # ---------- script mods: text scripts added under res://mods/<dir>/, game scripts repointed to them ----------
 # name: (pck dir, {source file: game script it replaces}, [extra files])
 SCRIPT_MODS = {
-    'fixes': ('fixes', {'Song.gd': 'res://scripts/content/game/Song.gd'}, ['BgLoad.gd']),
+    'fixes': ('fixes', {'Song.gd': 'res://scripts/content/game/Song.gd'}, ['BgLoad.gd', 'Phxm.gd']),
     'stars': ('stars', {'SongInfoScreen.gd': 'res://scripts/ui/menu/SongInfoScreen.gd',
                         'v3MapList.gd': 'res://scripts/ui/menu/buttons/v3MapList.gd',
                         'StartOffset.gd': 'res://scripts/ui/menu/StartOffset.gd',
@@ -410,7 +410,8 @@ SCRIPT_MODS = {
     'osuskin': ('osuskin', {}, sorted(os.listdir(os.path.join(SRC, 'osuskin'))) if os.path.isdir(os.path.join(SRC, 'osuskin')) else []),  # osu! skin sounds/images (raw files)
     'discord': ('discord', {'discord.gd': 'res://addons/discord_game_sdk/discord.gd'}, []),
     'autodelete': ('import', {'AddSong.gd': 'res://scripts/ui/cmgr/AddSong.gd',
-                              'RunMapButton.gd': 'res://scripts/ui/menu/buttons/RunMapButton.gd'}, ['ImportCleanup.gd']),
+                              'RunMapButton.gd': 'res://scripts/ui/menu/buttons/RunMapButton.gd',
+                              'LegacyRunMapButton.gd': 'res://scripts/ui/legacymenu/buttons/RunMapButton.gd'}, ['ImportCleanup.gd']),
 }
 VERSION_FILE = os.path.join(HERE, 'version.txt')
 def version(): return open(VERSION_FILE).read().strip() if os.path.exists(VERSION_FILE) else '0.0.0'
@@ -641,7 +642,7 @@ def portable(out, linux=False):
 # Rhythia Legacy Android (com.rhythialegacy.net, same Godot 3.6.2 build): the APK keeps the game
 # files loose under assets/, so the mods are written straight in. Windows-only mods are left out.
 # The result is UNSIGNED - sign it (zipalign + apksigner, e.g. uber-apk-signer) before installing.
-APK_SKIP = ['discord', 'autodelete']   # Discord DLL / PowerShell recycle bin (the browser unzips .rhm itself)
+APK_SKIP = ['discord']   # Discord DLL (autodelete ships for its .phxm import dialog; it never deletes on Android)
 def apk(src_apk, out):
     prof = {k: v for k, v in load_profile().items() if k not in TWEAKS_EXCLUDE and k not in APK_SKIP}
     prof['sharelook'] = {}

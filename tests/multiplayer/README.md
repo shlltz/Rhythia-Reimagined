@@ -19,6 +19,7 @@ Tests use their own pck copies under `t/`; the installed game is untouched.
 | PerfBench.gd | 1 | benchmark: startup, idle menu, map switching, load times, a full autoplay run (frame time p50/p95/p99/max, spikes, cost of hit / physics frames, audio desync, MultiMesh resizes), memory over 3 play/quit cycles. MAP1 = dense map, MAP2 = big map. Instance name `diag*` = gameplay only, `*fx*` = every per-note effect on |
 | MenuProbe.gd / HandlerProbe.gd | 1 | map switching: frame times with parts switched off / the time of each selection handler |
 | HitProbe.gd | 1 | time of each part of a note hit |
+| PhxmTest.gd | 1 | .phxm import (the rewrite's maps): run `phxm_fixtures.py map.sspm outdir` first and pass the .sspm then the t_*.phxm files as maps; converted notes must equal the .sspm's (stored / deflated / nested zips, quantum positions, ids, duplicates, broken file, rewrite map folder, map browser install, drag-and-drop on both menus, import screen) |
 | StartupProbe.gd | 1 | startup time only (use RR_KEEP=1 for warm starts; set `disable_intro` in the instance's settings.json or the stock 30 s cutscene plays) |
 
 The two-instance tests need one map in both libraries and a second only in A's (any small .sspm,

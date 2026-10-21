@@ -1,7 +1,7 @@
 extends CanvasLayer
 # Online map browser for Steam Rhythia's public map database (rhythia.com): search by name,
 # filter by status, sort by star rating, one-click download into the game.
-# .sspm maps are installed as they are; .rhm maps (zip: "map" JSON + audio + cover) are unpacked
+# .sspm maps are installed as they are, .phxm ones converted (fixes/Phxm.gd); .rhm maps (zip: "map" JSON + audio + cover) are unpacked
 # with Windows' tar.exe and converted to .sspm with the game's own writer (Song.convert_to_sspm).
 
 const API = "https://production.rhythia.com/api/getBeatmaps"
@@ -611,7 +611,7 @@ func _meta(b:Dictionary) -> String:
 	var l = _length(b)
 	if l != "": parts.append(l)
 	parts.append("%d plays" % int(_num(b, "playcount")))
-	parts.append(".rhm" if str(b.beatmapFile).to_lower().ends_with(".rhm") else ".sspm")
+	parts.append("." + _map_ext(str(b.beatmapFile)))
 	return PoolStringArray(parts).join("  ·  ")
 
 func _hover(card:Panel, on:bool):
@@ -881,7 +881,7 @@ func _next_download():
 	state[oid] = "downloading"
 	_refresh_row(oid)
 	Directory.new().make_dir_recursive(Globals.p(TMP))
-	dl_http.download_file = Globals.p(TMP) + "/%d.%s" % [oid, "rhm" if url.to_lower().ends_with(".rhm") else "sspm"]
+	dl_http.download_file = Globals.p(TMP) + "/%d.%s" % [oid, _map_ext(url)]
 	var err = dl_http.request(url, PoolStringArray([UA]))
 	if err != OK: _finish_download(oid, "!couldn't start the download (error %d)" % err)
 
@@ -901,8 +901,17 @@ func _on_download(result, code, _headers, _body):
 	_refresh_row(oid)
 	yield(get_tree(), "idle_frame") # show "Installing..." before the work
 	var path = dl_http.download_file
-	var sid = _install_rhm(dl_current, path) if path.ends_with(".rhm") else _install_sspm(dl_current, path)
+	var sid:String
+	match path.get_extension():
+		"rhm": sid = _install_rhm(dl_current, path)
+		"phxm": sid = _install_phxm(dl_current, path)
+		_: sid = _install_sspm(dl_current, path)
 	_finish_download(oid, sid)
+
+# the map file type, from the download link: .sspm, .rhm or .phxm (the rewrite's format)
+static func _map_ext(url:String) -> String:
+	var e = url.to_lower().split("?")[0].get_extension()
+	return e if e == "rhm" or e == "phxm" else "sspm"
 
 # res = installed song id, or an error message starting with "!"
 func _finish_download(oid:int, res:String):
@@ -943,6 +952,15 @@ func _install_sspm(b:Dictionary, path:String) -> String:
 	reg.check_and_remove_id(s.id)
 	reg.add_item(s)
 	return s.id
+
+# .phxm: converted by the fixes mod (Phxm.gd)
+func _install_phxm(b:Dictionary, path:String) -> String:
+	var sid = "rhythia_%d" % int(b.id)
+	if Rhythia.registry_song.get_item(sid): return sid
+	var phxm = load("res://mods/fixes/Phxm.gd")
+	if !phxm: return "!.phxm maps need the fixes mod"
+	var r = phxm.import(path, sid)
+	return ("!" + r) if r is String else r.id
 
 func _install_rhm(b:Dictionary, path:String) -> String:
 	var oid = int(b.id)
