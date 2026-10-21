@@ -54,8 +54,8 @@ GitHub releases + signed manifest ──> updater (download, verify, back up, sw
 ### Phase 1: foundation
 - [x] audit (this file)
 - [x] branch `major` off `perf`
-- [ ] contributor docs (CONTRIBUTING, architecture, testing, release), issue / PR templates
-- [ ] CI: Python checks of the mod tool + pure GDScript unit tests in headless Godot 3.6.2
+- [x] contributor docs: CONTRIBUTING.md, docs/ARCHITECTURE.md, TESTING.md, RELEASE.md, GODOT.md (assessment: stay on 3.6.2), issue / PR templates
+- [~] CI (.github/workflows/checks.yml): Python compile + tests/unit (30 pure tests incl. a GIF decoder and the updater's signature checks) in the official Godot 3.6.2 headless build, SHA-512 checked. The unit suite passes locally on Godot 3.6.2 (a copy of the game's exe); the workflow itself has not run on GitHub yet (nothing pushed)
 - [x] baseline performance numbers (PerfBench) recorded: docs/PERF.md (PerfBench now counts minimized frames: a minimized window is paced to the display and measures nothing)
 
 ### Phase 2: core features

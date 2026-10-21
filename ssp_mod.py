@@ -14,6 +14,9 @@ so removed mods leave nothing behind. The previous game file is kept in backup/S
   restore                                    remove every mod (original game)
   package [--out ZIP]                        shareable no-Python patch (replay + stars), default ..\..\Rhythia-reimagined-lite-vX.Y.Z.zip
   portable [--out ZIP]                       ready-to-play zip: game exe + DLLs + pck with the share build (with map browser)
+  linux [--out ZIP]                          the same for Linux (program + libraries from ..\_linux)
+  updatekey                                  make the update signing key (tools/update_key.pem, private; public half in src/replay)
+  manifest [--out DIR] [--notes TEXT]        release pck + signed update.json for the updater (docs/UPDATES.md)
   apk APK [--out FILE]                       Rhythia Legacy Android: mods written into the APK (unsigned; sign before installing)
   tweaks [--without browser]                 full share zip ..\..\Rhythia-reimagined-vX.Y.Z.zip
   version [X.Y.Z]                            show / set the version (version.txt; zip names, README, title screen)
