@@ -131,6 +131,7 @@ func _ready():
 				ls.thickness = 1 if mono else 2
 				sl.add_stylebox_override("separator", ls)
 	_add_search(card)
+	_hide_removed()
 	_add_half_ghost_fade()
 	_add_hitbox_mode()
 	scroll.connect("resized", self, "_fit")
@@ -139,6 +140,15 @@ func _ready():
 	tabs.connect("tab_changed", self, "_tab_changed")
 	_fit()
 	_tab_changed(tabs.current_tab)
+
+# the stock intro cutscene and update check are gone (fixes mod: NoCutscene.gd, Boot.gd): their
+# buttons / switches would do nothing (or reload init)
+func _hide_removed():
+	var f = scroll.get_node("F")
+	for p in ["TopButtons/TopButtonsHBox/CheckForUpdate", "TabContainer/Replays & Misc/Recording/Group/H/DisableAutoUpdate",
+			"TabContainer/Replays & Misc/Experimental/Group/H/Intro", "TabContainer/Replays & Misc/Experimental/Group/H/DisableIntro"]:
+		var n = f.get_node_or_null(p)
+		if n is CanvasItem: n.visible = false
 
 # Rhythia-reimagined setting right under the game's Fade Length (Notes tab): a copy of that row
 # without its script, saved to reimagined.json (NoteManager reads it when Half Ghost is on)

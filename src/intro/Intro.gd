@@ -29,10 +29,13 @@ var music_was_muted:bool = false
 
 func _ready():
 	if get_parent() != get_tree().root:
-		# launched from init.tscn: run as a root node instead
-		var me = load(PATH).new()
-		me.name = "Intro"
-		get_tree().root.call_deferred("add_child", me)
+		# launched from init.tscn: run as a root node instead (once: init loads twice on a first
+		# launch, the stock cutscene's replacement goes back to it - fixes/NoCutscene.gd)
+		if !Engine.has_meta("rr_intro_started"):
+			Engine.set_meta("rr_intro_started", true)
+			var me = load(PATH).new()
+			me.name = "Intro"
+			get_tree().root.call_deferred("add_child", me)
 		queue_free()
 		return
 	layer = 128

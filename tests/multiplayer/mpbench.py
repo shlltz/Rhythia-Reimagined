@@ -78,6 +78,8 @@ for name, script in insts:
     else:
         if os.path.isdir(root): shutil.rmtree(root)
         os.makedirs(os.path.join(ud, 'maps'))
+        # answer the stock first-launch "record replays?" prompt (its defaults), so init doesn't wait on it
+        open(os.path.join(ud, 'settings.json'), 'w').write('{"record_replays": false, "record_limit": 0}')
     for mp in extra_maps.get(name, []):
         dst = os.path.join(ud, 'maps', os.path.basename(mp))
         if not os.path.exists(dst): shutil.copyfile(mp, dst)

@@ -476,15 +476,26 @@ def sharelook(pk, o):
 
 # ---------- startup intro (node injected into init.tscn) ----------
 INIT = 'res://scenes/init.tscn'
+def init_add_node(pk, script, name, rid, kind='Node'):                 # a script node in init.tscn (several mods add one)
+    t = pk.read(INIT).decode('utf-8')
+    end = t.index('\n', t.rfind('[ext_resource')) + 1
+    t = t[:end] + '[ext_resource path="%s" type="Script" id=%d]\n' % (script, rid) + t[end:]
+    pk.write(INIT, (t.rstrip('\n') + '\n\n[node name="%s" type="%s" parent="."]\nscript = ExtResource( %d )\n' % (name, kind, rid)).encode('utf-8'))
+
+# no stock intro cutscene (the floating cube one, scenes/Intro.tscn, played until disable_intro is
+# set): the scene Globals switches to goes straight back to init. No stock update check either
+# (Boot.gd; it offered to replace the modded game file with stock Rhythia).
+CUTSCENE = 'res://scenes/Intro.tscn'
+def boot_fixes(pk):
+    for f in ('Boot.gd', 'NoCutscene.gd'): pk.add('res://mods/fixes/' + f, src('fixes', f))
+    pk.write(CUTSCENE, b'[gd_scene load_steps=2 format=2]\n\n[ext_resource path="res://mods/fixes/NoCutscene.gd" type="Script" id=1]\n\n[node name="NoCutscene" type="Node"]\nscript = ExtResource( 1 )\n')
+    init_add_node(pk, 'res://mods/fixes/Boot.gd', 'RRBoot', 91)
 def intro(pk):
-    t = (pk.bak.get(INIT) or pk.read(INIT)).decode('utf-8')
     for f in ('Intro.gd', 'intro.mp3'):
         if f in OPTIONAL_ASSETS and not os.path.exists(os.path.join(SRC, 'intro', f)):
             print('  (no intro/%s - not in the public repo: the intro plays without sound)' % f); continue
         pk.add('res://mods/intro/' + f, src('intro', f))
-    end = t.index('\n', t.rfind('[ext_resource')) + 1
-    t = t[:end] + '[ext_resource path="res://mods/intro/Intro.gd" type="Script" id=90]\n' + t[end:]
-    pk.write(INIT, (t.rstrip('\n') + '\n\n[node name="Intro" type="CanvasLayer" parent="."]\nscript = ExtResource( 90 )\n').encode('utf-8'))
+    init_add_node(pk, 'res://mods/intro/Intro.gd', 'Intro', 90, 'CanvasLayer')
 
 # ---------- profile + rebuild ----------
 ORDER = ['font', 'theme', 'results', 'bigsettings', 'lang', 'border', 'sharelook', 'fixes', 'stars', 'replay', 'osuskin', 'browser', 'hype', 'discord', 'autodelete', 'intro']
@@ -508,7 +519,9 @@ def apply(pk, name, o):
     elif name == 'border': border(pk, path_arg(o['image']) if o.get('image') else None, o.get('opacity'))
     elif name == 'intro': intro(pk)
     elif name == 'sharelook': sharelook(pk, o)
-    else: script_mod(pk, name, o)
+    else:
+        script_mod(pk, name, o)
+        if name == 'fixes': boot_fixes(pk)
 def game_running():
     import subprocess
     r = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq SoundSpacePlus.exe', '/NH'], capture_output=True, text=True)
