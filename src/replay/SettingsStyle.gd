@@ -28,6 +28,8 @@ var tabs:TabContainer
 var buttons:Array = []
 var fonts:Dictionary = {}
 var menu:Node
+var mono:bool = false # (the personal build's monochrome look: not in this build)
+var rows:Node # SettingsRows: row layout, descriptions, reset, saving
 
 func _ready():
 	menu = get_parent()
@@ -68,10 +70,9 @@ func _ready():
 	line.margin_bottom = 109
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(line)
-	var hint = _label("ESC  title screen", 14, Color(1, 1, 1, 0.3))
-	hint.anchor_left = 1; hint.anchor_right = 1
-	hint.margin_left = -260; hint.margin_right = -28; hint.margin_top = 44; hint.margin_bottom = 64
-	hint.align = Label.ALIGN_RIGHT
+	var hint = _label("ESC  back to the title screen", 14, Color(1, 1, 1, 0.3))
+	hint.anchor_top = 1; hint.anchor_bottom = 1
+	hint.margin_left = 28; hint.margin_right = 28 + TAB_W; hint.margin_top = -40; hint.margin_bottom = -20
 	card.add_child(hint)
 
 	# tab column (in Settings, not the card, so it gets clicks)
@@ -131,6 +132,8 @@ func _ready():
 	_hide_removed()
 	_add_half_ghost_fade()
 	_add_hitbox_mode()
+	rows = load("res://mods/replay/SettingsRows.gd").new()
+	rows.setup(self, card)
 	scroll.connect("resized", self, "_fit")
 	settings.connect("visibility_changed", self, "_visibility")
 	_visibility()
@@ -163,6 +166,7 @@ func _add_half_ghost_fade():
 	sb.step = 5
 	sb.suffix = "%"
 	sb.value = round(float(R.val("half_ghost_length")) * 100)
+	sb.set_meta("rr_default", round(float(R.DEFAULTS.get("half_ghost_length", 1.0)) * 100))
 	sb.hint_tooltip = tip
 	sb.connect("value_changed", self, "_half_ghost_changed")
 	row.get_node("Label").text = "Half Ghost Fade"
@@ -179,6 +183,7 @@ func _add_hitbox_mode():
 	c.text = "Swept Hitbox"
 	c.hint_tooltip = "[def. on] Rhythia-reimagined hitbox. Classic checks where your cursor is once per frame, so a fast flick that crosses a note between two frames misses. Swept also checks the path your cursor moved since the last frame. Same hitbox size, same hit window - only the gaps between frames are closed. Off = classic. Applies on the next map."
 	c.pressed = bool(load("res://mods/replay/Reimagined.gd").val("swept_hitbox"))
+	c.set_meta("rr_default", bool(load("res://mods/replay/Reimagined.gd").DEFAULTS.get("swept_hitbox", true)))
 	c.connect("toggled", self, "_swept_changed")
 	sw.get_parent().add_child(c)
 	sw.get_parent().move_child(c, (hw.get_index() + 1) if hw else sw.get_index())
@@ -188,6 +193,7 @@ func _add_hitbox_mode():
 	rf.text = "Rewrite Feel"
 	rf.hint_tooltip = "[def. off] Play maps with the Rhythia rewrite's default look: approach rate 30 at distance 15, FoV 70, more camera sway (the grid and HUD stay still), and the rewrite's note fade (notes fade out as they reach the grid) with pushback through the hit window. Your own settings aren't changed: they apply again when this is off. Applies on the next map."
 	rf.pressed = bool(load("res://mods/replay/Reimagined.gd").val("rewrite_feel"))
+	rf.set_meta("rr_default", bool(load("res://mods/replay/Reimagined.gd").DEFAULTS.get("rewrite_feel", false)))
 	rf.connect("toggled", self, "_feel_changed")
 	sw.get_parent().add_child(rf)
 	sw.get_parent().move_child(rf, c.get_index() + 1)
@@ -247,6 +253,7 @@ func _shrink():
 func _fit():
 	var f = scroll.get_node_or_null("F")
 	if f: f.rect_min_size.x = scroll.rect_size.x - 16
+	if f and rows: rows.fit(f.rect_min_size.x)
 
 func _pick(i:int):
 	if tabs.current_tab != i:
@@ -308,6 +315,7 @@ func _search(q:String):
 	hidden_by_search.clear()
 	var terms = []
 	for w in q.to_lower().split(" ", false): terms.append(w)
+	if rows: rows.searching(!terms.empty())
 	var counts = []
 	for t in tabs.get_children():
 		var n = 0
@@ -348,7 +356,7 @@ func _filter_tab(tab:Control, terms:Array) -> int:
 		var all = _matches(head + " " + sec.name.to_lower(), terms) # section name matches: keep all its rows
 		var n = 0
 		for row in grid.get_children():
-			if !(row is Control) or !row.visible: continue
+			if !(row is Control) or !row.visible or row.has_meta("rr_desc"): continue # (descriptions follow their row)
 			if row is Separator:
 				_hide(row)
 				continue

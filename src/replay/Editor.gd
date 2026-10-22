@@ -395,11 +395,11 @@ func _build_top():
 	t.valign = Label.VALIGN_CENTER
 	h.add_child(t)
 	state_lbl = _lbl("", 14, Look.TEXT_2)
-	state_lbl.rect_min_size = Vector2(150, 0)
+	state_lbl.rect_min_size = Vector2(110, 0) # (the bar fits 1280 px: EXIT was cut off)
 	state_lbl.valign = Label.VALIGN_CENTER
 	h.add_child(state_lbl)
 	star_lbl = _lbl("★ ...", 14, Look.TEXT)
-	star_lbl.rect_min_size = Vector2(240, 0)
+	star_lbl.rect_min_size = Vector2(200, 0)
 	star_lbl.valign = Label.VALIGN_CENTER
 	star_lbl.mouse_filter = Control.MOUSE_FILTER_PASS # (its tooltip)
 	h.add_child(star_lbl)

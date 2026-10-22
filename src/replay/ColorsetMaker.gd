@@ -79,6 +79,7 @@ static func refresh_grid(grid:Node):
 		if c.name != "Color": c.queue_free()
 	grid.btns = {}
 	grid._ready()
+	if ResourceLoader.exists("res://mods/replay/SettingsRows.gd"): load("res://mods/replay/SettingsRows.gd").fix_colorset_grid(grid) # (_ready hooked its resize again)
 
 # ---------------------------------------------------------------- the dialog
 func _ready():

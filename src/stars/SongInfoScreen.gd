@@ -502,6 +502,7 @@ func _relayout_mods():
 			placed.append([box, Vector2(0 if i % 2 == 0 else col_b - col_a, y + int(i / 2) * 30)])
 			mods_boxes.append(box)
 			if box is BaseButton: box.connect("toggled", self, "_mods_summary")
+			if box is CheckBox and ResourceLoader.exists("res://mods/replay/UIKit.gd"): load("res://mods/replay/UIKit.gd").switch_box(box) # (switches, like Settings)
 			var lbl = box.get_node_or_null("Label")
 			if lbl: # brighter names with a dark outline-ish shadow (readable over the cover / glow)
 				lbl.add_color_override("font_color", Color(1, 1, 1, 0.95))

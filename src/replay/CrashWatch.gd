@@ -99,3 +99,6 @@ func _notification(what):
 
 func _exit_tree():
 	_mark(false)
+	# Quitting: the mods cache textures, fonts and streams in Engine metadata, which the engine
+	# frees only after the renderer is gone - a crash on every exit. Let them go now.
+	for k in Engine.get_meta_list(): Engine.remove_meta(k)

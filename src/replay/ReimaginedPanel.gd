@@ -259,6 +259,8 @@ func _check(parent:Control, text:String, on:bool, method:String) -> CheckBox:
 	c.text = text
 	c.pressed = on
 	c.focus_mode = Control.FOCUS_NONE
+	c.add_constant_override("hseparation", 12) # (the tick sat right against the first letter)
+	if ResourceLoader.exists("res://mods/replay/UIKit.gd"): load("res://mods/replay/UIKit.gd").switch_box(c) # (switches, like Settings)
 	c.connect("toggled", self, method)
 	parent.add_child(c)
 	return c

@@ -480,6 +480,9 @@ func _rr_init():
 	if se: se.hint_tooltip = RR_SEARCH_HELP
 	var f = get_node_or_null("/root/Menu/Main/Maps/Filters")
 	if !f or !f.has_node("NameSort"): return
+	if ResourceLoader.exists("res://mods/replay/UIKit.gd"): # (broken / online: switches, like Settings; the sort toggles keep their arrows)
+		for c in f.get_children():
+			if c is CheckBox and !("sort" in c.name.to_lower()): load("res://mods/replay/UIKit.gd").switch_box(c)
 	var at = f.get_node("NameSort").get_index() + 1
 	var nodes = []
 	nodes.append(_rr_caption("sort"))

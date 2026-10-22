@@ -10,6 +10,7 @@ const S = preload("res://mods/replay/Skins.gd")
 const Look = preload("res://mods/replay/Look.gd")
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
 const RP = preload("res://mods/replay/ReimaginedPanel.gd")
+const UIKit = preload("res://mods/replay/UIKit.gd")
 const W = 1180.0
 const H = 700.0
 const GROUPS = [["notes", "Notes"], ["cursor", "Cursor"], ["effects", "Effects"], ["sounds", "Sounds"], ["hud", "HUD"]]
@@ -20,6 +21,7 @@ var fonts:Dictionary = {}
 var skin_list:ItemList
 var status:Label
 var cur_name:String = ""
+var list_empty:Label
 var work:Dictionary = {}          # settings being edited
 var work_colors = null            # [html] own colour set, or null
 var work_mirror:bool = false
@@ -51,8 +53,8 @@ func _ready():
 	card.anchor_left = 0.5; card.anchor_right = 0.5; card.anchor_top = 0.5; card.anchor_bottom = 0.5
 	card.margin_left = -W / 2; card.margin_right = W / 2; card.margin_top = -H / 2; card.margin_bottom = H / 2
 	root.add_child(card)
-	var t = _label("Skin editor", 30, Color(1, 1, 1))
-	t.rect_position = Vector2(26, 16)
+	var t = UIKit.header("Skin editor", _font(26))
+	t.rect_position = Vector2(26, 18)
 	card.add_child(t)
 	status = _label("", 13, Color(1, 1, 1, 0.55))
 	status.rect_position = Vector2(28, 58)
@@ -115,8 +117,9 @@ func _label(text:String, size:int, col:Color) -> Label:
 func _btn(text:String, target:Object, method:String, args:Array = [], w:float = 0) -> Button:
 	var b = Button.new()
 	b.text = text
-	b.focus_mode = Control.FOCUS_NONE
+	b.focus_mode = Control.FOCUS_ALL
 	b.rect_min_size = Vector2(w, 32)
+	UIKit.button(b, _font(15))
 	b.connect("pressed", target, method, args)
 	return b
 
@@ -143,17 +146,24 @@ func _build_left():
 	skin_list = ItemList.new()
 	skin_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	skin_list.connect("item_selected", self, "_picked")
+	UIKit.list(skin_list, _font(15))
 	v.add_child(skin_list)
+	list_empty = UIKit.empty_note(skin_list, "No skins yet.\n\nNew saves the look you have now as a skin.", _font(14))
 	name_edit = LineEdit.new()
-	name_edit.placeholder_text = "name"
+	name_edit.placeholder_text = "skin name"
+	UIKit.input(name_edit, _font(15))
 	v.add_child(name_edit)
 	var g = GridContainer.new()
 	g.columns = 2
 	g.add_constant_override("hseparation", 6)
 	g.add_constant_override("vseparation", 6)
 	v.add_child(g)
-	for b in [["New from current", "_new"], ["Duplicate", "_dup"], ["Rename", "_rename"], ["Delete", "_delete_ask"], ["Import .rrskin", "_import"], ["Export .rrskin", "_export"]]:
+	for b in [["New", "_new", "A new skin from the look you have now (settings + your user-folder images and sounds)"],
+			["Duplicate", "_dup", "A copy of the selected skin"], ["Rename", "_rename", "Rename the selected skin to the name above"],
+			["Delete", "_delete_ask", "Delete the selected skin (asks first)"], ["Import", "_import", "Add a skin from a .rrskin file"],
+			["Export", "_export", "Save the selected skin as a .rrskin file to share"]]:
 		var bt = _btn(b[0], self, b[1], [], 122)
+		bt.hint_tooltip = b[2]
 		g.add_child(bt)
 	var use = _btn("Use this skin", self, "_use", [], 250)
 	v.add_child(use)
@@ -165,8 +175,9 @@ func _refresh_list():
 	for n in S.list():
 		skin_list.add_item(("● " if n == a else "") + n)
 		skin_list.set_item_metadata(skin_list.get_item_count() - 1, n)
+	list_empty.visible = skin_list.get_item_count() == 0
 	if skin_list.get_item_count() == 0:
-		_say("No skins yet: \"New from current\" saves the look you have now as one.")
+		_say("No skins yet: New saves the look you have now as one.")
 
 func _picked(i:int):
 	var n = skin_list.get_item_metadata(i)
@@ -289,7 +300,7 @@ func _build_middle():
 	bar.add_constant_override("separation", 4)
 	card.add_child(bar)
 	for g in GROUPS:
-		var b = _btn(g[1], self, "_show_group", [g[0]], 74)
+		var b = _btn(g[1], self, "_show_group", [g[0]], 0)
 		b.toggle_mode = true
 		bar.add_child(b)
 		group_btns.append(b)
@@ -313,7 +324,7 @@ func _build_middle():
 func _val(k:String):
 	return work[k] if work.has(k) else S.DEFAULTS.get(k)
 
-func _set(k:String, v):
+func _put(k:String, v): # (not _set: that name is Object's hook for every property assignment)
 	work[k] = v.to_html(true) if v is Color else v
 	dirty = true
 	_preview_dirty = true
@@ -399,17 +410,18 @@ func _num_row(text:String, k:String, lo:float, hi:float, step:float):
 	_row(text, sp)
 
 func _num_changed(v:float, k:String, as_int:bool):
-	_set(k, int(v) if as_int else v)
+	_put(k, int(v) if as_int else v)
 
 func _check_row(text:String, k:String):
 	var c = CheckBox.new()
+	UIKit.switch_box(c)
 	c.pressed = bool(_val(k))
 	c.focus_mode = Control.FOCUS_NONE
 	c.connect("toggled", self, "_set_b", [k])
 	_row(text, c)
 
 func _set_b(v:bool, k:String):
-	_set(k, v)
+	_put(k, v)
 
 func _color_row(text:String, k:String):
 	var cp = ColorPickerButton.new()
@@ -419,7 +431,7 @@ func _color_row(text:String, k:String):
 	_row(text, cp)
 
 func _set_c(c:Color, k:String):
-	_set(k, c)
+	_put(k, c)
 
 func _opt_row(text:String, k:String, opts:Array):
 	var o = OptionButton.new()
@@ -431,7 +443,7 @@ func _opt_row(text:String, k:String, opts:Array):
 	_row(text, o)
 
 func _opt_changed(i:int, o:OptionButton, k:String):
-	_set(k, o.get_item_metadata(i))
+	_put(k, o.get_item_metadata(i))
 
 func _pick_row(text:String, k:String, reg:String):
 	var o = OptionButton.new()
@@ -453,6 +465,7 @@ func _colors_row():
 	le.connect("focus_exited", self, "_colors_le", [le])
 	_row("Own colours", le)
 	var m = CheckBox.new()
+	UIKit.switch_box(m)
 	m.text = "mirror (back and forth)"
 	m.pressed = work_mirror
 	m.connect("toggled", self, "_mirror_set")

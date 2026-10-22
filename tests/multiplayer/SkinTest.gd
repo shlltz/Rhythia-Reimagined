@@ -94,10 +94,10 @@ func run():
 	ok("skin made from the current look", S.list().has("Test skin") and p.cur_name == "Test skin", S.list())
 	ok("its settings = the ones in use", abs(float(S.read("Test skin").settings.note_size) - before_size) < 0.001 and S.read("Test skin").settings.selected_mesh == before_mesh)
 	# ---- edits
-	p._set("note_size", 1.5)
-	p._set("selected_mesh", "ssp_square")
+	p._put("note_size", 1.5)
+	p._put("selected_mesh", "ssp_square")
 	p._colors_set("#ff0000, #00ff00, #0000ff")
-	p._set("cursor_scale", 2.0)
+	p._put("cursor_scale", 2.0)
 	ok("own cursor image accepted", S.set_file("Test skin", "cursor", tdir + "/cur.png") == "")
 	ok("a .wav hit sound refused (the game can't play it from a file)", S.set_file("Test skin", "hit", tdir + "/hit.wav") != "")
 	var he = S.set_file("Test skin", "hit", tdir + "/hit.mp3")

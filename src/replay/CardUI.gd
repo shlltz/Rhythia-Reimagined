@@ -142,7 +142,7 @@ static func banner(parent:Control, tex:Texture, rect:Rect2, rad:int = 18, song =
 	m.shader.code = BANNER_SHADER
 	m.set_shader_param("size", rect.size)
 	m.set_shader_param("radius", float(r(rad)))
-	m.set_shader_param("grey", 1.0 if mono() else 0.0)
+	m.set_shader_param("grey", 0.0)
 	t.material = m
 	parent.add_child(t)
 	t.rect_position = rect.position
@@ -161,7 +161,7 @@ static func no_cover(t:TextureRect, song):
 	t.stretch_mode = TextureRect.STRETCH_SCALE
 	var m = t.material
 	m.set_shader_param("topo", 1.0)
-	m.set_shader_param("tint", Color(0.85, 0.85, 0.85) if mono() else difficulty(song)[1])
+	m.set_shader_param("tint", difficulty(song)[1])
 	var h = hash(str(song.id)) if song and "id" in song else 0 # (each map its own pattern, always the same)
 	m.set_shader_param("seed", Vector2(float(h & 1023) / 37.0, float((h >> 10) & 1023) / 41.0))
 
