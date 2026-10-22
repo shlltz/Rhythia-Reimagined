@@ -423,7 +423,9 @@ func _stamp():
 func _layout():
 	var size = get_viewport().get_visible_rect().size
 	var mouse = get_viewport().get_mouse_position()
-	var target = (size - Vector2(W, H)) / 2 + (size / 2 - mouse) * (8.0 / size.y) - Vector2(0, 30)
+	var k = clamp(min((size.y - 152.0) / H, (size.x - 40.0) / W), 0.5, 1.0) # (short windows: shrink so the button bar stays below the panel)
+	holder.rect_scale = Vector2(k, k)
+	var target = (size - Vector2(W, H) * k) / 2 + (size / 2 - mouse) * (8.0 / size.y) - Vector2(0, 30)
 	if shake > 0.0: target += Vector2(randf() - 0.5, randf() - 0.5) * 22.0 * shake # (short impact shake)
 	var dt = get_process_delta_time() # (smoothing by time, not per frame: same feel at any fps)
 	holder.rect_position = holder.rect_position.linear_interpolate(target, 1.0 - exp(-dt * 12.0)) if t > 0.05 else target
