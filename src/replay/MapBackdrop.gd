@@ -6,7 +6,7 @@ extends Control
 # meta rr_backdrop) and look, so the background carries on from the map page into the run and back.
 
 const SMALL = 256                 # the texture drawn (made from a ~40 px copy: smooth, no blocks)
-const TINY = 40
+const TINY = 110
 const FADE = 0.35
 const DIM = 0.44                  # loading / results screens
 const MENU_DIM = 0.3              # behind the map selection menu (dimmer, fades towards both sides)
@@ -14,7 +14,7 @@ const SETTLE = 0.12               # s a pick has to stay before its cover is fet
 const SHADER = """shader_type canvas_item;
 uniform float grey = 0.0;
 uniform float dim = 0.36;
-uniform float radius = 0.02;
+uniform float radius = 0.008;
 uniform float sides = 0.0;        // 1 = fade out towards the left and right screen edges
 void fragment() {
 	vec4 c = vec4(0.0);
@@ -80,7 +80,7 @@ static func make_rect(menu:bool = false) -> TextureRect:
 	var m = ShaderMaterial.new()
 	m.shader = Shader.new()
 	m.shader.code = SHADER
-	m.set_shader_param("grey", 1.0 if mono() else 0.0)
+	m.set_shader_param("grey", 0.0) # (covers keep their colour, in every look)
 	m.set_shader_param("dim", MENU_DIM if menu else DIM)
 	m.set_shader_param("sides", 1.0 if menu else 0.0)
 	r.material = m
@@ -128,7 +128,7 @@ func _process(delta):
 	# a slow drift with the menu's mouse parallax, slightly zoomed so the edges never show
 	var size = rect_size
 	var px = menu.get("parallax") if "parallax" in menu else Vector2.ZERO
-	var s = 1.06 * zoom
+	var s = 1.0 * zoom # (zoomed out: the whole cover)
 	for r in [front, back]:
 		r.rect_pivot_offset = size / 2
 		r.rect_scale = Vector2(s, s)
@@ -148,4 +148,4 @@ static func launch(menu:Node):
 					bus = p.bus, pitch = p.pitch_scale, t = OS.get_ticks_msec()})
 				break
 	var seamless = bd != null and bd.vis > 0.5 and bd.front.texture != null and Rhythia.selected_song == bd.song
-	Engine.set_meta("rr_launch", {t = OS.get_ticks_msec(), seamless = seamless, scale = 1.06, offset = Vector2.ZERO})
+	Engine.set_meta("rr_launch", {t = OS.get_ticks_msec(), seamless = seamless, scale = 1.0, offset = Vector2.ZERO})

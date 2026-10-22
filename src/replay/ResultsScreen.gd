@@ -402,7 +402,7 @@ func _layout():
 	grade_text.rect_scale = grade_text.rect_scale.linear_interpolate(Vector2.ONE, 1.0 - exp(-dt * 11.0))
 	if bd: # the backdrop drifts a little with the mouse, like the menu's
 		bd.rect_pivot_offset = size / 2
-		var z = bd_zoom if bd_zoom > 0.0 else 1.08
+		var z = bd_zoom if bd_zoom > 0.0 else 1.03
 		bd.rect_scale = Vector2(z, z)
 		if bd_zoom <= 0.0: bd.rect_position = (size / 2 - mouse) * (14.0 / size.y)
 	if grade_ring and stamped and grade_ring.k < 1.0: # ring sweeps in after the grade stamp
@@ -461,7 +461,7 @@ func _analyse():
 
 # into the loading screen: the card fades, the cover stays and zooms like a map page start
 func _go(scene:String):
-	Engine.set_meta("rr_launch", {t = OS.get_ticks_msec(), seamless = bd != null and bd.texture != null, scale = 1.08,
+	Engine.set_meta("rr_launch", {t = OS.get_ticks_msec(), seamless = bd != null and bd.texture != null, scale = 1.03,
 		offset = -bd.rect_position / 12.0 if bd else Vector2.ZERO})
 	var root = get_child(0)
 	var a = UIAnim.play(holder, Vector2.ZERO, Vector2.ZERO, 1.0, 0.0, 0.3)
@@ -470,7 +470,7 @@ func _go(scene:String):
 	var t0 = OS.get_ticks_msec()
 	while OS.get_ticks_msec() - t0 < 450:
 		var e = (OS.get_ticks_msec() - t0) / 450.0
-		var z = 1.08 * (1.0 + 0.1 * e * e * (3.0 - 2.0 * e))
+		var z = 1.03 * (1.0 + 0.1 * e * e * (3.0 - 2.0 * e))
 		bd_zoom = z
 		Engine.get_meta("rr_launch")["scale"] = z
 		yield(get_tree(), "idle_frame")

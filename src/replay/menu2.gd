@@ -487,7 +487,7 @@ func _launch_frame():
 	$BlackFade.color = Color(0, 0, 0, 0)
 	for c in get_children():
 		if c != bd and c != $BlackFade and c is CanvasItem: c.modulate.a = 1.0 - black_fade
-	l["scale"] = 1.06 * self.rect_scale.x
+	l["scale"] = self.rect_scale.x
 	l["offset"] = parallax
 
 # ---------------------------------------------------------------- parallax
