@@ -11,6 +11,7 @@ var shot:TextureRect
 var t:float = 0.0
 var cam:Camera = null
 var base_fov:float = 70.0
+var steady:int = 0 # smooth frames since the run's scene came up (its first frames hitch while it builds)
 
 static func start(tree:SceneTree):
 	var img = tree.root.get_texture().get_data()
@@ -35,7 +36,11 @@ func _ready():
 	add_child(shot)
 
 func _process(delta):
-	t += min(delta, 1.0 / 30.0) # (the first frames of a run can hitch: don't skip the fade)
+	var sc0 = get_tree().current_scene
+	if steady < 2: # hold the frozen frame until the run draws smoothly, then fade (no jump after the hitch)
+		steady = steady + 1 if sc0 and sc0.has_node("Game") and delta < 0.05 else 0
+		return
+	t += min(delta, 1.0 / 30.0)
 	var k = min(t / TIME, 1.0)
 	var e = 1.0 - pow(1.0 - k, 3)
 	shot.rect_pivot_offset = shot.rect_size / 2

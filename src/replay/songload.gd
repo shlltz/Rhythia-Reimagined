@@ -14,6 +14,7 @@ var black_fade:float = 0
 const LoadScreen = preload("res://mods/replay/LoadScreen.gd")
 const MIN_SHOW = 3.0 # (= LoadScreen.SHOW: the bar is full then)
 var cancelled:bool = false
+var switched:bool = false
 var screen:Control
 var shown_at:int = 0
 
@@ -64,6 +65,11 @@ func _ready():
 
 var result
 var result2
+var build_thread:Thread = null # song.tscn instanced off the main thread while the bar fills (the
+var built:Node = null          # main thread only adds it: the switch to the run no longer freezes)
+
+func _build(scene:PackedScene):
+	return scene.instance()
 var left:bool = false
 
 var finishing = false
@@ -105,12 +111,14 @@ func finish():
 		screen.show_song(Rhythia.selected_song, true)
 	
 	screen.set_status("Ready")
+	if result is PackedScene and OS.can_use_threads():
+		build_thread = Thread.new()
+		if build_thread.start(self, "_build", result) != OK: build_thread = null
 	var left = MIN_SHOW - (OS.get_ticks_msec() - shown_at) / 1000.0
 	if left > 0: yield(get_tree().create_timer(left),"timeout")
+	while is_instance_valid(screen) and screen.shown < 0.995 and !cancelled: yield(get_tree(), "idle_frame") # (the run starts the moment the bar is full)
 	if cancelled: return
-	black_fade_target = true
-	yield(get_tree().create_timer(0.5),"timeout")
-	if cancelled: return
+	black_fade_target = true # (only the preview's volume follows it now: the run starts right away, RunIntro crossfades)
 
 	
 	# Warnings that can't be disabled (since they're always a problem)
@@ -214,9 +222,18 @@ func _process(delta):
 			finish()
 	if cancelled and black_fade == 1: get_tree().change_scene("res://scenes/loaders/menuload.tscn")
 	
-	if leaving and result and black_fade == 1:
+	if leaving and result and !cancelled and !switched:
+		if build_thread and build_thread.is_alive(): return # (built in a moment)
+		switched = true
+		if build_thread: built = build_thread.wait_to_finish()
+		build_thread = null
 		if ResourceLoader.exists("res://mods/replay/RunIntro.gd"): load("res://mods/replay/RunIntro.gd").start(get_tree())
-		get_tree().change_scene_to(result)
+		if built is Node:
+			var tree = get_tree()
+			tree.root.add_child(built)
+			tree.current_scene = built
+			queue_free()
+		else: get_tree().change_scene_to(result)
 
 # Esc on the loading screen: back to the map page (before the fade into the run starts)
 func _input(ev):
@@ -226,3 +243,10 @@ func _input(ev):
 	Rhythia.replaying = false
 	if Engine.has_meta("rr_launch"): Engine.remove_meta("rr_launch")
 	black_fade_target = true
+
+# leaving another way (Esc, an error): the half-built run is finished and dropped
+func _exit_tree():
+	if build_thread:
+		var n = build_thread.wait_to_finish()
+		build_thread = null
+		if n is Node and !n.is_inside_tree(): n.free()

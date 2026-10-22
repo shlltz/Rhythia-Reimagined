@@ -260,7 +260,9 @@ const FADE_HUDS = ["ComboHud", "EnergyHud", "LeftHud", "RightHud", "TimerHud"]
 var fade_in:float = 0.0
 
 func _fade_in(delta:float):
-	fade_in = min(fade_in + delta / FADE_IN, 1.0)
+	var intro = get_tree().root.get_node_or_null("RRRunIntro")
+	if intro and intro.steady < 2: return # (starts with the crossfade from the loading screen)
+	fade_in = min(fade_in + min(delta, 1.0 / 30.0) / FADE_IN, 1.0) # (a hitching first frame doesn't finish the fade at once)
 	var e = 1.0 - pow(1.0 - fade_in, 3)
 	for n in FADE_HUDS:
 		var h = get_node_or_null(n)

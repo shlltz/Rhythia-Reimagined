@@ -221,6 +221,7 @@ func _process(delta):
 	if progress >= 0.0: target = min(target, progress)
 	if !ready_: target = min(target, 0.96) # (waits just short of the end until the map is loaded)
 	shown = lerp(shown, target, 1.0 - exp(-delta * 14.0))
+	if target >= 1.0 and shown > 0.97: shown = 1.0 # (lands on full instead of creeping towards it)
 	bar.update()
 	if player:
 		_muffle(min(t / MUFFLE_TIME, 1.0))
