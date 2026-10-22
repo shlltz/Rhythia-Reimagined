@@ -1,13 +1,13 @@
 extends Node
 # Whole-UI audit: screenshots of every main screen at the window size set below (@@NAME@@: L = 1280x720,
-# H = 1920x1080), and a log of anything that fails to open. Map @@MAP1@@. Output @@OUT@@/u_*.png + audit.txt
+# H = 1920x1080, U = 1920x822 (21:9), Q = 1440x1080 (4:3)), and a log of anything that fails to open. Map @@MAP1@@. Output @@OUT@@/u_*.png + audit.txt
 const OUT = "@@OUT@@/audit.txt"
 var menu:Node
 
 func _ready():
 	pause_mode = PAUSE_MODE_PROCESS
 	OS.window_fullscreen = false
-	OS.window_size = Vector2(1920, 1080) if "@@NAME@@".begins_with("H") else Vector2(1280, 720)
+	OS.window_size = {"H": Vector2(1920, 1080), "U": Vector2(1920, 822), "Q": Vector2(1440, 1080)}.get("@@NAME@@".substr(0, 1), Vector2(1280, 720))
 	call_deferred("run")
 
 func out(s):

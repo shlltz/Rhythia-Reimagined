@@ -16,7 +16,7 @@ missing is written next to it), `[ ]` not started, `[!]` blocked (reason given),
 | difficulty | star rating (rhythia.com formula), BPM estimate, worker-thread cache | `src/stars/StarRating.gd`, `StarCache.gd` |
 | history | every finished run: time, score, accuracy, misses, combo, passed, pauses, speed | `src/stars/RecentPlays.gd` (`user://recent_plays.json`) |
 | library | collections, search syntax, sorts, map browser | `Reimagined.gd`, `v3MapList.gd`, `src/browser` |
-| mobile | Android APK (same files as PC), touch speed pad, touch scroll | `ssp_mod.py apk`, `SpeedPad.gd`, `TouchScroll.gd` |
+| mobile | touch speed pad, touch scroll (the Android APK is no longer made after 2.3.5) | `ssp_mod.py apk`, `SpeedPad.gd`, `TouchScroll.gd` |
 | tests | real game instances with isolated user data | `tests/multiplayer/mpbench.py` + drivers |
 
 External code:

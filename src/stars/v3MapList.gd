@@ -482,7 +482,9 @@ func _rr_init():
 	if !f or !f.has_node("NameSort"): return
 	if ResourceLoader.exists("res://mods/replay/UIKit.gd"): # (broken / online: switches, like Settings; the sort toggles keep their arrows)
 		for c in f.get_children():
-			if c is CheckBox and !("sort" in c.name.to_lower()): load("res://mods/replay/UIKit.gd").switch_box(c)
+			if c is CheckBox and !("sort" in c.name.to_lower()):
+				load("res://mods/replay/UIKit.gd").switch_box(c)
+				c.add_constant_override("hseparation", 3) # (the switch is wider than the tick: at 1280 px "broken" ran off the screen)
 	var at = f.get_node("NameSort").get_index() + 1
 	var nodes = []
 	nodes.append(_rr_caption("sort"))

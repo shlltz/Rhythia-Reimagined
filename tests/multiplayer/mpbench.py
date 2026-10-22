@@ -6,6 +6,7 @@
 # then starts all instances at once and waits until they exit (driver kills itself) or time out.
 # usage: mpbench.py own|share "A=DriverA.gd,B=DriverB.gd" [limit_s] [maps_for_A,...]
 # env: RR_KEEP=1 keeps each instance's user data (warm start), RR_NONET=1 turns the game's networking off,
+#      RR_THREADMODEL=0|1|2 overrides rendering/threads/thread_model (the game ships 2, multi-threaded),
 #      RR_INITPROBE=1 logs init stage texts + long frames (release builds only flush the log on errors)
 import sys, os, subprocess, time, shutil, struct, io, contextlib
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')))
@@ -87,9 +88,10 @@ for name, script in insts:
         if not os.path.exists(dst): shutil.copyfile(mp, dst)
     b = set_setting(base_pb, 'logging/file_logging/log_path', s_payload(root.replace(chr(92), '/') + '/godot.log'))
     if os.environ.get('RR_NONET'): b = set_setting(b, 'application/networking/enabled', struct.pack('<II', 1, 0)) # (bool false)
+    if os.environ.get('RR_THREADMODEL'): b = set_setting(b, 'rendering/threads/thread_model', struct.pack('<II', 2, int(os.environ['RR_THREADMODEL']))) # (int: 0 single-unsafe, 1 single-safe, 2 multi-threaded)
     pk.new['res://project.binary'] = b
     src = open(os.path.join(S, script), encoding='utf-8').read()
-    src = src.replace('@@S@@', SP).replace('@@OUT@@', root.replace(chr(92), '/')).replace('@@NAME@@', name)
+    src = src.replace('@@S@@', SP).replace('@@OUT@@', root.replace(chr(92), '/')).replace('@@NAME@@', name).replace('@@RWSKIN@@', os.environ.get('RR_RWSKIN', '').replace(chr(92), '/'))
     first = extra_maps.get(insts[0][0], []) # @@MAP1@@ = the first map (in every library), @@MAP2@@ = the second (first instance only)
     src = src.replace('@@MAP1@@', os.path.basename(first[0]) if first else '').replace('@@MAP2@@', os.path.basename(first[1]) if len(first) > 1 else '')
     pk.add('res://mods/bench/Driver.gd', src.encode('utf-8'))

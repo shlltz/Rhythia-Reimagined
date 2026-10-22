@@ -6,6 +6,7 @@ extends CanvasLayer
 signal chosen(what) # "continue" / "retry" / "quit"
 
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
+const Look = preload("res://mods/replay/Look.gd")
 const ITEMS = [["Continue", Color(0.35, 0.85, 0.45)], ["Retry", Color(1.0, 0.78, 0.25)], ["Quit", Color(1.0, 0.36, 0.36)]]
 const BTN_W = 420.0
 const BTN_H = 64.0

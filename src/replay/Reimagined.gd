@@ -14,6 +14,10 @@ const DEFAULTS = {
 	"trail_length": 1.0,        # osu! trail lifetime multiplier
 	"trail_size": 1.0,
 	"hud": {},                  # HUD sprite -> [dx, dy, scale, shown]
+	"hud_parts": {},            # parts inside the panels, per HUD style (HudParts.gd)
+	"hud_style": "rewrite",     # run HUD: rewrite (RewriteHud.gd) | classic (the game's own panels)
+	"alt_combo": false,         # rewrite HUD: combo count in the left panel instead of behind the notes
+	"hp_ease": 60.0,            # rewrite HUD: how fast the health bar follows (10 smooth .. 100 instant)
 	"hide_config_hud": true,    # HIT WINDOW / HITBOX SIZE panel at the start of a map
 	"hide_hitbox_text": true,   # "Default hitboxes, default hitwindow" on the map page
 	"sort": "stars",            # map list: stars | name | mapper
@@ -43,6 +47,7 @@ const HUD_ITEMS = [
 	["RightHud", "SCORE / MISSES", Vector2(1.957, 0), Vector2(0.99, 2.97)],
 	["TimerHud", "TIMER", Vector2(0, 1.98), Vector2(2.97, 0.42)],
 	["EnergyHud", "HEALTH / MODS", Vector2(0, -2.02), Vector2(2.97, 0.42)],
+	["ComboHud", "COMBO", Vector2(0, 1.1), Vector2(1.98, 0.78)],
 ]
 # skin slots: file name (no .png), label, description
 const SKIN_SLOTS = [

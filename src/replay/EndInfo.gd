@@ -102,7 +102,7 @@ func show_pb(_s=null):
 		else:
 			visible = true
 			$Result.text = "No PB"
-			$LetterGrade.text = "-"
+			$LetterGrade.text = "" # (a "-" in the big grade font showed as a white bar next to PROGRESS)
 			$LetterGrade2.text = ""
 			rainbow_letter_grade = false
 			$LetterGrade.set("custom_colors/font_color",Color(1,1,1))

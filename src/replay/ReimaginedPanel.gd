@@ -10,9 +10,10 @@ const UIAnim = preload("res://mods/replay/UIAnim.gd")
 const OsuSfx = preload("res://mods/replay/OsuSfx.gd")
 const OsuTrail = preload("res://mods/replay/OsuTrail.gd")
 const ACCENT = Color("#8a6cff")
-const W = 1060.0
-const H = 680.0
-const TABS = [["trail", "Cursor trail", "style, colour, opacity"], ["hud", "HUD layout", "move & scale panels"],
+var W:float = 1060.0 # (the card grows with the screen: _ready)
+var H:float = 680.0
+var ui_k:float = 1.0 # text size factor on big screens
+const TABS = [["trail", "Cursor trail", "style, colour, opacity"], ["hud", "HUD layout", "panels & the parts inside"],
 	["skin", "Skin", "border, icons, logo"], ["collections", "Collections", "map packs"],
 	["interface", "Interface", "map list & clutter"], ["device", "Device", "touch, gyro, low-end"], ["storage", "Storage", "user folder, updates"],
 	["logs", "Logs", "for bug reports"]]
@@ -35,6 +36,10 @@ var trail_widgets:Dictionary = {}
 
 func _ready():
 	layer = 30
+	var vp = get_viewport().get_visible_rect().size
+	W = clamp(vp.x - 120, min(1060.0, vp.x - 16), 1640.0)
+	H = clamp(vp.y - 90, min(680.0, vp.y - 16), 980.0)
+	ui_k = clamp(min(W / 1060.0, H / 680.0), 1.0, 1.15)
 	menu = get_parent()
 	sfx = OsuSfx.inst(get_tree())
 	root = Control.new()
@@ -87,7 +92,7 @@ func _ready():
 
 	var tabs = VBoxContainer.new()
 	tabs.rect_position = Vector2(16, 108)
-	tabs.rect_size = Vector2(220, H - 130)
+	tabs.rect_size = Vector2(220 * ui_k, H - 130)
 	tabs.add_constant_override("separation", 6)
 	card.add_child(tabs)
 	for t in TABS:
@@ -96,7 +101,7 @@ func _ready():
 		b.sub = t[2]
 		b.font_big = _font(19)
 		b.font_small = _font(13)
-		b.rect_min_size = Vector2(220, 50)
+		b.rect_min_size = Vector2(220 * ui_k, 50 * ui_k)
 		b.connect("pressed", self, "show_tab", [t[0]])
 		b.connect("mouse_entered", sfx, "play", ["click-short.ogg", -12.0])
 		tabs.add_child(b)
@@ -106,8 +111,8 @@ func _ready():
 	card.add_child(foot)
 
 	content = Control.new()
-	content.rect_position = Vector2(256, 108)
-	content.rect_size = Vector2(W - 256 - 28, H - 108 - 24)
+	content.rect_position = Vector2(36 + 220 * ui_k, 108)
+	content.rect_size = Vector2(W - 36 - 220 * ui_k - 28, H - 108 - 24)
 	card.add_child(content)
 
 	file_dialog = FileDialog.new()
@@ -137,7 +142,7 @@ func _font(size:int):
 	var f = base
 	if base is DynamicFont:
 		f = base.duplicate()
-		f.size = size
+		f.size = int(round(size * ui_k))
 	f = load("res://mods/replay/Reimagined.gd").heading_font(f, size)
 	fonts[size] = f
 	return f
@@ -202,7 +207,7 @@ func _row(parent:Control, text:String, ctl:Control) -> HBoxContainer:
 	var h = HBoxContainer.new()
 	h.add_constant_override("separation", 14)
 	var l = _label(text, 15, Color(1, 1, 1, 0.8))
-	l.rect_min_size = Vector2(170, 0)
+	l.rect_min_size = Vector2(170 * ui_k, 0)
 	l.valign = Label.VALIGN_CENTER
 	h.add_child(l)
 	ctl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -252,6 +257,7 @@ func _slider(lo:float, hi:float, step:float, v:float, method:String, fmt:String)
 
 func _slider_moved(v:float, l:Label, fmt:String, method:String):
 	l.text = fmt % v
+	if l.get_parent().get_child(0).has_meta("fmt"): l.text = l.get_parent().get_child(0).get_meta("fmt") % v
 	call(method, v)
 
 func _check(parent:Control, text:String, on:bool, method:String) -> CheckBox:
@@ -319,34 +325,221 @@ func _trail_length(v:float): R.set_val("trail_length", v)
 func _trail_size(v:float): R.set_val("trail_size", v)
 
 # ------------------------------------------------------------------ HUD layout
+const HudParts = preload("res://mods/replay/HudParts.gd")
+var hud_ed:Control
+var part_ed:Control
+var hud_w:Dictionary = {}
+var hud_t:Dictionary = {} # what the sliders edit: {panel} or {panel, part}
+var hud_lock:bool = false
+
 func _build_hud():
 	var p = _page("hud")
-	_heading(p, "HUD layout", "Drag a panel to move it, scroll to scale, right-click to hide / show, double-click to reset. Snaps to its default spot and the centre line (hold Shift to place freely). Applies on the next map.")
-	var ed = HudEditor.new()
-	ed.font = _font(14)
-	ed.font_small = _font(12)
-	ed.rect_min_size = Vector2(0, 400)
-	ed.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	ed.connect("changed", self, "_hud_save")
-	p.add_child(ed)
+	_heading(p, "HUD layout", "Click a panel to pick it, drag to move, scroll to resize, right-click to hide / show, double-click to reset (Shift = no snapping). The parts inside the picked panel are on the right; the sliders below set the picked thing exactly. Applies on the next map.")
+	var top = HBoxContainer.new()
+	top.add_constant_override("separation", 14)
+	var lt = _label("Layout", 15, Color(1, 1, 1, 0.8))
+	lt.valign = Label.VALIGN_CENTER
+	top.add_child(lt)
+	top.add_child(_seg([["rewrite", "Rewrite"], ["legacy", "Legacy"]], HudParts.style(), "_hud_style"))
+	hud_w.alt = _check(top, "Alt. combo counter", bool(R.val("alt_combo")), "_hud_alt")
+	hud_w.alt.hint_tooltip = "Rewrite layout: the combo in the left panel instead of the big number behind the notes"
+	hud_w.alt.disabled = HudParts.style() != "rewrite"
+	p.add_child(top)
+	var body = HBoxContainer.new()
+	body.add_constant_override("separation", 14)
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	p.add_child(body)
+	hud_ed = HudEditor.new()
+	hud_ed.st = HudParts.style()
+	hud_ed.font = _font(14)
+	hud_ed.font_small = _font(12)
+	hud_ed.rect_min_size = Vector2(300, 300)
+	hud_ed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hud_ed.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hud_ed.connect("changed", self, "_hud_save")
+	hud_ed.connect("moved", self, "_hud_moved")
+	hud_ed.connect("picked", self, "_hud_picked")
+	body.add_child(hud_ed)
+	var side = VBoxContainer.new()
+	side.rect_min_size = Vector2(max(260.0, content.rect_size.x * 0.36), 0)
+	side.add_constant_override("separation", 8)
+	body.add_child(side)
+	hud_w.part_title = _label("", 15, Color(1, 1, 1, 0.8))
+	hud_w.part_title.clip_text = true
+	side.add_child(hud_w.part_title)
+	part_ed = PartEditor.new()
+	part_ed.font = _font(13)
+	part_ed.font_small = _font(11)
+	part_ed.st = HudParts.style()
+	part_ed.rect_min_size = Vector2(0, 150)
+	part_ed.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	part_ed.connect("changed", self, "_hud_save")
+	part_ed.connect("moved", self, "_hud_moved")
+	part_ed.connect("picked", self, "_part_picked")
+	side.add_child(part_ed)
+	hud_w.sel = _label("", 15, Color(1, 1, 1))
+	hud_w.sel.clip_text = true
+	side.add_child(hud_w.sel)
+	for it in [["x", "X", "_hud_x"], ["y", "Y", "_hud_y"], ["size", "Size", "_hud_size"]]:
+		var sl = _slider(-1, 1, 0.01, 0, it[2], "%.2f")
+		hud_w[it[0]] = sl
+		_mini_row(side, it[1], sl)
 	var h = HBoxContainer.new()
 	h.add_constant_override("separation", 10)
-	var reset = Button.new()
-	reset.text = "Reset all"
-	reset.focus_mode = Control.FOCUS_NONE
-	reset.rect_min_size = Vector2(140, 36)
-	reset.connect("pressed", self, "_hud_reset", [ed])
-	h.add_child(reset)
-	p.add_child(h)
+	hud_w.show = _check(h, "Shown", true, "_hud_show")
+	var rs = Button.new()
+	rs.text = "Reset this"
+	rs.focus_mode = Control.FOCUS_NONE
+	rs.rect_min_size = Vector2(120, 34)
+	rs.connect("pressed", self, "_hud_reset_one")
+	h.add_child(rs)
+	hud_w.reset_one = rs
+	side.add_child(h)
+	var foot = HBoxContainer.new()
+	foot.add_constant_override("separation", 10)
+	for b in [["Reset all panels", "_hud_reset"], ["Reset all parts", "_hud_reset_parts"]]:
+		var bt = Button.new()
+		bt.text = b[0]
+		bt.focus_mode = Control.FOCUS_NONE
+		bt.rect_min_size = Vector2(170, 36)
+		bt.connect("pressed", self, b[1])
+		foot.add_child(bt)
+	p.add_child(foot)
+	_hud_sync()
+
+func _mini_row(parent:Control, text:String, ctl:Control):
+	var h = HBoxContainer.new()
+	h.add_constant_override("separation", 10)
+	var l = _label(text, 14, Color(1, 1, 1, 0.7))
+	l.rect_min_size = Vector2(44 * ui_k, 0)
+	l.valign = Label.VALIGN_CENTER
+	h.add_child(l)
+	ctl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(ctl)
+	parent.add_child(h)
+
+func _hud_style(v:String):
+	R.set_val("hud_style", "classic" if v == "legacy" else "rewrite")
+	hud_w.alt.disabled = v != "rewrite"
+	part_ed.st = v
+	hud_ed.st = v
+	part_ed.sel = -1
+	if hud_t.has("part"): hud_t = {"panel": hud_t.panel}
+	_hud_sync()
+
+func _hud_alt(on:bool):
+	R.set_val("alt_combo", on)
+
+func _hud_picked(i:int):
+	part_ed.sel = -1
+	if i < 0:
+		hud_t = {}
+		part_ed.panel = ""
+	else:
+		hud_t = {"panel": R.HUD_ITEMS[i][0]}
+		part_ed.panel = hud_t.panel if HudParts.SIZES.has(hud_t.panel) else ""
+	_hud_sync()
+
+func _part_picked(i:int):
+	var ps = HudParts.parts(part_ed.st, part_ed.panel)
+	if i < 0 or i >= ps.size():
+		if hud_t.has("panel"): hud_t = {"panel": hud_t.panel}
+	else:
+		hud_t = {"panel": part_ed.panel, "part": ps[i][0]}
+	_hud_sync()
+
+func _hud_moved():
+	_hud_sync()
+
+# the entry the sliders show / edit
+func _hud_entry() -> Array:
+	if hud_t.has("part"): return HudParts.entry(part_ed.st, hud_t.panel, hud_t.part).duplicate()
+	if hud_t.has("panel"): return R.hud_entry(hud_t.panel).duplicate()
+	return []
+
+func _hud_label() -> String:
+	for it in R.HUD_ITEMS:
+		if hud_t.has("panel") and it[0] == hud_t.panel:
+			var pn = HudParts.panel_name(part_ed.st, it[0], it[1])
+			if !hud_t.has("part"): return pn + " (panel)"
+			for pt in HudParts.parts(part_ed.st, hud_t.panel):
+				if pt[0] == hud_t.part: return pt[1] + "  in  " + pn
+	return ""
+
+func _hud_sync():
+	hud_lock = true
+	hud_ed.update()
+	part_ed.update()
+	var pname = ""
+	for it in R.HUD_ITEMS:
+		if hud_t.has("panel") and it[0] == hud_t.panel: pname = HudParts.panel_name(part_ed.st, it[0], it[1])
+	hud_w.part_title.text = ("Inside " + pname) if part_ed.panel != "" else "Pick a panel to edit its parts"
+	var e = _hud_entry()
+	hud_w.sel.text = _hud_label() if !e.empty() else "Nothing picked"
+	for k in ["x", "y", "size"]:
+		var sl:HSlider = hud_w[k].get_child(0)
+		sl.editable = !e.empty()
+	hud_w.show.disabled = e.empty()
+	hud_w.reset_one.disabled = e.empty()
+	if !e.empty():
+		var part = hud_t.has("part")
+		var vs = HudParts.SIZES.get(hud_t.panel, Vector2(300, 900))
+		_hud_range("x", -vs.x if part else -4.0, vs.x if part else 4.0, 1.0 if part else 0.01, float(e[0]), "%+.0f px" if part else "%+.2f")
+		_hud_range("y", -vs.y if part else -3.0, vs.y if part else 3.0, 1.0 if part else 0.01, float(e[1]), "%+.0f px" if part else "%+.2f")
+		_hud_range("size", 0.2 if part else 0.4, 3.0 if part else 2.0, 0.01, float(e[2]), "%.2fx")
+		hud_w.show.pressed = bool(e[3])
+	hud_lock = false
+
+func _hud_range(k:String, lo:float, hi:float, step:float, v:float, fmt:String):
+	var sl:HSlider = hud_w[k].get_child(0)
+	sl.min_value = lo
+	sl.max_value = hi
+	sl.step = step
+	sl.value = v
+	sl.set_meta("fmt", fmt)
+	hud_w[k].get_child(1).text = fmt % v
+
+func _hud_set(i:int, v):
+	if hud_lock: return
+	var e = _hud_entry()
+	if e.empty(): return
+	e[i] = v
+	if hud_t.has("part"): HudParts.put(part_ed.st, hud_t.panel, hud_t.part, e)
+	else: R.cfg().hud[hud_t.panel] = e
+	for k in ["x", "y", "size"]:
+		var sl = hud_w[k].get_child(0)
+		if sl.has_meta("fmt"): hud_w[k].get_child(1).text = sl.get_meta("fmt") % sl.value
+	hud_ed.update()
+	part_ed.update()
+	_hud_save()
+
+func _hud_x(v:float): _hud_set(0, v)
+func _hud_y(v:float): _hud_set(1, v)
+func _hud_size(v:float): _hud_set(2, v)
+func _hud_show(on:bool): _hud_set(3, on)
+
+func _hud_reset_one():
+	if hud_t.has("part"): HudParts.put(part_ed.st, hud_t.panel, hud_t.part, [0.0, 0.0, 1.0, true])
+	elif hud_t.has("panel"): R.cfg().hud.erase(hud_t.panel)
+	_hud_save()
+	_hud_sync()
 
 func _hud_save():
 	R.save()
 
-func _hud_reset(ed:Control):
+func _hud_reset():
 	R.cfg().hud = {}
 	R.save()
-	ed.sel = -1
-	ed.update()
+	hud_ed.sel = -1
+	hud_t = {}
+	part_ed.panel = ""
+	_hud_sync()
+	sfx.play("menuback.wav", -10.0)
+
+func _hud_reset_parts():
+	HudParts.reset(part_ed.st)
+	R.save()
+	_hud_sync()
 	sfx.play("menuback.wav", -10.0)
 
 # ------------------------------------------------------------------ skin
@@ -1102,9 +1295,12 @@ class TrailPreview extends Control:
 # schematic HUD editor: the 3x3 grid and the side panels at their in-game spots (world units)
 class HudEditor extends Control:
 	signal changed
+	signal moved
+	signal picked
 	const R = preload("res://mods/replay/Reimagined.gd")
 	var font:Font
 	var font_small:Font
+	var st:String = "rewrite"
 	var sel:int = -1
 	var hover:int = -1
 	var dragging:bool = false
@@ -1151,6 +1347,7 @@ class HudEditor extends Control:
 				e[1] = stepify(ny, 0.001)
 				_put(sel, e)
 				update()
+				emit_signal("moved")
 			else:
 				var h = _pick(ev.position)
 				if h != hover:
@@ -1162,9 +1359,11 @@ class HudEditor extends Control:
 			if ev.button_index == BUTTON_LEFT:
 				if ev.pressed:
 					sel = i
+					emit_signal("picked", i)
 					if i >= 0 and ev.doubleclick:
 						_put(i, [0.0, 0.0, 1.0, true])
 						emit_signal("changed")
+						emit_signal("moved")
 					elif i >= 0:
 						var e = R.hud_entry(R.HUD_ITEMS[i][0])
 						dragging = true
@@ -1179,9 +1378,12 @@ class HudEditor extends Control:
 				elif ev.button_index == BUTTON_WHEEL_UP: e[2] = clamp(float(e[2]) + 0.05, 0.4, 2.0)
 				elif ev.button_index == BUTTON_WHEEL_DOWN: e[2] = clamp(float(e[2]) - 0.05, 0.4, 2.0)
 				else: return
-				sel = i
+				if sel != i:
+					sel = i
+					emit_signal("picked", i)
 				_put(i, e)
 				emit_signal("changed")
+				emit_signal("moved")
 			update()
 			accept_event()
 
@@ -1215,12 +1417,154 @@ class HudEditor extends Control:
 			if !on: bc = Color(1, 1, 1, 0.12)
 			draw_rect(r, bc, false, 2.0 if i == sel else 1.0)
 			if !font: continue
-			var lines = it[1].split(" / ")
+			var lines = load("res://mods/replay/HudParts.gd").panel_name(st, it[0], it[1]).split(" / ")
 			lines.append("hidden" if !on else "%d%%" % round(float(e[2]) * 100))
 			var lh = font.get_height() + 2
 			var y0 = r.position.y + r.size.y / 2 - lh * lines.size() / 2.0 + font.get_ascent()
 			for j in lines.size():
-				var f = font if j < lines.size() - 1 else font_small
+				var f = font if j < lines.size() - 1 and font.get_string_size(lines[j]).x <= r.size.x - 6 else font_small # (long names in narrow panels)
 				var tc = Color(1, 1, 1, (0.85 if on else 0.3) if j < lines.size() - 1 else 0.4)
 				var tw = f.get_string_size(lines[j]).x
 				draw_string(f, Vector2(r.position.x + (r.size.x - tw) / 2, y0 + j * lh), lines[j], tc)
+
+# the parts inside one panel (HudParts.gd), drawn in the panel's own shape: same mouse controls as the
+# panel editor; offsets in the panel's pixels
+class PartEditor extends Control:
+	signal changed
+	signal moved
+	signal picked
+	const P = preload("res://mods/replay/HudParts.gd")
+	var font:Font
+	var font_small:Font
+	var st:String = "rewrite"
+	var panel:String = "" setget _set_panel
+	var sel:int = -1
+	var hover:int = -1
+	var dragging:bool = false
+	var drag_from:Vector2
+	var start_off:Vector2
+
+	func _ready():
+		mouse_filter = MOUSE_FILTER_STOP
+		rect_clip_content = true
+
+	func _set_panel(v:String):
+		panel = v
+		hover = -1
+		update()
+
+	func items() -> Array:
+		return P.parts(st, panel)
+
+	func vsize() -> Vector2:
+		return P.SIZES.get(panel, Vector2(300, 900))
+
+	func frame() -> Rect2:
+		var vs = vsize()
+		var k = min((rect_size.x - 16) / vs.x, (rect_size.y - 16) / vs.y)
+		return Rect2((rect_size - vs * k) / 2, vs * k)
+
+	func k() -> float:
+		return frame().size.x / vsize().x
+
+	func rect_of(i:int) -> Rect2:
+		var it = items()[i]
+		var e = P.entry(st, panel, it[0])
+		var b:Rect2 = it[2]
+		var c = b.position + b.size / 2 + Vector2(float(e[0]), float(e[1]))
+		var sz = b.size * float(e[2])
+		return Rect2(frame().position + (c - sz / 2) * k(), sz * k())
+
+	func _pick(p:Vector2) -> int:
+		if panel == "": return -1
+		var best = -1
+		var area = INF
+		for i in items().size(): # (the smallest box under the mouse: parts can overlap)
+			var r = rect_of(i).grow(3)
+			if r.has_point(p) and r.get_area() < area:
+				best = i
+				area = r.get_area()
+		return best
+
+	func _put(i:int, e:Array):
+		P.put(st, panel, items()[i][0], e)
+
+	func _gui_input(ev):
+		if panel == "": return
+		if ev is InputEventMouseMotion:
+			if dragging and sel >= 0:
+				var d = (ev.position - drag_from) / k()
+				var e = P.entry(st, panel, items()[sel][0]).duplicate()
+				var nx = start_off.x + d.x
+				var ny = start_off.y + d.y
+				if !Input.is_key_pressed(KEY_SHIFT):
+					var b:Rect2 = items()[sel][2]
+					var cx = b.position.x + b.size.x / 2
+					if abs(nx) < 8: nx = 0.0                                 # default spot
+					if abs(ny) < 8: ny = 0.0
+					if abs(cx + nx - vsize().x / 2) < 8: nx = vsize().x / 2 - cx # centre line
+				e[0] = round(nx)
+				e[1] = round(ny)
+				_put(sel, e)
+				update()
+				emit_signal("moved")
+			else:
+				var h = _pick(ev.position)
+				if h != hover:
+					hover = h
+					mouse_default_cursor_shape = CURSOR_MOVE if h >= 0 else CURSOR_ARROW
+					update()
+		elif ev is InputEventMouseButton:
+			var i = _pick(ev.position)
+			if ev.button_index == BUTTON_LEFT:
+				if ev.pressed:
+					sel = i
+					emit_signal("picked", i)
+					if i >= 0 and ev.doubleclick:
+						_put(i, [0.0, 0.0, 1.0, true])
+						emit_signal("changed")
+						emit_signal("moved")
+					elif i >= 0:
+						var e = P.entry(st, panel, items()[i][0])
+						dragging = true
+						drag_from = ev.position
+						start_off = Vector2(float(e[0]), float(e[1]))
+				elif dragging:
+					dragging = false
+					emit_signal("changed")
+			elif ev.pressed and i >= 0:
+				var e = P.entry(st, panel, items()[i][0]).duplicate()
+				if ev.button_index == BUTTON_RIGHT: e[3] = !e[3]
+				elif ev.button_index == BUTTON_WHEEL_UP: e[2] = clamp(float(e[2]) + 0.05, 0.2, 3.0)
+				elif ev.button_index == BUTTON_WHEEL_DOWN: e[2] = clamp(float(e[2]) - 0.05, 0.2, 3.0)
+				else: return
+				if sel != i:
+					sel = i
+					emit_signal("picked", i)
+				_put(i, e)
+				emit_signal("changed")
+				emit_signal("moved")
+			update()
+			accept_event()
+
+	func _draw():
+		draw_rect(Rect2(Vector2.ZERO, rect_size), Color(1, 1, 1, 0.025))
+		if panel == "": return
+		var acc = load("res://mods/replay/Look.gd").accent()
+		var f = frame()
+		draw_rect(f, Color(1, 1, 1, 0.03))
+		draw_rect(f, Color(1, 1, 1, 0.3), false, 1.0)
+		if dragging: draw_line(Vector2(f.position.x + f.size.x / 2, f.position.y), Vector2(f.position.x + f.size.x / 2, f.end.y), Color(acc.r, acc.g, acc.b, 0.35))
+		for i in items().size():
+			var it = items()[i]
+			var e = P.entry(st, panel, it[0])
+			var r = rect_of(i)
+			var on = bool(e[3])
+			var hot = i == sel or i == hover
+			draw_rect(r, Color(acc.r, acc.g, acc.b, 0.22 if i == sel else (0.12 if hot else 0.06)) if on else Color(1, 1, 1, 0.02))
+			draw_rect(r, acc if i == sel else Color(1, 1, 1, (0.45 if hot else 0.22) if on else 0.1), false, 2.0 if i == sel else 1.0)
+			if !font: continue
+			var t = it[1] + ("" if on else "  (hidden)")
+			var ff = font if font.get_string_size(t).x <= r.size.x + 40 else font_small
+			var tw = ff.get_string_size(t).x
+			draw_string(ff, Vector2(r.position.x + (r.size.x - tw) / 2, r.position.y + r.size.y / 2 + ff.get_ascent() / 2 - 2), t, Color(1, 1, 1, 0.85 if on else 0.3))

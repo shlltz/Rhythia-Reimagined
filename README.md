@@ -10,6 +10,9 @@ A mod pack for **Rhythia Legacy / Sound Space Plus nightly** (the Godot 3.6.2 bu
 **Just want to play?** Get a zip from the [Releases](../../releases) page:
 - **portable**: unzip it and run `SoundSpacePlus.exe`.
 - **patch**: unzip it into your game folder and run `Install.bat`.
+- **linux**: unzip it, then run `SoundSpacePlus.x86_64`.
+
+**Updating:** portable installs (2.0 or newer) update from Customize → Storage → Updates. With the patch, run the new `Install.bat` over the old one: it restores the original game file first. Your maps, scores, replays and settings live in `%APPDATA%\SoundSpacePlus` (Linux: `~/.local/share/SoundSpacePlus`) and aren't touched by either.
 
 ## Features
 
@@ -22,12 +25,13 @@ A mod pack for **Rhythia Legacy / Sound Space Plus nightly** (the Godot 3.6.2 bu
 | **Replays** | A replay browser and viewer. You can seek, change speed, pause, step frame by frame and hide the UI. Misses show as red ticks on the timeline. |
 | **Replay Studio** | Accuracy, combo and cursor speed over the song, a cursor heatmap, aim against the hitbox and hit delay per note. Jump to any miss, compare with another replay or your best, and export 3-10 s clips as GIF (or MP4 with sound when ffmpeg is installed). |
 | **Editor** | A map editor for real `.sspm` maps: BPM and offset detected from the song, pattern tools, Quantum Editor keys (grid keys, flips, timing points, Bezier curves), a live star rating, and `.phxm` export. Details in [docs/EDITOR.md](docs/EDITOR.md). |
-| **Skins** | A skin editor for notes, cursor, trail, hit/miss effects and sounds and HUD colours, with a live preview, several profiles and `.rrskin` files to share. |
+| **Skins** | A skin editor for notes, cursor, trail, hit/miss effects and sounds and HUD colours, with a live preview, several profiles and `.rrskin` files to share. Rhythia rewrite skins work too: pick one installed on this PC, or import its `config.toml` or a `.zip` (cursor, sounds, colours, note shape, HUD images and grid frame). |
 | **Map screens** | The selected map's blurred cover behind the menu, a zoom into it when a map starts, a map card loading screen (the preview keeps playing, muffled) and a card-style results screen. A local username like osu! offline. |
 | **Retry from fail point** | After a fail, restart from the last checkpoint before it, with score, combo and health restored. Resumed runs are marked and can't set a personal best. |
 | **Updates** | The portable version checks GitHub for new releases. Updates are signed and verified before they install, and can be rolled back ([docs/UPDATES.md](docs/UPDATES.md)). |
 | **Settings** | Each row shows the setting's name, its control and a short description. Switches instead of tick boxes, sliders for volume, a reset arrow on every setting you changed and a Reset button per tab (it asks first). Long colour lists start folded, search finds any setting, and changes are saved right away. |
-| **Customize** (F1) | Cursor trail: the game's own trail, an osu!-style trail, or off, with colour, opacity, length and size. A drag-and-drop HUD layout editor. Skins for the border, grid, trail, logo and sidebar icons. Interface toggles. Storage: move your user folder (maps, replays, scores) to another drive (Windows). |
+| **Customize** (F1) | Cursor trail: the game's own trail, an osu!-style trail, or off, with colour, opacity, length and size. A drag-and-drop HUD layout editor for the panels and the parts inside them. The window grows with your screen. Skins for the border, grid, trail, logo and sidebar icons. Interface toggles. Storage: move your user folder (maps, replays, scores) to another drive (Windows). |
+| **Rewrite HUD** | The run's panels laid out like the Rhythia rewrite: score and the multiplier ring on the left, accuracy and hits/misses on the right, health and progress bars, the combo outlined behind the notes. Options: Alt. Combo Counter, HP Bar Easing (Settings → UI). Switch between it and the game's own (Legacy) panels in Settings or Customize → HUD layout, where every panel and every part inside it (score, ring, accuracy, bars, song name...) can be moved, resized and hidden, by mouse or with sliders, separately for each layout. |
 | **Gameplay** | osu!-style pause screen and results screen. Swept hitbox (Settings → Modifiers): a fast flick that crosses a note between two frames counts as a hit, with the same hitbox size and hit window. A green glow when you pass a map, then a zoom into the results. Adjustable half-ghost fade. |
 | **Menu** | Springy buttons, animations, audio visualizer, Alt + mouse wheel volume, and a pause-all-music button. Icons are Flaticon UIcons. |
 | **Performance** | The map list uses small cover thumbnails loaded only for the maps on screen, and only the last few full-size covers stay in memory (about 1 GB of video memory down to under 100 MB on a 590-map library). The map cache re-reads a map whose file changed. |

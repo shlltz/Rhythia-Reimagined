@@ -132,7 +132,8 @@ func _ready():
 	_hide_removed()
 	_add_half_ghost_fade()
 	_add_hitbox_mode()
-	rows = load("res://mods/replay/SettingsRows.gd").new()
+	_add_hud_rows()
+	rows =load("res://mods/replay/SettingsRows.gd").new()
 	rows.setup(self, card)
 	scroll.connect("resized", self, "_fit")
 	settings.connect("visibility_changed", self, "_visibility")
@@ -172,6 +173,52 @@ func _add_half_ghost_fade():
 	row.get_node("Label").text = "Half Ghost Fade"
 	fl.get_parent().add_child(row)
 	fl.get_parent().move_child(row, fl.get_index() + 1)
+
+# rewrite HUD switches, under Simple HUD (UI tab; RewriteHud.gd reads them when a run starts)
+func _add_hud_rows():
+	var sh = tabs.get_node_or_null("UI/UI/Group/H/SimpleHud")
+	var fl = tabs.get_node_or_null("Notes/Notes/Group/H/FadeLength")
+	if !sh or sh.get_parent().has_node("RewriteHud"): return
+	var R = load("res://mods/replay/Reimagined.gd")
+	var at = sh.get_index()
+	for it in [["RewriteHud", "Rewrite HUD", "[def. on] Lay out the run's panels like the Rhythia rewrite: score and the multiplier ring on the left, accuracy and hits / misses on the right, health and progress bars, the combo outlined behind the notes. A rewrite skin's panel and bar images show here. Off = the game's own panels. Applies on the next map.", "_rw_hud_changed", R.val("hud_style") == "rewrite", R.DEFAULTS.hud_style == "rewrite"],
+			["AltCombo", "Alt. Combo Counter", "[def. off] Rewrite HUD: show the combo in the left panel instead of the big number behind the notes. Applies on the next map.", "_alt_combo_changed", bool(R.val("alt_combo")), bool(R.DEFAULTS.alt_combo)]]:
+		var c:CheckBox = sh.duplicate(0) # (no script: the game's checkbox script writes a Rhythia setting)
+		c.name = it[0]
+		c.text = it[1]
+		c.hint_tooltip = it[2]
+		c.pressed = it[4]
+		c.set_meta("rr_default", it[5])
+		c.connect("toggled", self, it[3])
+		sh.get_parent().add_child(c)
+		at += 1
+		sh.get_parent().move_child(c, at)
+	if !fl: return
+	var row = fl.duplicate(0)
+	row.name = "HPEase"
+	var tip = "[def. 60] Rewrite HUD: how fast the health bar follows your health. Low = smooth, 100 = instant."
+	row.hint_tooltip = tip
+	var sb:SpinBox = row.get_node("FadeLength")
+	sb.min_value = 10
+	sb.max_value = 100
+	sb.step = 1
+	sb.suffix = ""
+	sb.value = float(R.val("hp_ease"))
+	sb.set_meta("rr_default", float(R.DEFAULTS.hp_ease))
+	sb.hint_tooltip = tip
+	sb.connect("value_changed", self, "_hp_ease_changed")
+	row.get_node("Label").text = "HP Bar Easing"
+	sh.get_parent().add_child(row)
+	sh.get_parent().move_child(row, at + 1)
+
+func _rw_hud_changed(on:bool):
+	load("res://mods/replay/Reimagined.gd").set_val("hud_style", "rewrite" if on else "classic")
+
+func _alt_combo_changed(on:bool):
+	load("res://mods/replay/Reimagined.gd").set_val("alt_combo", on)
+
+func _hp_ease_changed(v:float):
+	load("res://mods/replay/Reimagined.gd").set_val("hp_ease", float(v))
 
 # hitbox system switch, under Hitbox Size / Hit Window (NoteManager: swept vs classic check)
 func _add_hitbox_mode():
