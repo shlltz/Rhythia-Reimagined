@@ -13,6 +13,7 @@ var bg:ColorRect
 
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
 const POP_OFFSET = Vector2(0, 60) # panel slides up from here on open, down on close
+const STUDIO = "res://mods/replay/ReplayStudio.gd" # (Replay Studio: analysis of the selected replay)
 
 func _ready():
 	layer = 20
@@ -80,11 +81,15 @@ func _ready():
 	folder.connect("pressed", self, "_open_folder")
 	var watch = make_button("Watch", -460, y0)
 	watch.connect("pressed", self, "_watch_selected")
+	if ResourceLoader.exists(STUDIO):
+		var st = make_button("Studio", -620, y0)
+		st.connect("pressed", self, "_studio_selected")
 
 	_load()
 	_filter("")
 	search.grab_focus()
 	UIAnim.play(bg, Vector2.ZERO, Vector2.ZERO, 0.0, 1.0, 0.2)
+	if ResourceLoader.exists("res://mods/replay/Device.gd"): load("res://mods/replay/Device.gd").touch_fit(panel)
 	UIAnim.play(panel, POP_OFFSET, Vector2.ZERO, 0.0, 1.0, 0.3)
 
 func make_button(text:String, x:float, y:float) -> Button:
@@ -165,6 +170,13 @@ func _watch(i:int):
 	yield(get_tree().create_timer(0.35), "timeout")
 	get_tree().change_scene("res://scenes/loaders/songload.tscn")
 
+func _studio_selected():
+	var sel = list.get_selected_items()
+	if sel.empty():
+		Globals.notify(Globals.NOTIFY_WARN, "Pick a replay first", "Replays")
+		return
+	load(STUDIO).open(get_parent(), shown[sel[0]].path)
+
 func _open_folder():
 	OS.shell_open(ProjectSettings.globalize_path(Globals.p("user://replays")))
 
@@ -175,6 +187,7 @@ func close():
 	UIAnim.play(bg, Vector2.ZERO, Vector2.ZERO, 1.0, 0.0, 0.16).connect("finished", self, "queue_free")
 
 func _input(ev):
+	if get_parent().has_node("ReplayStudio"): return # (the studio over it takes Esc)
 	if ev is InputEventKey and ev.pressed and ev.scancode == KEY_ESCAPE:
 		get_tree().set_input_as_handled()
 		close()

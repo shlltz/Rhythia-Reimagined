@@ -54,6 +54,8 @@ func _ready():
 	Rhythia.fail_snd = Rhythia.get_stream_with_default("user://fail",Rhythia.def_fail_snd)
 	Rhythia.pb_snd = Rhythia.get_stream_with_default("user://new_best",Rhythia.def_pb_snd)
 	Rhythia.menu_bgm = Rhythia.get_stream_with_default("user://menu",Rhythia.def_menu_bgm)
+	var skins = "res://mods/replay/Skins.gd" # the skin profile in use: its own hit / miss sounds over the user-folder ones
+	if ResourceLoader.exists(skins) and load(skins).active() != "": load(skins)._apply_sounds(load(skins).active())
 	Rhythia.was_replay = false
 
 var result

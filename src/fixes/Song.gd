@@ -33,6 +33,7 @@ var initFile:String = ""
 var filePath:String
 
 var cover:Texture setget , _get_cover
+var rr_cover_image = null # mod: a plain Image convert_to_sspm writes instead of the texture (imports on a worker thread: no GPU texture there)
 var has_cover:bool = false
 var cover_offset:int = -1
 var cover_length:int = -1
@@ -1238,7 +1239,7 @@ func convert_to_sspm(upgrade:bool=false):
 	var markers = read_markers()
 	
 	
-	var map_has_cover = (has_cover and self.cover and (cover.get_height() + cover.get_width()) >= 9)
+	var map_has_cover = has_cover and ((rr_cover_image is Image and !rr_cover_image.is_empty()) or (self.cover and (cover.get_height() + cover.get_width()) >= 9))
 	
 	var map_has_music:bool = false
 	var music_buffer:PoolByteArray = get_music_buffer()
@@ -1434,7 +1435,7 @@ func convert_to_sspm(upgrade:bool=false):
 	print(map_has_cover)
 	if map_has_cover:
 		start = file.get_position()
-		file.store_buffer(cover.get_data().save_png_to_buffer())
+		file.store_buffer(rr_cover_image.save_png_to_buffer() if rr_cover_image is Image else cover.get_data().save_png_to_buffer())
 		end = file.get_position()
 		
 		file.seek(point_cb)

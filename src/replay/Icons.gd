@@ -15,7 +15,7 @@ const CODES = {
 # sidebar button name (lower case) -> icon
 const SIDEBAR = {
 	"results": "play", "play": "play", "settings": "settings", "replays": "film", "browse": "cloud-download",
-	"customize": "settings-sliders", "favorites": "heart", "favourites": "heart", "content": "square-plus",
+	"customize": "settings-sliders", "library": "folder", "favorites": "heart", "favourites": "heart", "content": "square-plus",
 	"contentmgr": "square-plus", "import": "square-plus", "language": "language", "lang": "language",
 	"editor": "music-note", "quit": "power", "exit": "power", "credits": "users", "multiplayer": "users-alt",
 }

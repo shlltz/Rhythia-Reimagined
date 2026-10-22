@@ -25,6 +25,14 @@ const DEFAULTS = {
 	"lite_fx": false,           # lighter effects for low-end PCs (also switched on for the session by fps_watch)
 	"glitch_fx": true,          # glitch + chromatic aberration (10+ star maps, title logo)
 	"title_bg": "rain",         # title screen background: rain | snow | waves (topographic)
+	"skin": "",                 # skin profile in use (Skins.gd: user://rr_skins/<name>), "" = none
+	"cursor_input": "",         # "" = the game's own (mouse / touch drag / touch position), "gyro" = gyroscope (Device.gd)
+	"gyro_sens": 1.0,
+	"gyro_inv_x": false,
+	"gyro_inv_y": false,
+	"touch_big": "auto",        # bigger buttons for fingers: auto (touch screens) | on | off
+	"perf_saved": {},           # low-end profile on: the settings it replaced (Device.gd restores them)
+	"update_check": true,       # look for a new release when the game starts, at most once a day (Updater.gd; public builds)
 }
 # side panels the layout editor moves: sprite, label, default centre (world x, y), size (w, h)
 const HUD_ITEMS = [

@@ -255,6 +255,7 @@ func _mp_pick():
 # ---- map actions (...) menu: map editor + collections
 const ID_EDIT = 7701
 const ID_COLL = 7700
+const ID_PHXM = 7702
 func _actions_menu():
 	var a = si.get_node_or_null("Info/M/V/Buttons/Control/Actions")
 	if !(a is MenuButton) or !ResourceLoader.exists("res://mods/replay/Reimagined.gd"): return
@@ -277,11 +278,15 @@ func _actions_shown(pm:PopupMenu):
 	pm.add_separator()
 	if ResourceLoader.exists("res://mods/replay/Editor.gd"): pm.add_item("Open in map editor", ID_EDIT)
 	pm.add_item("Add to collection...", ID_COLL)
+	if ResourceLoader.exists("res://mods/fixes/Phxm.gd"): pm.add_item("Export as .phxm (rewrite)", ID_PHXM)
 
 func _actions_pressed(id:int):
 	if !Rhythia.selected_song: return
 	if id == ID_EDIT and menu.has_method("open_editor"):
 		menu.open_editor(Rhythia.selected_song)
+		return
+	if id == ID_PHXM:
+		load("res://mods/fixes/Phxm.gd").export_prompt(Rhythia.selected_song)
 		return
 	if id != ID_COLL: return
 	var R = load("res://mods/replay/Reimagined.gd")

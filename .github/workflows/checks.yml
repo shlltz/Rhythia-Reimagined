@@ -1,0 +1,31 @@
+# Checks that run without the game: Python syntax of the mod tool + test scripts, and the pure
+# GDScript unit tests (tests/unit) in the official Godot 3.6.2 headless build. The game tests
+# (tests/multiplayer, mpbench.py) need a Sound Space Plus install and run locally.
+name: checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: compile
+        run: python -m py_compile ssp_mod.py tests/unit/run.py tests/multiplayer/*.py
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Godot 3.6.2 headless (checked against the release's SHA-512 list)
+        run: |
+          base=https://github.com/godotengine/godot-builds/releases/download/3.6.2-stable
+          zip=Godot_v3.6.2-stable_linux_headless.64.zip
+          curl -fsSLO "$base/$zip"
+          curl -fsSL "$base/SHA512-SUMS.txt" | grep " $zip\$" | sha512sum -c -
+          unzip -q "$zip"
+          echo "GODOT=$PWD/Godot_v3.6.2-stable_linux_headless.64" >> "$GITHUB_ENV"
+      - name: unit tests
+        run: python3 tests/unit/run.py "$GODOT"

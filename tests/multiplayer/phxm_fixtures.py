@@ -35,13 +35,29 @@ def sspm2(path):
     artist, title = (name.split(' - ', 1) + [''])[:2] if ' - ' in name else ('', name)
     return dict(id=mid, artist=artist.strip(), title=(title or name).strip(), mappers=mappers, diff=diff, notes=notes, audio=audio, cover=cover)
 
-def phxmo(notes):  # notes as rewrite coordinates (ms, X, Y)
+def phxmo(notes, tail=None):  # notes as rewrite coordinates (ms, X, Y); tail = the effect sections
     o = struct.pack('<II', 12, len(notes))
     for ms, x, y in notes:
         quantum = int(x) != x or int(y) != y or x < -1 or x > 1 or y < -1 or y > 1
         o += struct.pack('<IB', ms, int(quantum))
         o += struct.pack('<ff', x, y) if quantum else struct.pack('<BB', int(x + 1), int(y + 1))
-    return o + struct.pack('<11i', *[0] * 11)
+    return o + (tail if tail is not None else struct.pack('<11i', *[0] * 11))
+
+# effect sections in the order of the rewrite's writer comments, object layouts from the Quantum
+# Editor's reader: 1 brightness (ms, duration, style, direction, intensity) + 1 text (ms, duration,
+# u16-prefixed string, u8); timing points are left empty (no layout is defined anywhere)
+def fx_tail():
+    t = struct.pack('<i', 0)                                         # timing points
+    t += struct.pack('<i', 1) + struct.pack('<IIBBf', 1000, 500, 1, 2, 0.5)   # brightness
+    t += struct.pack('<4i', 0, 0, 0, 0)                              # contrast, saturation, blur, fov
+    t += struct.pack('<3i', 0, 0, 0)                                 # tint, position, rotation
+    t += struct.pack('<i', 0)                                        # ar factor
+    s = 'hello'.encode()
+    t += struct.pack('<i', 1) + struct.pack('<IIH', 2000, 300, len(s)) + s + b'\x01'   # text
+    return t
+
+def tp_tail():  # one timing point: no known layout (8 bytes of something), then the rest
+    return struct.pack('<i', 1) + struct.pack('<If', 0, 120.0) + struct.pack('<10i', *[0] * 10)
 
 def png(w, h):
     raw = b''.join(b'\0' + b''.join(bytes((x * 4 % 256, y * 4 % 256, 128)) for x in range(w)) for y in range(h))
@@ -54,12 +70,17 @@ def meta(m, mid, diff_name=None):
                        'Length': m['notes'][-1][0], 'HasAudio': True, 'HasCover': m['cover'] is not None, 'HasVideo': False,
                        'AudioExt': 'ogg' if m['audio'][:4] == b'OggS' else 'mp3'}, indent='\t')
 
-def write(path, m, mid, notes=None, deflate=False, prefix='', diff_name=None, video=False):
+def write(path, m, mid, notes=None, deflate=False, prefix='', diff_name=None, video=False, tail=None, extra_meta=None):
     comp = zipfile.ZIP_DEFLATED if deflate else zipfile.ZIP_STORED
     rw = notes if notes is not None else [(ms, x - 1, 1 - y) for ms, x, y in m['notes']]  # .sspm -> rewrite (MapParser.sspmV2)
+    md = meta(m, mid, diff_name)
+    if extra_meta:
+        d = json.loads(md)
+        d.update(extra_meta)
+        md = json.dumps(d, indent='\t')
     with zipfile.ZipFile(path, 'w', comp) as z:
-        z.writestr(prefix + 'metadata.json', meta(m, mid, diff_name))
-        z.writestr(prefix + 'objects.phxmo', phxmo(rw))
+        z.writestr(prefix + 'metadata.json', md)
+        z.writestr(prefix + 'objects.phxmo', phxmo(rw, tail))
         z.writestr(prefix + 'audio.' + ('ogg' if m['audio'][:4] == b'OggS' else 'mp3'), m['audio'])
         if m['cover']: z.writestr(prefix + 'cover.png', m['cover'])
         if video: z.writestr(prefix + 'video.mp4', os.urandom(1 << 20))
@@ -74,5 +95,10 @@ write(os.path.join(out, 't_quantum.phxm'), m, 'phxm_test_quantum', notes=[(1000,
 write(os.path.join(out, 't_jp.phxm'), m, 'ロード')
 write(os.path.join(out, 't_dup.phxm'), m, m['id'])
 for n in ('drop', 'drop2', 'dialog'): write(os.path.join(out, 't_%s.phxm' % n), m, 'phxm_test_' + n)
+# round trips: effects + extra metadata a .sspm can't hold; a timing point of unknown layout
+write(os.path.join(out, 't_fx.phxm'), m, 'phxm_test_fx', tail=fx_tail(), diff_name='Expert+',
+      extra_meta={'Rating': 4.5, 'ArtistLink': 'https://example.com/artist', 'ArtistPlatform': 'YouTube', 'Mappers': ['BatBrice', 'Second Mapper']})
+write(os.path.join(out, 't_tp.phxm'), m, 'phxm_test_tp', tail=tp_tail())
+write(os.path.join(out, 't_rtq.phxm'), m, 'phxm_test_rtq', notes=[(1000, 0.5, -0.25), (1500, 1, 1), (2000, -1, -1), (2500, 0.3333, 0.75), (3000, 1.5, 0)])
 open(os.path.join(out, 't_broken.phxm'), 'wb').write(os.urandom(5000))
 print('notes %d, diff %d, id %s, artist %r, title %r, mappers %r' % (len(m['notes']), m['diff'], m['id'], m['artist'], m['title'], m['mappers']))

@@ -157,7 +157,17 @@ func _ready():
 	root.add_child(bar)
 	_button(bar, "Back", "_back")
 	_button(bar, "Retry", "_retry")
-	if run.replay_path != "" and File.new().file_exists(run.replay_path): _button(bar, "Watch replay", "_watch")
+	if run.get("resume") and ResourceLoader.exists("res://mods/replay/Checkpoint.gd"):
+		var rb = _button(bar, "From fail point", "_retry_resume")
+		if rb: rb.hint_tooltip = "Retry from %s: the last exact checkpoint at least 2 s before you failed.\nScore, combo and health as they were there. Can't set a personal best; no replay." % _mmss(run.resume.snap.at)
+		bar.margin_left -= 85 # (a 4th / 5th button: the bar grows instead of squeezing the labels)
+		bar.margin_right += 85
+	if run.replay_path != "" and File.new().file_exists(run.replay_path):
+		_button(bar, "Watch replay", "_watch")
+		if ResourceLoader.exists("res://mods/replay/ReplayStudio.gd"):
+			_button(bar, "Analyse", "_analyse")
+			bar.margin_left -= 85
+			bar.margin_right += 85
 
 	_cover(true)
 	UIAnim.play(root, Vector2.ZERO, Vector2.ZERO, 0.0, 1.0, 0.3)
@@ -249,11 +259,13 @@ func _button(bar:Control, text:String, cb:String):
 	b.connect("mouse_entered", sfx, "play", ["click-short.ogg", -10.0])
 	b.connect("pressed", self, cb)
 	bar.add_child(b)
+	return b
 
 func _status() -> Array:
 	if run.replay: return ["REPLAY", Color("#9ad0ff")]
-	if run.end_type != Globals.END_PASS: return ["FAILED" if run.end_type == Globals.END_FAIL else "GAVE UP", Color("#ff6b6b")]
+	if run.end_type != Globals.END_PASS: return [("FAILED" if run.end_type == Globals.END_FAIL else "GAVE UP") + (" (resumed)" if run.get("resumed") else ""), Color("#ff6b6b")]
 	if run.pauses > 0: return ["DISQUALIFIED (paused)", Color("#ffb35e")]
+	if run.get("resumed"): return ["PASSED (resumed)", Color("#ffb35e")]
 	return ["PASSED", Color("#6ff1a0")]
 
 func _grade(acc:float) -> Array: # [shown, skin image, colour] (EndInfo.gd thresholds)
@@ -296,7 +308,9 @@ func _stamp():
 func _layout():
 	var size = get_viewport().get_visible_rect().size
 	var mouse = get_viewport().get_mouse_position()
-	var target = (size - Vector2(W, H)) / 2 + (size / 2 - mouse) * (8.0 / size.y) - Vector2(0, 30)
+	var k = clamp(min((size.y - 152.0) / H, (size.x - 40.0) / W), 0.5, 1.0) # (short windows: shrink so the button bar stays below the panel)
+	holder.rect_scale = Vector2(k, k)
+	var target = (size - Vector2(W, H) * k) / 2 + (size / 2 - mouse) * (8.0 / size.y) - Vector2(0, 30)
 	var dt = get_process_delta_time() # (smoothing by time, not per frame: same feel at any fps)
 	holder.rect_position = holder.rect_position.linear_interpolate(target, 1.0 - exp(-dt * 12.0)) if t > 0.05 else target
 	grade_text.rect_scale = grade_text.rect_scale.linear_interpolate(Vector2.ONE, 1.0 - exp(-dt * 11.0))
@@ -310,6 +324,7 @@ func _layout():
 # ------------------------------------------------------------------ actions
 func _input(ev):
 	if closing or !(ev is InputEventKey) or !ev.pressed or ev.echo: return
+	if menu.has_node("ReplayStudio"): return # (Esc closes the studio over it first)
 	if ev.scancode == KEY_ESCAPE: _back()
 	elif ev.scancode == KEY_QUOTELEFT: _retry()
 	else: return
@@ -329,6 +344,18 @@ func _retry():
 	Rhythia.replaying = false
 	_go("res://scenes/loaders/songload.tscn")
 
+# Checkpoint.gd: the same map from the last exact snapshot before the fail, with its state back
+func _mmss(ms:float) -> String:
+	return "%d:%02d" % [int(ms / 60000), int(ms / 1000) % 60]
+
+func _retry_resume():
+	if closing or !run.get("resume"): return
+	closing = true
+	sfx.play("menuhit.mp3", -6.0)
+	Rhythia.replaying = false
+	load("res://mods/replay/Checkpoint.gd").start(run.resume)
+	_go("res://scenes/loaders/songload.tscn")
+
 func _watch():
 	if closing: return
 	closing = true
@@ -337,6 +364,12 @@ func _watch():
 	Rhythia.replaying = true
 	Rhythia.replay_path = run.replay_path
 	_go("res://scenes/loaders/songload.tscn")
+
+# Replay Studio (ReplayStudio.gd) over the results: graphs, heatmap, aim of the run just played
+func _analyse():
+	if closing or menu.has_node("ReplayStudio"): return
+	sfx.play("menuhit.mp3", -6.0)
+	load("res://mods/replay/ReplayStudio.gd").open(menu, run.replay_path)
 
 func _go(scene:String):
 	if "black_fade_target" in menu: menu.black_fade_target = true

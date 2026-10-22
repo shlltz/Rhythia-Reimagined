@@ -389,8 +389,12 @@ func _rr_actions_shown(pm:PopupMenu):
 	if pm.get_item_index(7700) == -1:
 		pm.add_separator()
 		pm.add_item("Add to collection...", 7700)
+		if ResourceLoader.exists("res://mods/fixes/Phxm.gd"): pm.add_item("Export as .phxm (rewrite)", 7702)
 
 func _rr_actions_pressed(id:int):
+	if id == 7702 and Rhythia.selected_song:
+		load("res://mods/fixes/Phxm.gd").export_prompt(Rhythia.selected_song)
+		return
 	if id != 7700 or !Rhythia.selected_song: return
 	var R = load("res://mods/replay/Reimagined.gd")
 	coll_popup.clear()

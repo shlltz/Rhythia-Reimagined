@@ -367,9 +367,11 @@ func sortkey_desc(a:Song, b:Song):
 # together). Filters: stars / bpm / length / notes with = != < <= > >= (length in seconds or m:ss;
 # "=" on a whole number matches that whole number, stars=6 -> 6.00-6.99), mapper=name. Stars and
 # BPM are the 1.0x values. Parsed once per search text, not per map.
-const RR_SEARCH_HELP = "Search: every word must match the title, mapper or difficulty  (\"quoted words\" stay together)\nFilters: stars>10  bpm<=180  length<2:30  notes>3000  mapper=name\n(= != < <= > >=, stars / BPM at 1.0x speed)"
+const RR_SEARCH_HELP = "Search: every word must match the title, mapper or difficulty  (\"quoted words\" stay together)\nFilters: stars>10  bpm<=180  length<2:30  notes>3000  mapper=name  tag=name\n(= != < <= > >=, stars / BPM at 1.0x speed)"
 const RR_KEYS = {"stars": "stars", "star": "stars", "sr": "stars", "bpm": "bpm", "length": "length", "len": "length",
-	"notes": "notes", "note": "notes", "mapper": "mapper", "creator": "mapper"}
+	"notes": "notes", "note": "notes", "mapper": "mapper", "creator": "mapper", "tag": "tag", "tags": "tag"}
+const LIB = "res://mods/replay/Library.gd"
+const LIB_SMART = "smart:"
 var rr_q_src = null      # search text the parsed query belongs to
 var rr_q_words:Array = []
 var rr_q_filters:Array = [] # [key, op, value]
@@ -409,7 +411,7 @@ func _rr_filter(w:String):
 		var v = w.substr(k + op.length())
 		if key == null or v == "": return null
 		var o = "=" if op in ["==", ":"] else op
-		if key == "mapper":
+		if key == "mapper" or key == "tag":
 			return [key, o, v] if o in ["=", "!="] else null
 		var num = 0.0
 		if key == "length" and ":" in v:
@@ -434,6 +436,12 @@ func _rr_search_match(s:Song) -> bool:
 func _rr_filter_ok(s:Song, f:Array) -> bool:
 	if f[0] == "mapper":
 		var has = s.creator.to_lower().find(f[2]) != -1
+		return has if f[1] == "=" else !has
+	if f[0] == "tag":
+		var has = false
+		if ResourceLoader.exists(LIB):
+			for t in load(LIB).tags_of(s.id):
+				if t.find(f[2]) != -1: has = true
 		return has if f[1] == "=" else !has
 	var v = -1.0
 	match f[0]:
@@ -505,7 +513,9 @@ func _rr_load():
 	rr_sort = R.val("sort")
 	var c = str(R.val("collection"))
 	rr_coll = null
-	if c != "" and R.collections().has(c):
+	if c.begins_with(LIB_SMART) and ResourceLoader.exists(LIB): # smart playlist (Library.gd): evaluated from history / ratings
+		rr_coll = load(LIB).smart_ids(c.substr(LIB_SMART.length()))
+	elif c != "" and R.collections().has(c):
 		rr_coll = {}
 		for id in R.collections()[c]: rr_coll[id] = true
 
@@ -524,7 +534,14 @@ func _rr_fill():
 		rr_coll_btn.add_item(names[i], i + 1)
 		rr_coll_btn.set_item_metadata(i + 1, names[i])
 		if names[i] == R.val("collection"): rr_coll_btn.select(i + 1)
-	rr_coll_btn.hint_tooltip = "your collections (map packs) - Customize > Collections"
+	if ResourceLoader.exists(LIB):
+		var n = rr_coll_btn.get_item_count()
+		for r in load(LIB).smart_lists():
+			rr_coll_btn.add_item("smart: " + r.name, n)
+			rr_coll_btn.set_item_metadata(n, LIB_SMART + r.name)
+			if LIB_SMART + r.name == R.val("collection"): rr_coll_btn.select(n)
+			n += 1
+	rr_coll_btn.hint_tooltip = "your collections (map packs) - Customize > Collections\nsmart playlists - Library"
 
 func _rr_sort_selected(i:int):
 	load(RR).set_val("sort", RR_SORTS[i][0])

@@ -14,6 +14,9 @@ so removed mods leave nothing behind. The previous game file is kept in backup/S
   restore                                    remove every mod (original game)
   package [--out ZIP]                        shareable no-Python patch (replay + stars), default ..\..\Rhythia-reimagined-lite-vX.Y.Z.zip
   portable [--out ZIP]                       ready-to-play zip: game exe + DLLs + pck with the share build (with map browser)
+  linux [--out ZIP]                          the same for Linux (program + libraries from ..\_linux)
+  updatekey                                  make the update signing key (tools/update_key.pem, private; public half in src/replay)
+  manifest [--out DIR] [--notes TEXT]        release pck + signed update.json for the updater (docs/UPDATES.md)
   apk APK [--out FILE]                       Rhythia Legacy Android: mods written into the APK (unsigned; sign before installing)
   tweaks [--without browser]                 full share zip ..\..\Rhythia-reimagined-vX.Y.Z.zip
   version [X.Y.Z]                            show / set the version (version.txt; zip names, README, title screen)
@@ -403,7 +406,7 @@ SCRIPT_MODS = {
                           'HUD.gd': 'res://scripts/game/HUD.gd', 'CursorTrail.gd': 'res://scripts/game/CursorTrail.gd',
                           'songload.gd': 'res://scripts/loaders/songload.gd', 'EndInfo.gd': 'res://scripts/ui/menu/buttons/EndInfo.gd'},
                ['ReplayViewer.gd', 'ReplayBrowser.gd', 'UIAnim.gd', 'VolumeOverlay.gd', 'LoadScreen.gd', 'AudioVisualizer.gd', 'PauseMenu.gd', 'UIJuice.gd', 'OsuSfx.gd', 'TitleMenu.gd', 'ResultsScreen.gd',
-                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd', 'CrashWatch.gd', 'QuickRetry.gd', 'Look.gd', 'Editor.gd', 'EditorModel.gd', 'ColorsetMaker.gd', 'Classic.gd', 'RewriteFeel.gd', 'MPProto.gd', 'MPLobby.gd', 'MPHost.gd', 'MPClient.gd', 'MPMenu.gd', 'MPOverlay.gd',
+                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd', 'CrashWatch.gd', 'QuickRetry.gd', 'Look.gd', 'Editor.gd', 'EditorModel.gd', 'EditorAuto.gd', 'EditorCapture.gd', 'EditorPatterns.gd', 'ReplayStats.gd', 'ReplayStudio.gd', 'GifWriter.gd', 'ClipExport.gd', 'ClipRecorder.gd', 'Device.gd', 'GyroCursor.gd', 'Updater.gd', 'update_key.pub', 'ColorsetMaker.gd', 'Classic.gd', 'Library.gd', 'LibraryPanel.gd', 'RewriteImport.gd', 'Checkpoint.gd', 'Skins.gd', 'SkinPanel.gd', 'RewriteFeel.gd', 'MPProto.gd', 'MPLobby.gd', 'MPHost.gd', 'MPClient.gd', 'MPMenu.gd', 'MPOverlay.gd',
                 'icons/uicons-solid-rounded.woff', 'icons/Flaticon-license.txt']),
     'browser': ('browser', {}, ['MapBrowser.gd']),
     'hype': ('hype', {}, ['Hype.gd', 'PassFx.gd']),     # cover visualizer, 7+/10+ star glow / quake / lightning, pass glow + zoom
@@ -415,6 +418,10 @@ SCRIPT_MODS = {
 }
 VERSION_FILE = os.path.join(HERE, 'version.txt')
 def version(): return open(VERSION_FILE).read().strip() if os.path.exists(VERSION_FILE) else '0.0.0'
+# what kind of build this is, baked in as @@CHANNEL@@ (Updater.gd: only "portable" builds replace
+# their own pck; tweaks / android builds point to the release page; "own" builds never update)
+CHANNEL = 'own'
+BUILD_ID = ''                               # new for every build() (Updater.gd: is the pck on disk the running one?)
 # third-party files kept out of the public repo (see .gitignore): a build from a fresh clone
 # skips them - no intro sound, and the mods' drawn icons instead of the Flaticon font
 OPTIONAL_ASSETS = ['intro.mp3', 'icons/uicons-solid-rounded.woff']
@@ -426,7 +433,7 @@ def script_mod(pk, name, opts=None):
     def data(f):                                                    # @@KEY@@ in a source = option 'key' from profile.json
         d = src(name, f)
         for k, v in (opts or {}).items(): d = d.replace(('@@%s@@' % k.upper()).encode(), str(v).encode())
-        d = d.replace(b'@@VERSION@@', version().encode())
+        d = d.replace(b'@@VERSION@@', version().encode()).replace(b'@@CHANNEL@@', CHANNEL.encode()).replace(b'@@BUILD_ID@@', BUILD_ID.encode())
         if ACCENT and f.endswith('.gd'): d = d.replace(MOD_ACCENT, b'#' + ACCENT.encode())
         assert not f.endswith('.gd') or b'@@' not in d, '%s/%s has an unfilled @@option@@' % (name, f)
         return d
@@ -526,7 +533,9 @@ def game_running():
     return 'SoundSpacePlus.exe' in r.stdout
 THEMED = True
 def build(profile):
-    global THEMED, ACCENT
+    global THEMED, ACCENT, BUILD_ID
+    import uuid
+    BUILD_ID = uuid.uuid4().hex
     THEMED = 'theme' in profile
     ACCENT = SHARE_ACCENT if 'sharelook' in profile else None
     pk = Pck(PCK)
@@ -570,7 +579,11 @@ def package_tweaks(out, variants=VARIANTS):
             root = top + (folder + '/' if len(variants) > 1 else '')
             prof = {k: v for k, v in load_profile().items() if k not in TWEAKS_EXCLUDE and k not in without}
             prof['sharelook'] = {}                                    # friends get the logo-coloured look + Exo 2
-            pk = build(prof); rows = []
+            global CHANNEL
+            CHANNEL = 'tweaks'
+            try: pk = build(prof)
+            finally: CHANNEL = 'own'
+            rows = []
             for p in sorted(pk.new):
                 data = pk.new[p]; added = p.startswith('res://mods/') and p not in pk.bak
                 if not added and data == pk.bak.get(p): continue          # unchanged vs stock
@@ -610,9 +623,12 @@ LINUX_FILES = ['SoundSpacePlus.x86_64', 'libdiscord-game-sdk-godot.so', 'libdisc
                'libgodot_openvr.so', 'libnativedialogs.so', 'libopenvr_api.so']
 
 def portable(out, linux=False):
+    global CHANNEL
     prof = {k: v for k, v in load_profile().items() if k not in TWEAKS_EXCLUDE}
     prof['sharelook'] = {}
-    pk = build(prof)
+    CHANNEL = 'portable'
+    try: pk = build(prof)
+    finally: CHANNEL = 'own'
     tmp = out + '.pck.tmp'; pk.fn = tmp; pk.save(bak=False)
     root = os.path.splitext(os.path.basename(out))[0] + '/'
     try:
@@ -644,9 +660,12 @@ def portable(out, linux=False):
 # The result is UNSIGNED - sign it (zipalign + apksigner, e.g. uber-apk-signer) before installing.
 APK_SKIP = ['discord']   # Discord DLL (autodelete ships for its .phxm import dialog; it never deletes on Android)
 def apk(src_apk, out):
+    global CHANNEL
     prof = {k: v for k, v in load_profile().items() if k not in TWEAKS_EXCLUDE and k not in APK_SKIP}
     prof['sharelook'] = {}
-    pk = build(prof)
+    CHANNEL = 'android'
+    try: pk = build(prof)
+    finally: CHANNEL = 'own'
     files = {}
     for p in pk.by:
         if p not in pk.new: continue
@@ -675,6 +694,43 @@ def _sign_apk(unsigned):
     final = unsigned.replace('-unsigned.apk', '.apk')
     os.replace(os.path.join(tmp, signed), final); shutil.rmtree(tmp); os.remove(unsigned)
     print('signed:', final)
+
+# ---------- self-update: a signed release manifest (Updater.gd checks it) ----------
+# The private key never leaves tools/ (git-ignored); the public half is built into the game. Each
+# release uploads update.json + update.json.sig + the pck as assets (tag vX.Y.Z); the game verifies
+# the signature, then the pck's size + SHA-256 from the signed manifest, before it uses anything.
+UPDATE_KEY = os.path.join(HERE, 'tools', 'update_key.pem')
+UPDATE_PUB = os.path.join(SRC, 'replay', 'update_key.pub')
+REPO = 'shlltz/Rhythia-Reimagined'
+def update_key():
+    import subprocess
+    if os.path.exists(UPDATE_KEY): return print('signing key already there:', UPDATE_KEY)
+    os.makedirs(os.path.dirname(UPDATE_KEY), exist_ok=True)
+    subprocess.run(['openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:3072', '-out', UPDATE_KEY], check=True, capture_output=True)
+    subprocess.run(['openssl', 'pkey', '-in', UPDATE_KEY, '-pubout', '-out', UPDATE_PUB], check=True, capture_output=True)
+    print('signing key made (keep it private):', UPDATE_KEY, '- public half:', UPDATE_PUB)
+
+def manifest(out_dir, notes=''):
+    import hashlib, subprocess
+    if not os.path.exists(UPDATE_KEY): sys.exit('no signing key: run "ssp_mod.py updatekey" first')
+    v = version(); name = 'Rhythia-reimagined-v%s.pck' % v
+    global CHANNEL
+    prof = {k: v2 for k, v2 in load_profile().items() if k not in TWEAKS_EXCLUDE}
+    prof['sharelook'] = {}
+    CHANNEL = 'portable'                                            # (the same pck the portable zips carry)
+    try: pk = build(prof)
+    finally: CHANNEL = 'own'
+    os.makedirs(out_dir, exist_ok=True)
+    pck = os.path.join(out_dir, name); pk.fn = pck; pk.save(bak=False)
+    data = open(pck, 'rb').read()
+    m = {'format': 1, 'version': v, 'notes': notes, 'pck': {'name': name, 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
+         'url': 'https://github.com/%s/releases/download/v%s/%s' % (REPO, v, name)}}
+    mp = os.path.join(out_dir, 'update.json'); sp_ = mp + '.sig'
+    with open(mp, 'wb') as f: f.write(json.dumps(m, separators=(',', ':')).encode('utf-8'))
+    subprocess.run(['openssl', 'dgst', '-sha256', '-sign', UPDATE_KEY, '-out', sp_, mp], check=True, capture_output=True)
+    ok = subprocess.run(['openssl', 'dgst', '-sha256', '-verify', UPDATE_PUB, '-signature', sp_, mp], capture_output=True)
+    if ok.returncode != 0: sys.exit('signature check against the built-in public key failed: ' + ok.stdout.decode() + ok.stderr.decode())
+    print('%s, update.json(.sig) written to %s (signature checked against %s)' % (name, out_dir, os.path.basename(UPDATE_PUB)))
 
 def package(out):
     pk = Pck(PCK); swap, new = [], []
@@ -715,6 +771,8 @@ if __name__ == '__main__':
     sp.add_parser('linux').add_argument('--out')
     ak = sp.add_parser('apk'); ak.add_argument('apk'); ak.add_argument('--out')
     sp.add_parser('version').add_argument('value', nargs='?')
+    sp.add_parser('updatekey')
+    mf = sp.add_parser('manifest'); mf.add_argument('--out'); mf.add_argument('--notes', default='')
     for n in ('status', 'rebuild', 'restore'): sp.add_parser(n)
     a = ap.parse_args(); prof = load_profile()
     if a.cmd == 'status':
@@ -725,6 +783,8 @@ if __name__ == '__main__':
             assert re.fullmatch(r'\d+\.\d+\.\d+', a.value), 'version must look like 0.1.2'
             open(VERSION_FILE, 'w').write(a.value + '\n')
         print('Rhythia-reimagined v' + version()); sys.exit()
+    if a.cmd == 'updatekey': update_key(); sys.exit()
+    if a.cmd == 'manifest': manifest(a.out or os.path.join(os.path.dirname(GAME), 'update-v%s' % version()), a.notes); sys.exit()
     if a.cmd == 'apk': apk(a.apk, a.out or os.path.join(os.path.dirname(GAME), 'Rhythia-reimagined-android-v%s-unsigned.apk' % version())); sys.exit()
     if a.cmd == 'linux':
         if not all(os.path.exists(os.path.join(LINUX_DIR, f)) for f in LINUX_FILES): sys.exit('missing Linux files in ' + LINUX_DIR)

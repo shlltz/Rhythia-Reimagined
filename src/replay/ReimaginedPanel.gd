@@ -14,9 +14,10 @@ const W = 1060.0
 const H = 680.0
 const TABS = [["trail", "Cursor trail", "style, colour, opacity"], ["hud", "HUD layout", "move & scale panels"],
 	["skin", "Skin", "border, icons, logo"], ["collections", "Collections", "map packs"],
-	["interface", "Interface", "map list & clutter"], ["storage", "Storage", "user folder location"],
+	["interface", "Interface", "map list & clutter"], ["device", "Device", "touch, gyro, low-end"], ["storage", "Storage", "user folder, updates"],
 	["logs", "Logs", "for bug reports"]]
 const UserDir = preload("res://mods/replay/UserDir.gd")
+const Dev = preload("res://mods/replay/Device.gd")
 
 var menu:Node
 var sfx:Node
@@ -95,7 +96,7 @@ func _ready():
 		b.sub = t[2]
 		b.font_big = _font(19)
 		b.font_small = _font(13)
-		b.rect_min_size = Vector2(220, 54)
+		b.rect_min_size = Vector2(220, 50)
 		b.connect("pressed", self, "show_tab", [t[0]])
 		b.connect("mouse_entered", sfx, "play", ["click-short.ogg", -12.0])
 		tabs.add_child(b)
@@ -122,9 +123,11 @@ func _ready():
 	_build_skin()
 	_build_collections()
 	_build_interface()
+	_build_device()
 	_build_storage()
 	_build_logs()
 	show_tab(Engine.get_meta("rr_tab") if Engine.has_meta("rr_tab") else "trail", false)
+	Dev.touch_fit(root)
 	# opening click = the game's own (menu2 open_customize plays Press)
 	UIAnim.play(card, Vector2(0, 26), Vector2.ZERO, 0.0, 1.0, 0.3)
 
@@ -359,6 +362,14 @@ func _build_skin():
 	skin_list.add_constant_override("separation", 8)
 	sc.add_child(skin_list)
 	var h = HBoxContainer.new()
+	h.add_constant_override("separation", 8)
+	if ResourceLoader.exists("res://mods/replay/SkinPanel.gd"): # note shape / colours / cursor / sounds / HUD font profiles
+		var ed = Button.new()
+		ed.text = "Skin editor (notes, cursor, sounds)"
+		ed.focus_mode = Control.FOCUS_NONE
+		ed.rect_min_size = Vector2(300, 36)
+		ed.connect("pressed", self, "_open_skin_editor")
+		h.add_child(ed)
 	var open = Button.new()
 	open.text = "Open skin folder"
 	open.focus_mode = Control.FOCUS_NONE
@@ -367,6 +378,12 @@ func _build_skin():
 	h.add_child(open)
 	p.add_child(h)
 	_skin_rows()
+
+func _open_skin_editor():
+	if menu and menu.has_node("SkinPanel"): return
+	var e = load("res://mods/replay/SkinPanel.gd").new()
+	e.name = "SkinPanel"
+	(menu if menu else get_parent()).add_child(e)
 
 func _skin_slots() -> Array:
 	var out = []
@@ -551,6 +568,90 @@ func _coll_delete(n:String, b:Button):
 	_coll_rows()
 
 # ------------------------------------------------------------------ interface
+# ------------------------------------------------------------------ device: touch, gyroscope, low-end
+var dev_w:Dictionary = {}
+func _build_device():
+	var p = _page("device")
+	var cf = R.cfg()
+	_heading(p, "Device", "Phones and tablets: how the cursor is steered in a run, and lighter settings for slow devices.")
+	var mode = "gyro" if str(cf.cursor_input) == "gyro" else ("abs" if Rhythia.absolute_mode else "drag")
+	_row(p, "Cursor (touch)", _seg([["drag", "DRAG"], ["abs", "POSITION"], ["gyro", "GYROSCOPE"]], mode, "_dev_mode"))
+	var hint = _label("", 13, Color(1, 1, 1, 0.45))
+	hint.autowrap = true
+	hint.rect_min_size.x = content.rect_size.x - 20
+	p.add_child(hint)
+	dev_w.hint = hint
+	_row(p, "Gyro sensitivity", _slider(0.2, 3.0, 0.05, float(cf.gyro_sens), "_dev_sens", "%.2fx"))
+	var inv = HBoxContainer.new()
+	inv.add_constant_override("separation", 18)
+	_check(inv, "invert left / right", bool(cf.gyro_inv_x), "_dev_inv_x")
+	_check(inv, "invert up / down", bool(cf.gyro_inv_y), "_dev_inv_y")
+	_row(p, "", inv)
+	var gl = _label("", 13, Color(1, 1, 1, 0.45))
+	p.add_child(gl)
+	dev_w.gyro = gl
+	_heading(p, "Low-end device profile", "Lighter effects, no trails / bloom / glow / background effects / rainbow colours. The settings it replaces are kept: RESTORE puts them back.")
+	var r = HBoxContainer.new()
+	r.add_constant_override("separation", 8)
+	var on = Button.new()
+	on.text = "USE LOW-END PROFILE"
+	on.focus_mode = Control.FOCUS_NONE
+	on.rect_min_size = Vector2(230, 34)
+	on.connect("pressed", self, "_dev_low", [true])
+	r.add_child(on)
+	var off = Button.new()
+	off.text = "RESTORE MY SETTINGS"
+	off.focus_mode = Control.FOCUS_NONE
+	off.rect_min_size = Vector2(230, 34)
+	off.connect("pressed", self, "_dev_low", [false])
+	r.add_child(off)
+	p.add_child(r)
+	var st = _label("", 13, Color(1, 1, 1, 0.6))
+	p.add_child(st)
+	dev_w.low = st
+	dev_w.low_on = on
+	dev_w.low_off = off
+	_row(p, "Bigger buttons", _seg([["auto", "AUTO"], ["on", "ON"], ["off", "OFF"]], str(cf.touch_big), "_dev_touch"))
+	_dev_refresh()
+
+func _dev_refresh():
+	var m = str(R.val("cursor_input"))
+	dev_w.hint.text = ("Turn the phone left / right to move across, tilt it to move up / down; a second finger puts the cursor back in the centre. Touch drags don't move it. Needs a gyroscope." if m == "gyro"
+		else ("The cursor goes where your finger is." if Rhythia.absolute_mode else "Drag anywhere to move the cursor, like a trackpad."))
+	var g = Dev.gyro()
+	dev_w.gyro.text = ("gyroscope now: %.2f, %.2f, %.2f rad/s" % [g.x, g.y, g.z]) if OS.has_touchscreen_ui_hint() or Engine.has_meta("rr_fake_gyro") else "(this device has no touch screen: the mouse steers)"
+	var lo = Dev.low_on()
+	dev_w.low.text = ("Low-end profile on (%d settings changed)." % R.val("perf_saved").size()) if lo else "Your own settings are in use."
+	dev_w.low_on.disabled = lo
+	dev_w.low_off.disabled = !lo
+
+func _process(_d):
+	if cur == "device" and dev_w.has("gyro") and OS.has_touchscreen_ui_hint(): _dev_refresh()
+
+func _dev_mode(m:String):
+	R.set_val("cursor_input", "gyro" if m == "gyro" else "")
+	if m != "gyro":
+		Rhythia.absolute_mode = m == "abs"
+		Rhythia.save_settings()
+	_dev_refresh()
+
+func _dev_sens(v:float):
+	R.set_val("gyro_sens", v)
+
+func _dev_inv_x(on:bool):
+	R.set_val("gyro_inv_x", on)
+
+func _dev_inv_y(on:bool):
+	R.set_val("gyro_inv_y", on)
+
+func _dev_low(on:bool):
+	var n = Dev.apply_low() if on else Dev.restore_low()
+	if on and n == 0: dev_w.low.text = "Your settings are already that light: nothing to change."
+	else: _dev_refresh()
+
+func _dev_touch(v:String):
+	R.set_val("touch_big", v)
+
 func _build_interface():
 	var p = _page("interface")
 	var cf = R.cfg()
@@ -692,8 +793,96 @@ func _logs_copy():
 	OS.clipboard = _log_text()
 	log_msg.text = "Copied"
 
+# ------------------------------------------------------------------ updates (Updater.gd)
+var upd_w:Dictionary = {}
+func _updater():
+	return get_tree().root.get_node_or_null("RRUpdater")
+
+func _build_updates(p:Control):
+	var U = load("res://mods/replay/Updater.gd")
+	_heading(p, "Updates", "This is Rhythia-reimagined v@@VERSION@@. New versions come from the project's GitHub releases; an update is only installed after its signature and file hash check out, and the old version is kept so you can roll back.")
+	if U.channel() == "own":
+		p.add_child(_label("Personal build: update it with the mod tool, not from here.", 14, Color(1, 1, 1, 0.5)))
+		return
+	_check(p, "Check for a new version when the game starts (once a day at most)", R.val("update_check"), "_upd_auto")
+	var h = HBoxContainer.new()
+	h.add_constant_override("separation", 8)
+	for b in [["CHECK NOW", "_upd_check"], ["INSTALL", "_upd_install"], ["RELEASE PAGE", "_upd_page"], ["ROLL BACK", "_upd_rollback"]]:
+		var btn = Button.new()
+		btn.text = b[0]
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.rect_min_size = Vector2(150, 36)
+		btn.connect("pressed", self, b[1])
+		h.add_child(btn)
+		upd_w[b[1]] = btn
+	p.add_child(h)
+	var st = _label("", 14, Color(1, 1, 1, 0.7))
+	st.autowrap = true
+	st.rect_min_size.x = content.rect_size.x
+	p.add_child(st)
+	upd_w.status = st
+	_upd_refresh()
+
+func _upd_refresh(text:String = ""):
+	if !upd_w.has("status"): return
+	var U = load("res://mods/replay/Updater.gd")
+	var up = _updater()
+	var r = up.last if up else {}
+	var lu = U.state().get("last_update", {})
+	upd_w._upd_install.disabled = !(r.get("state", "") == "available" and !U.target().has("why"))
+	upd_w._upd_rollback.disabled = !(lu is Dictionary and File.new().file_exists(str(lu.get("backup", ""))) and !U.target().has("why"))
+	upd_w._upd_install.text = ("INSTALL %s" % r.version) if r.get("state", "") == "available" else "INSTALL"
+	upd_w._upd_rollback.text = ("ROLL BACK TO %s" % lu.from) if lu is Dictionary and lu.has("from") else "ROLL BACK"
+	if text == "":
+		match r.get("state", ""):
+			"available": text = "Version %s is out.%s%s" % [r.version, ("  " + r.notes) if r.notes != "" else "", ("  " + U.target().why) if U.target().has("why") else ""]
+			"current": text = "Up to date (v%s)." % r.version + (("  " + r.note) if r.has("note") else "")
+			"error": text = "Couldn't check: %s" % r.error
+			_:
+				var lc = int(U.state().get("last_check", 0))
+				var d = OS.get_datetime_from_unix_time(lc)
+				text = "Last checked: " + (("%04d-%02d-%02d %02d:%02d UTC" % [d.year, d.month, d.day, d.hour, d.minute]) if lc > 0 else "never")
+	upd_w.status.text = text
+
+func _upd_auto(on:bool):
+	R.set_val("update_check", on)
+
+func _upd_check():
+	var up = _updater()
+	if !up or up.busy: return
+	_upd_refresh("Checking...")
+	yield(up.check(), "completed")
+	_upd_refresh()
+
+func _upd_install():
+	var up = _updater()
+	if !up or up.busy or up.last.get("state", "") != "available": return
+	if !up.is_connected("progress", self, "_upd_refresh"): up.connect("progress", self, "_upd_refresh")
+	var r = yield(up.apply(up.last.manifest), "completed")
+	if r.has("error"):
+		_upd_refresh("Not installed: " + r.error)
+		return
+	_upd_refresh("Installing: the game closes and starts again on the new version...")
+	yield(get_tree().create_timer(1.0), "timeout")
+	get_tree().quit()
+
+func _upd_page():
+	OS.shell_open(load("res://mods/replay/Updater.gd").PAGE)
+
+func _upd_rollback():
+	var up = _updater()
+	if !up: return
+	var r = up.rollback()
+	if r.has("error"):
+		_upd_refresh("Can't roll back: " + r.error)
+		return
+	_upd_refresh("Rolling back: the game closes and starts again...")
+	yield(get_tree().create_timer(1.0), "timeout")
+	get_tree().quit()
+
 func _build_storage():
 	var p = _page("storage")
+	_build_updates(p)
 	_heading(p, "User folder", "Your maps, replays, scores, skins and settings. Move it to another drive to free space: the game closes, a window copies everything, checks the copy, links the old place to the new folder (so everything keeps working) and starts the game again. Nothing is deleted until the copy is checked.")
 	if !UserDir.supported():
 		p.add_child(_label("Only available on Windows.", 15, Color(1, 1, 1, 0.5)))

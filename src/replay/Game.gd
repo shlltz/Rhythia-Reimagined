@@ -84,8 +84,10 @@ func end(end_type:int):
 	Rhythia.song_end_combo = max_combo
 	print("song max combo: ", max_combo)
 	
-	if Rhythia.record_replays and !Rhythia.replaying:
+	if Rhythia.record_replays and !Rhythia.replaying and Rhythia.replay and Rhythia.replay.recording: # (a resumed run records none)
 		Rhythia.replay.end_recording()
+	var CK = load("res://mods/replay/Checkpoint.gd") if ResourceLoader.exists("res://mods/replay/Checkpoint.gd") else null
+	var resume_offer = CK.offer_for(self, Rhythia.song_end_position) if CK and end_type == Globals.END_FAIL and !Rhythia.replaying else null
 	
 	if Rhythia.queue_active and end_type == Globals.END_PASS:
 		if Rhythia.song_end_pause_count == 0 and Rhythia.do_pb_check_and_set(): # pause = disqualified
@@ -136,7 +138,9 @@ func end(end_type:int):
 			total = int(total_notes), combo = max_combo, end_type = end_type, pauses = Rhythia.song_end_pause_count,
 			position = Rhythia.song_end_position, length = last_ms, speed = speed_multi, replay = Rhythia.replaying,
 			mods = load("res://mods/replay/ResultsScreen.gd").current_mods(),
-			replay_path = Globals.p("user://replays/%s.sspre" % Rhythia.replay.id) if Rhythia.record_replays and !Rhythia.replaying and Rhythia.replay else ""})
+			resume = resume_offer, resumed = has_meta("rr_resumed"), # retry from the fail point (Checkpoint.gd)
+			replay_path = Globals.p("user://replays/%s.sspre" % Rhythia.replay.id) if Rhythia.record_replays and !Rhythia.replaying and Rhythia.replay and Rhythia.replay.id != "" and !has_meta("rr_resumed") else ""})
+		if CK: CK.restore_offset() # (back to the player's own Start From)
 		if ResourceLoader.exists("res://mods/stars/RecentPlays.gd") and !mp_run: # (session runs aren't personal plays)
 			load("res://mods/stars/RecentPlays.gd").record(Rhythia.get_meta("last_run"))
 		var fx = get_node_or_null("PassFx")
@@ -323,6 +327,21 @@ func _ready():
 #	$Spawn.connect("hit",self,"hit")
 	$Spawn.connect("miss",self,"miss")
 	loadMapFile()
+	# retry from the fail point (Checkpoint.gd): exact snapshots during live single-player runs; a
+	# resumed run gets its snapshot's score / combo / health back before the first note
+	Engine.remove_meta("rr_resumed_run")
+	var ck_s = "res://mods/replay/Checkpoint.gd"
+	var mp_ck = get_tree().root.get_node_or_null("RRMultiplayer")
+	if ResourceLoader.exists(ck_s) and !Rhythia.replaying and !Rhythia.queue_active and !(mp_ck and mp_ck.in_match()):
+		load(ck_s).apply(self)
+		add_child(load(ck_s).new())
+	# gyroscope cursor (Device.gd / GyroCursor.gd, Customize > Device; phones / tablets)
+	var dv = "res://mods/replay/Device.gd"
+	if ResourceLoader.exists(dv) and !Rhythia.replaying and load(dv).gyro_wanted():
+		var gc = load("res://mods/replay/GyroCursor.gd").new()
+		gc.name = "RRGyroCursor"
+		gc.cursor = $Spawn/Cursor
+		add_child(gc)
 	
 	
 	Rhythia.update_rpc_song()

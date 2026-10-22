@@ -18,6 +18,7 @@ var bpm:float = 120.0
 var offset:int = 0               # ms of the first beat
 var div:int = 4                  # snap subdivisions per beat
 var bookmarks:Array = []         # ms
+var points:Array = []            # timing points after the first one (bpm / offset): [[ms, bpm], ...] by time
 var extra_markers:int = 0        # marker types in the source map that this editor cannot keep (see validate)
 var dirty:bool = false
 var rev:int = 0                  # +1 on every change: views redraw / cache against it
@@ -42,6 +43,101 @@ static func snap(ms:float, bpm_:float, off:int, div_:int) -> int:
 static func step_ms(bpm_:float, div_:int) -> float:
 	return 60000.0 / (bpm_ * div_)
 
+# ------------------------------------------------------------------ timing sections (BPM changes)
+# Section 0 is bpm / offset and reaches back before the offset; every timing point starts a section
+# that runs to the next one. Each point restarts the beat grid and the 4-beat measures on its own
+# time (as osu! and the Quantum Editor do), so a note snapped before a change stays where it was.
+func sections() -> Array:
+	var out = [[float(offset), bpm]]
+	for p in points:
+		if float(p[0]) > out[out.size() - 1][0]: out.append([float(p[0]), float(p[1])])
+	return out
+
+static func _sec(ss:Array, ms:float) -> int:
+	var i = 0
+	while i + 1 < ss.size() and ss[i + 1][0] <= ms + 0.0001: i += 1
+	return i
+
+func bpm_at(ms:float) -> float:
+	var ss = sections()
+	return ss[_sec(ss, ms)][1]
+
+# grid step at a time (div subdivisions per beat of that section; div_ 0.25 = one measure)
+func step_at(ms:float, div_:float = 0.0) -> float:
+	return 60000.0 / (bpm_at(ms) * (div if div_ <= 0.0 else div_))
+
+# nearest grid time (the next section's start counts as a grid line)
+func snap_t(ms:float, div_:float = 0.0) -> int:
+	var d = div if div_ <= 0.0 else div_
+	var ss = sections()
+	var i = _sec(ss, ms)
+	var st = 60000.0 / (ss[i][1] * d)
+	var t = ss[i][0] + round((ms - ss[i][0]) / st) * st
+	if i + 1 < ss.size() and abs(ss[i + 1][0] - ms) < abs(t - ms): t = ss[i + 1][0]
+	return int(round(t))
+
+# the grid line strictly after (dir > 0) or before (dir < 0) a time
+func grid_next(t:float, dir:int, div_:float = 0.0) -> float:
+	var d = div if div_ <= 0.0 else div_
+	var ss = sections()
+	var i = _sec(ss, t)
+	var s0 = ss[i][0]
+	var st = 60000.0 / (ss[i][1] * d)
+	if dir > 0:
+		var c = s0 + (floor((t - s0) / st + 0.001) + 1) * st
+		if i + 1 < ss.size() and c > ss[i + 1][0] - 0.5: c = ss[i + 1][0]
+		return c
+	if i > 0 and t <= s0 + 0.5: # (at a section start: the last line of the section before)
+		i -= 1
+		s0 = ss[i][0]
+		st = 60000.0 / (ss[i][1] * d)
+	return s0 + (ceil((t - s0) / st - 0.001) - 1) * st
+
+# beats from the offset (sections add up; a section shorter than a whole beat adds its fraction)
+func beat_at(ms:float) -> float:
+	var ss = sections()
+	var i = _sec(ss, ms)
+	var b = 0.0
+	for j in range(1, i + 1): b += (ss[j][0] - ss[j - 1][0]) * ss[j - 1][1] / 60000.0
+	return b + (ms - ss[i][0]) * ss[i][1] / 60000.0
+
+# grid lines in [t0, t1] for drawing: [[ms, kind], ...] kind 0 = measure, 1 = beat, 2 = division
+func grid_lines(t0:float, t1:float, with_div:bool, beat_stride:int = 1, limit:int = 6000) -> Array:
+	var out = []
+	var ss = sections()
+	for i in ss.size():
+		var s0 = ss[i][0]
+		var e = ss[i + 1][0] if i + 1 < ss.size() else 1e12
+		var a = max(t0, s0) if i > 0 else t0
+		var b = min(t1, e)
+		if b < a: continue
+		var per = 60000.0 / ss[i][1]
+		var k = int(floor((a - s0) / per))
+		k -= posmod(k, beat_stride)
+		while out.size() < limit:
+			var t = s0 + k * per
+			if t > b or t >= e - 0.5: break
+			if t >= a - 0.5: out.append([t, 0 if posmod(k, 4) == 0 else 1])
+			if with_div and beat_stride == 1:
+				for q in range(1, div):
+					var tq = t + q * per / div
+					if tq >= a and tq <= b and tq < e - 0.5: out.append([tq, 2])
+			k += beat_stride
+	return out
+
+# add / move / remove timing points (refused before the offset or on top of another one)
+func add_point(ms:int, bpm_:float) -> bool:
+	if ms <= offset: return false
+	for p in points:
+		if abs(int(p[0]) - ms) <= 1: return false
+	points.append([ms, clamp(bpm_, 20.0, 400.0)])
+	points.sort_custom(self, "_cmp_point")
+	rev += 1
+	return true
+
+func _cmp_point(a, b) -> bool:
+	return a[0] < b[0]
+
 # "1:02.345" / "62.345" -> ms, -1 if it does not parse
 static func parse_time(s:String) -> int:
 	s = s.strip_edges()
@@ -57,6 +153,18 @@ static func fmt_time(ms:int) -> String:
 	var neg = ms < 0
 	ms = abs(ms)
 	return "%s%d:%02d.%03d" % ["-" if neg else "", ms / 60000, (ms / 1000) % 60, ms % 1000]
+
+# [average notes per second from the first to the last note, most notes inside any 1 s window];
+# notes sorted by ms (two pointers: one pass)
+static func nps(ns:Array) -> Array:
+	if ns.size() < 2: return [0.0, float(ns.size())]
+	var span = max(1.0, float(ns[-1][2] - ns[0][2]))
+	var peak = 0
+	var j = 0
+	for i in ns.size():
+		while ns[i][2] - ns[j][2] >= 1000: j += 1
+		peak = max(peak, i - j + 1)
+	return [ns.size() / (span / 1000.0), float(peak)]
 
 # ------------------------------------------------------------------ text format (Sound Space "id,x|y|ms,..." with 2-x / 2-y like Song.export_text)
 static func to_txt(id:String, ns:Array) -> String:
@@ -208,10 +316,25 @@ func can_undo() -> bool:
 func can_redo() -> bool:
 	return redo_stack.size() > 0
 
+# after undo / redo: the notes that step put (back) into the map - the editor selects them
+var touched:Array = []
+func _placed(op:Array) -> Array:
+	match op[0]:
+		"add": return op[1]
+		"mov":
+			var r = []
+			for pr in op[1]: r.append(pr[1])
+			return r
+	return []
+
 func undo() -> String:
 	if undo_stack.empty(): return ""
 	var g = undo_stack.pop_back()
-	for i in range(g.ops.size() - 1, -1, -1): _apply(_invert(g.ops[i]))
+	touched = []
+	for i in range(g.ops.size() - 1, -1, -1):
+		var inv = _invert(g.ops[i])
+		_apply(inv)
+		touched += _placed(inv)
 	redo_stack.append(g)
 	dirty = true
 	rev += 1
@@ -220,7 +343,10 @@ func undo() -> String:
 func redo() -> String:
 	if redo_stack.empty(): return ""
 	var g = redo_stack.pop_back()
-	for op in g.ops: _apply(op)
+	touched = []
+	for op in g.ops:
+		_apply(op)
+		touched += _placed(op)
 	undo_stack.append(g)
 	dirty = true
 	rev += 1
@@ -290,7 +416,14 @@ func validate(audio_len_ms:float, audio_ok:bool) -> Array:
 # ------------------------------------------------------------------ session (autosave / resume)
 func to_dict() -> Dictionary:
 	return {"v": 1, "meta": meta, "bpm": bpm, "offset": offset, "div": div, "bookmarks": bookmarks,
-		"extra_markers": extra_markers, "dirty": dirty, "notes": notes}
+		"points": points, "extra_markers": extra_markers, "dirty": dirty, "notes": notes}
+
+# timing points from saved data (anything malformed is dropped)
+func set_points(a):
+	points = []
+	if typeof(a) != TYPE_ARRAY: return
+	for p in a:
+		if typeof(p) == TYPE_ARRAY and p.size() == 2: add_point(int(p[0]), float(p[1]))
 
 static func from_dict(d:Dictionary):
 	var m = load("res://mods/replay/EditorModel.gd").new()
@@ -301,6 +434,7 @@ static func from_dict(d:Dictionary):
 	m.offset = int(d.get("offset", 0))
 	m.div = int(clamp(int(d.get("div", 4)), 1, 16))
 	m.bookmarks = d.get("bookmarks", []) if typeof(d.get("bookmarks")) == TYPE_ARRAY else []
+	m.set_points(d.get("points", []))
 	m.extra_markers = int(d.get("extra_markers", 0))
 	m.dirty = bool(d.get("dirty", false))
 	var ns = d.get("notes", [])

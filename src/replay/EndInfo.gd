@@ -129,12 +129,15 @@ func _ready():
 	visible = Rhythia.just_ended_song
 	if Rhythia.just_ended_song:
 		# pause menu mod: a run with a pause is disqualified (no personal best)
-		var disqualified:bool = Rhythia.song_end_pause_count > 0 and !Rhythia.was_replay
+		# retry from the fail point (Checkpoint.gd): not a full run either
+		var resumed:bool = Engine.has_meta("rr_resumed_run") and !Rhythia.was_replay
+		var disqualified:bool = (Rhythia.song_end_pause_count > 0 or resumed) and !Rhythia.was_replay
 		var is_best:bool = false if disqualified else Rhythia.do_pb_check_and_set()
 		if is_best: $NewBest.play()
 		Rhythia.set_meta("last_run_best", is_best) # for ResultsScreen.gd
 		if disqualified:
-			$Result.text = "Disqualified (paused)" if Rhythia.song_end_type == Globals.END_PASS else "You failed! (paused)"
+			var why = "resumed" if resumed else "paused"
+			$Result.text = ("Disqualified (%s)" % why) if Rhythia.song_end_type == Globals.END_PASS else ("You failed! (%s)" % why)
 			$Result.set("custom_colors/font_color",Color("#ff6b6b"))
 		elif Rhythia.song_end_type == Globals.END_PASS:
 			if Rhythia.was_replay: $Result.text = "Replay passed"

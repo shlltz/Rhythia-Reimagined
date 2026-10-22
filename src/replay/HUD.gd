@@ -541,8 +541,29 @@ func _ready():
 
 # Rhythia-reimagined: HUD layout (offset / scale / hidden per side panel), no HIT WINDOW panel,
 # skin images for the border / grid, osu!-style cursor trail
+# skin profile font (Skins.gd): every HUD text in the skin's font at its own size (the grade letter
+# keeps its display face)
+func _skin_font():
+	if !ResourceLoader.exists("res://mods/replay/Skins.gd"): return
+	var S = load("res://mods/replay/Skins.gd")
+	if S.file_of(S.active(), "hud_font") == "": return
+	var stack = [self]
+	while !stack.empty():
+		var n = stack.pop_back()
+		for c in n.get_children(): stack.append(c)
+		if !(n is Label) or n == lettergrade: continue
+		var old = n.get_font("font")
+		var nf = S.hud_font(old.size if old is DynamicFont else 16)
+		if !nf: return
+		if old is DynamicFont and old.outline_size > 0:
+			nf = nf.duplicate()
+			nf.outline_size = old.outline_size
+			nf.outline_color = old.outline_color
+		n.add_font_override("font", nf)
+
 func _reimagined(cf:Dictionary):
 	var R = load("res://mods/replay/Reimagined.gd")
+	_skin_font()
 	if cf.hide_config_hud: $ConfigHud.visible = false
 	for it in R.HUD_ITEMS:
 		var e = R.hud_entry(it[0])
