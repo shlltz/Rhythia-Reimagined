@@ -263,7 +263,7 @@ func _add_topo_background():
 	if !has_node("MapBackdrop"): # the selected map's cover, blurred, behind everything (map pages)
 		var bd = load("res://mods/replay/MapBackdrop.gd").new()
 		add_child(bd)
-		move_child(bd, 0)
+		move_child(bd, 1) # (above the contour lines: they sit under the cover)
 
 # replay viewer mod: sidebar button that opens the replay browser
 func _add_replay_button():

@@ -5,8 +5,8 @@ extends Control
 # small texture do the rest. The loading screen and the results screen use the same texture (Engine
 # meta rr_backdrop) and look, so the background carries on from the map page into the run and back.
 
-const SMALL = 256                 # the texture drawn (made from a ~40 px copy: smooth, no blocks)
-const TINY = 110
+const SMALL = 512                 # the texture drawn (made from a ~40 px copy: smooth, no blocks)
+const TINY = 300
 const FADE = 0.35
 const DIM = 0.44                  # loading / results screens
 const MENU_DIM = 0.3              # behind the map selection menu (dimmer, fades towards both sides)
@@ -14,7 +14,7 @@ const SETTLE = 0.12               # s a pick has to stay before its cover is fet
 const SHADER = """shader_type canvas_item;
 uniform float grey = 0.0;
 uniform float dim = 0.36;
-uniform float radius = 0.008;
+uniform float radius = 0.003;
 uniform float sides = 0.0;        // 1 = fade out towards the left and right screen edges
 void fragment() {
 	vec4 c = vec4(0.0);

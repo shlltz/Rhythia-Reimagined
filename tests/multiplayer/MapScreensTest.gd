@@ -63,7 +63,7 @@ func run():
 	while t < 6 and !(bd and bd.vis >= 1.0 and bd.front.texture != null):
 		yield(wait(0.1), "completed"); t += 0.1
 	ok("map page: blurred cover backdrop up", bd != null and bd.vis >= 1.0 and bd.front.texture != null, "%.1f s" % t)
-	ok("backdrop is the small copy (cheap blur)", bd.front.texture and bd.front.texture.get_width() <= 256, bd.front.texture.get_size() if bd.front.texture else "")
+	ok("backdrop is the small copy (cheap blur)", bd.front.texture and bd.front.texture.get_width() <= 512, bd.front.texture.get_size() if bd.front.texture else "")
 	yield(wait(1.5), "completed")
 	yield(shot("ms_select"), "completed")
 	var pm = menu.find_node("PreviewMusic", true, false)
