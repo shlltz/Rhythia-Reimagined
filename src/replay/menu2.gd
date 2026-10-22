@@ -100,6 +100,8 @@ func _add_osu_screens():
 		_editor_return() # back from a map editor test run: no results screen, straight back to the editor
 		Engine.set_meta("title_seen", true)
 		return
+	if ResourceLoader.exists("res://mods/replay/NamePanel.gd") and load("res://mods/replay/NamePanel.gd").needed():
+		add_child(load("res://mods/replay/NamePanel.gd").new()) # first start: a local username, like osu! offline
 	if Rhythia.has_meta("last_run"):
 		var run = Rhythia.get_meta("last_run")
 		Rhythia.remove_meta("last_run")
@@ -258,6 +260,10 @@ func _add_topo_background():
 	bg.material = mat
 	add_child(bg)
 	move_child(bg, 0)
+	if !has_node("MapBackdrop"): # the selected map's cover, blurred, behind everything (map pages)
+		var bd = load("res://mods/replay/MapBackdrop.gd").new()
+		add_child(bd)
+		move_child(bd, 0)
 
 # replay viewer mod: sidebar button that opens the replay browser
 func _add_replay_button():
@@ -445,14 +451,16 @@ func _process(delta):
 	if Input.is_action_just_pressed("ui_end") and Input.is_key_pressed(KEY_SHIFT):
 		get_tree().change_scene("res://scenes/loaders/menuload.tscn")
 
+	var launch = black_fade_target and Engine.has_meta("rr_launch") # (a map start: slower, smoother zoom)
 	if black_fade_target && black_fade != 1:
-		black_fade = min(black_fade + (delta/0.3),1)
+		black_fade = min(black_fade + (delta/(0.5 if launch else 0.3)),1)
 		$BlackFade.color = Color(0,0,0,black_fade)
 	elif !black_fade_target && black_fade != 0:
 		black_fade = max(black_fade - (delta/0.5),0)
 		$BlackFade.color = Color(0,0,0,black_fade)
 	$BlackFade.visible = (black_fade != 0)
 	_update_launch_zoom()
+	if launch: _launch_frame()
 	_update_parallax(delta)
 
 # ---------------------------------------------------------------- launch zoom
@@ -464,8 +472,23 @@ func _update_launch_zoom():
 	var menu = self # untyped: this script says "extends Node" but the menu root is a ColorRect
 	if !(menu is Control): return
 	menu.rect_pivot_offset = menu.rect_size / 2
-	var s = 1.0 + LAUNCH_ZOOM * black_fade * black_fade # accelerating in, decelerating out
+	var k = black_fade * black_fade # accelerating in, decelerating out
+	if black_fade_target and Engine.has_meta("rr_launch"): k = black_fade * black_fade * (3.0 - 2.0 * black_fade) # (map start: eased both ends)
+	var s = 1.0 + LAUNCH_ZOOM * k
 	menu.rect_scale = Vector2(s, s)
+
+# map start with the cover backdrop up: the menu zooms into the cover while everything else fades,
+# no black - the loading screen opens on the same cover at the same zoom (MapBackdrop, LoadScreen)
+func _launch_frame():
+	var l = Engine.get_meta("rr_launch")
+	if !l.get("seamless", false): return
+	var bd = get_node_or_null("MapBackdrop")
+	if !bd: return
+	$BlackFade.color = Color(0, 0, 0, 0)
+	for c in get_children():
+		if c != bd and c != $BlackFade and c is CanvasItem: c.modulate.a = 1.0 - black_fade
+	l["scale"] = 1.06 * self.rect_scale.x
+	l["offset"] = parallax
 
 # ---------------------------------------------------------------- parallax
 # Mouse position nudges the menu: background drifts more than the content, the
@@ -487,10 +510,33 @@ func _update_parallax(delta):
 	if main_margins.empty():
 		main_margins = [main.margin_left, main.margin_top, main.margin_right, main.margin_bottom]
 	var ui = -parallax * PARALLAX_UI
-	main.margin_left = main_margins[0] + ui.x
-	main.margin_right = main_margins[2] + ui.x
+	var full = main.anchor_left == 0 and main.anchor_top == 0 and main.anchor_right == 1 and main.anchor_bottom == 1
+	if !full: # (not the layout the scaling below assumes)
+		main.margin_left = main_margins[0] + ui.x
+		main.margin_right = main_margins[2] + ui.x
+		main.margin_top = main_margins[1] + ui.y
+		main.margin_bottom = main_margins[3] + ui.y
+		return _parallax_bg(size)
+	# short windows: the pages shrink (the map page was laid out for ~900 px and ran under the
+	# visualizer at 720p); the page starts right of the sidebar (it sat under it)
+	var k = clamp(size.y / PAGE_H, 0.7, 1.0)
+	page_scale = k
+	var sb = get_node_or_null("Sidebar")
+	var left = max(main_margins[0], (sb.rect_size.x + 4) if sb else 0.0)
+	var w = size.x - left + main_margins[2]
+	var h = size.y - main_margins[1] + main_margins[3]
+	main.rect_pivot_offset = Vector2.ZERO
+	main.rect_scale = Vector2(k, k)
+	main.margin_left = left + ui.x
 	main.margin_top = main_margins[1] + ui.y
-	main.margin_bottom = main_margins[3] + ui.y
+	main.margin_right = main.margin_left + w / k - size.x
+	main.margin_bottom = main.margin_top + h / k - size.y
+	_parallax_bg(size)
+
+const PAGE_H = 900.0
+var page_scale:float = 1.0
+
+func _parallax_bg(size:Vector2):
 	var bg = -parallax * PARALLAX_BG
 	var topo = get_node_or_null("TopoBackground")
 	if topo: topo.material.set_shader_param("offset", -bg / size)

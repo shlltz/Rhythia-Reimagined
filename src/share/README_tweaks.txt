@@ -61,9 +61,17 @@ WHAT YOU GET
               7+ stars: glowing screen sides, 10+ stars: cover and Start quake, lightning on
               select, hovering Start dims everything else; speed mods count the stars up;
               10+ stars also get glitch + chromatic aberration (toggle: Customize > Interface)
+  Loading     map card (cover, title, stars, length, notes, mapper, mods, your name) with the
+              square logo turning slowly; the map page's blurred cover and zoom carry on behind it
+              and the song preview keeps playing, muffled, until the run starts
+  Map page    the selected map's cover, blurred and dimmed, behind the whole menu; Start zooms
+              into it. Maps without a cover get contour lines in their difficulty colour
+  Username    asked once at the first start (or play as Guest): a local name like osu! offline,
+              shown on the loading and results screens; Customize > Interface changes it
   Pass        green glow around the screen once every note is done, zoom into the results
-  Results     osu!-style results screen (layout from Rhythia's rewrite): counting score, grade,
-              PASSED / DISQUALIFIED / FAILED, Back / Retry (`) / Watch replay / Analyse;
+  Results     a map card over the map's blurred cover: status, title, stars / difficulty / length,
+              grade inside an accuracy ring, counting score, accuracy / combo / hits / misses /
+              pauses / speed / mods / played tiles, Back / Retry (`) / Watch replay / Analyse;
               after a fail, "From fail point" restarts from the last checkpoint before it with
               score, combo and health as they were (marked as resumed: no personal best, no replay)
   Pause       osu!-style pause screen: ESC pauses (any time, even in the lead-in; Continue / Retry / Quit, ESC again = continue,
@@ -101,20 +109,6 @@ WHAT YOU GET
               jumps, circles, spirals, rotate / scale / mirror, slots 1-9). Quantum Editor keys:
               QWE / ASD / ZXC grid, SHIFT+H / V flips, timing points, Bezier curves (SHIFT+D).
               Live star rating while you map; EXPORT writes .phxm too (map page ... menu as well).
-  Multiplayer "Multiplayer" title card + sidebar button. Create a lobby (your game hosts it while
-              you play - no server needed) or join one: LAN lobbies are found automatically, or
-              type the address / room code shown in the lobby. The host picks the map (SELECT MAP,
-              then PICK FOR LOBBY on the map page), speed and mods; everyone needs the same map
-              (checked: same notes + audio), presses READY, and the host starts. All games start
-              together, No Fail is always on, live scores on the left, ranked results after,
-              chat, kick / make host, reconnect after a short drop. Your own mods / settings come
-              back after each match. Session results only: no personal bests, replays or recent plays.
-              Same network: nothing to set up. Internet: HOST ONLINE goes through a relay server -
-              no port forwarding, VPN or IP addresses; share the room code or the invite link and
-              friends paste it into JOIN. It needs a relay address: none is built in, so use one your
-              community runs or run your own (relay/ folder in the source, docs/RELAY.md). Without a
-              relay: the host forwards TCP port 47320 (or everyone uses Tailscale / ZeroTier /
-              Radmin VPN). Allow SoundSpacePlus.exe in the firewall (TCP 47320, UDP 47321 for LAN).
   Look        Exo 2 font, colours matching the Rhythia logo, Flaticon icons, osu-style results panel,
               bigger settings page
   Language    Vietnamese (pick "Tieng Viet" in the language menu, in place of Polish)

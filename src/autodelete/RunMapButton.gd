@@ -12,8 +12,9 @@ func files_dropped(files:PoolStringArray,_screen:int):
 		Rhythia.replay = Replay.new()
 		Rhythia.replaying = true
 		Rhythia.replay_path = files[0]
+		load("res://mods/replay/MapBackdrop.gd").launch(get_viewport().get_node("Menu")) # (cover, zoom and preview carry on into the loading screen)
 		get_viewport().get_node("Menu").black_fade_target = true
-		yield(get_tree().create_timer(0.35),"timeout")
+		yield(get_tree().create_timer(0.55),"timeout")
 		get_tree().change_scene("res://scenes/loaders/songload.tscn")
 	else:
 		var song
@@ -78,13 +79,15 @@ func _pressed():
 		if bool(sel):
 			Rhythia.ignore_controller_detection = true
 			has_been_pressed = true
+			load("res://mods/replay/MapBackdrop.gd").launch(get_viewport().get_node("Menu")) # (cover, zoom and preview carry on into the loading screen)
 			get_viewport().get_node("Menu").black_fade_target = true
-			yield(get_tree().create_timer(0.35),"timeout")
+			yield(get_tree().create_timer(0.55),"timeout")
 			get_tree().change_scene("res://scenes/loaders/songload.tscn")
 			return
 	else:
+		load("res://mods/replay/MapBackdrop.gd").launch(get_viewport().get_node("Menu")) # (cover, zoom and preview carry on into the loading screen)
 		get_viewport().get_node("Menu").black_fade_target = true
-		yield(get_tree().create_timer(0.35),"timeout")
+		yield(get_tree().create_timer(0.55),"timeout")
 		get_tree().change_scene("res://scenes/loaders/songload.tscn")
 
 	# Debug printing

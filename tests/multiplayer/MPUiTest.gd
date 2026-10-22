@@ -36,7 +36,7 @@ func run():
 	var has_card = false
 	if tm:
 		for it in tm.items: if it[4] == "multiplayer": has_card = true
-	ok("title card", has_card)
+	ok("title card hidden by default (Customize > Interface shows it; the sidebar has it)", !has_card)
 	ok("sidebar button", menu.has_node("Sidebar/L/Multiplayer"))
 	shot("title")
 	tm._close("multiplayer")

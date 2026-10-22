@@ -658,7 +658,19 @@ func _build_interface():
 	_heading(p, "Interface", "Title screen background and less clutter on the map page and in game.")
 	_check(p, "Hide \"Default hitboxes, default hitwindow\" on the map page", cf.hide_hitbox_text, "_if_hitbox")
 	_check(p, "Hide the HIT WINDOW / HITBOX panel and HW / HB text in game", cf.hide_config_hud, "_if_config")
+	var un = LineEdit.new()
+	un.text = str(R.val("player_name"))
+	un.placeholder_text = "Guest"
+	un.max_length = 20
+	un.rect_min_size = Vector2(260, 0)
+	un.connect("text_changed", self, "_if_name")
+	_row(p, "Username (offline)", un)
 	_row(p, "Title background", _seg([["rain", "RAIN"], ["snow", "SNOW"], ["waves", "WAVEY"]], cf.title_bg, "_if_bg"))
+	for k in [["browse", "Browse"], ["editor", "Editor"], ["multiplayer", "Multiplayer"]]:
+		if k[0] == "multiplayer" and !ResourceLoader.exists("res://mods/replay/MPMenu.gd"): continue
+		var cb = _check(p, "Title menu: show the %s card (the sidebar always has it)" % k[1], !(k[0] in Array(R.val("title_hide"))), "_if_title_card")
+		cb.set_meta("rr_card", k[0])
+		cb.add_to_group("rr_title_card_chk")
 	var gap = Control.new()
 	gap.rect_min_size = Vector2(0, 12)
 	p.add_child(gap)
@@ -676,6 +688,15 @@ func _if_hitbox(on:bool):
 func _if_config(on:bool): R.set_val("hide_config_hud", on)
 
 func _if_glitch(on:bool): R.set_val("glitch_fx", on)
+
+func _if_name(t:String):
+	R.set_val("player_name", load("res://mods/replay/NamePanel.gd").clean(t))
+
+func _if_title_card(_on:bool):
+	var hide = []
+	for b in get_tree().get_nodes_in_group("rr_title_card_chk"):
+		if is_instance_valid(b) and !b.pressed: hide.append(b.get_meta("rr_card"))
+	R.set_val("title_hide", hide)
 
 func _if_lite(on:bool):
 	R.set_val("lite_fx", on)

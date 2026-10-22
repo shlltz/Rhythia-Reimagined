@@ -132,7 +132,10 @@ func _ready():
 	root.add_child(topo)
 	apply_bg()
 
+	var hide = Array(load("res://mods/replay/Reimagined.gd").val("title_hide"))
 	for it in ITEMS:
+		if it[4] in hide: continue # (Customize > Interface; the sidebar still has them)
+		if it[4] == "multiplayer" and !ResourceLoader.exists("res://mods/replay/MPMenu.gd"): continue # (shelved: src/shelved/multiplayer)
 		if it[4] != "browse" or ResourceLoader.exists("res://mods/browser/MapBrowser.gd"): items.append(it)
 	for i in items.size():
 		var c = Card.new()

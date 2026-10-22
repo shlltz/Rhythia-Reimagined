@@ -55,7 +55,7 @@ func run():
 	menu = get_tree().current_scene
 	ok("classic menu loaded", menu.filename == CLASSIC, menu.filename)
 	ok("classic hooks added, finished runs come back here", menu.has_node("RRClassic") and Rhythia.menu_target == CLASSIC)
-	ok("sidebar mod buttons", menu.has_node("Sidebar/L/Replays") and menu.has_node("Sidebar/L/Multiplayer") and menu.has_node("Sidebar/L/Customize"))
+	ok("sidebar mod buttons", menu.has_node("Sidebar/L/Replays") and (menu.has_node("Sidebar/L/Multiplayer") or !MP) and menu.has_node("Sidebar/L/Customize"))
 	# title screen -> Play / Settings land on the right classic pages
 	menu.show_title()
 	yield(wait(1.5), "completed")
@@ -111,7 +111,16 @@ func run():
 	ok("Esc on the grid -> title", tm.visible)
 	tm._close("")
 	yield(wait(1.0), "completed")
-	# multiplayer: the host picks the lobby map on the classic pages
+	# multiplayer: the host picks the lobby map on the classic pages (skipped while multiplayer is shelved)
+	if MP: yield(_mp_pick(menu, song, g, hooks), "completed")
+	# a run from the classic menu comes back to it, with the results screen
+	Rhythia.select_song(song)
+	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	yield(_rest(), "completed")
+
+var MP = ResourceLoader.exists("res://mods/replay/MPMenu.gd")
+func _mp_pick(menu, song, g, hooks):
+	var t = 0.0
 	menu.open_multiplayer()
 	yield(wait(1.0), "completed")
 	var m = menu.get_node("Multiplayer")
@@ -139,10 +148,9 @@ func run():
 	yield(wait(0.6), "completed")
 	if menu.has_node("Multiplayer"): menu.get_node("Multiplayer").queue_free()
 	yield(wait(0.3), "completed")
-	# a run from the classic menu comes back to it, with the results screen
-	Rhythia.select_song(song)
-	get_tree().change_scene("res://scenes/loaders/songload.tscn")
-	t = 0.0
+
+func _rest():
+	var t = 0.0
 	var game = null
 	while t < 30 and !game:
 		yield(wait(0.25), "completed"); t += 0.25
@@ -154,7 +162,7 @@ func run():
 	t = 0.0
 	while t < 20 and !get_tree().root.has_node("Menu/ResultsScreen"):
 		yield(wait(0.25), "completed"); t += 0.25
-	menu = get_tree().current_scene
+	var menu = get_tree().current_scene
 	ok("back on the classic menu with the results screen", menu.filename == CLASSIC and menu.has_node("ResultsScreen"), menu.filename)
 	yield(wait(1.0), "completed")
 	shot("results")

@@ -97,7 +97,12 @@ var calculating:bool = false
 
 
 func set_song_name(name:String=Rhythia.selected_song.name):
-	songnametxt.text = name
+	songnametxt.text = _fit_title(name)
+
+# the song name on one line, cut with an ellipsis (it wrapped onto the timer below it)
+func _fit_title(t:String) -> String:
+	if songnametxt.autowrap: return t
+	return load("res://mods/replay/CardUI.gd").fit(t, songnametxt.get_font("font"), songnametxt.rect_size.x - 20)
 
 func song_end(end_type:int):
 	if end_type == Globals.END_GIVEUP and Rhythia.record_replays and !Rhythia.replaying:
@@ -114,7 +119,7 @@ func update_static_values():
 
 	if Game.hits == Game.total_notes: acclabel.text = "100%"
 	elif Game.hits == 0: acclabel.text = "0%"
-	else: acclabel.text = "%.3f%%" % ((Game.hits/Game.total_notes)*100)
+	else: acclabel.text = "%.2f%%" % ((Game.hits/Game.total_notes)*100)
 	Rhythia.song_end_accuracy_str = acclabel.text
 	if not Game.total_notes == 0:
 		accbar.value = Game.hits/Game.total_notes
@@ -226,7 +231,7 @@ func update_timer(ms:float,canSkip:bool=false):
 		if ms >= Game.last_ms + Rhythia.hitwindow_ms:
 			songnametxt.text = "(Intermission)"
 		else:
-			songnametxt.text = Rhythia.selected_song.name
+			songnametxt.text = _fit_title(Rhythia.selected_song.name)
 
 func on_miss(color:Color):
 	miss_flash = 1
@@ -481,7 +486,7 @@ func _ready():
 	if Rhythia.visual_mode:
 		$EnergyVP/Control/Modifiers.visible = false
 	
-	songnametxt.text = Rhythia.selected_song.name
+	songnametxt.text = _fit_title(Rhythia.selected_song.name)
 	
 	
 	
@@ -564,6 +569,7 @@ func _skin_font():
 func _reimagined(cf:Dictionary):
 	var R = load("res://mods/replay/Reimagined.gd")
 	_skin_font()
+	_refine()
 	if cf.hide_config_hud: $ConfigHud.visible = false
 	for it in R.HUD_ITEMS:
 		var e = R.hud_entry(it[0])
@@ -581,3 +587,50 @@ func _reimagined(cf:Dictionary):
 		var ot = load("res://mods/replay/OsuTrail.gd").new(Spawn.get_node("Cursor"))
 		ot.name = "OsuTrail"
 		get_parent().call_deferred("add_child", ot)
+
+# Rhythia-reimagined HUD refinement: the classic side panels, ring and bars stay; captions become
+# small and faded over big values (the player's own HUD colours kept: only alpha / size change), the
+# song name stays on one line, the score caption is back, the grade is bigger, bars sit inside the panels
+func _refine():
+	_font_size(songnametxt, 34)
+	songnametxt.autowrap = false
+	songnametxt.clip_text = true
+	songnametxt.valign = Label.VALIGN_CENTER
+	songnametxt.rect_position = Vector2(0, 70); songnametxt.rect_size = Vector2(900, 70)
+	_font_size(timelabel, 34)
+	timelabel.valign = Label.VALIGN_CENTER
+	timelabel.rect_position = Vector2(0, 150); timelabel.rect_size = Vector2(900, 80)
+	timebar.rect_position = Vector2(50, 246); timebar.rect_size = Vector2(800, 14)
+	var left = $LeftVP/Control
+	var right = $RightVP/Control
+	for c in [["PausesTitle", 280], ["AccuracyTitle", 652]]: _caption(left.get_node(c[0]), c[1])
+	for c in [["ScoreTitle", 40], ["MissesTitle", 280], ["NoteTitle", 652]]: _caption(right.get_node(c[0]), c[1])
+	right.get_node("ScoreTitle").visible = true
+	for c in [[left, "Pauses", 330], [left, "Accuracy", 702], [right, "Score", 90], [right, "Misses", 330], [right, "Notes", 702]]:
+		var l = c[0].get_node(c[1])
+		_font_size(l, 58)
+		l.rect_position = Vector2(0, c[2]); l.rect_size = Vector2(300, 80)
+		l.valign = Label.VALIGN_CENTER
+	_font_size(lettergrade, 124)
+	lettergrade.rect_position = Vector2(0, 450); lettergrade.rect_size = Vector2(300, 170)
+	lettergrade.valign = Label.VALIGN_CENTER
+	accbar.rect_position = Vector2(30, 830); accbar.rect_size = Vector2(240, 14) # (it stuck out past the panel)
+	comboring.rect_position = Vector2(40, 30); comboring.rect_size = Vector2(220, 220) # (clear of the grid edge)
+	comboring.rect_pivot_offset = Vector2(110, 110)
+	for n in comboring.get_children():
+		if n is Control: n.rect_size = Vector2(220, 220)
+	_font_size(combotxt, 84)
+	songnametxt.text = _fit_title(Rhythia.selected_song.name)
+
+func _caption(l:Label, y:float):
+	_font_size(l, 26)
+	l.modulate.a = 0.55
+	l.rect_position = Vector2(0, y); l.rect_size = Vector2(300, 50)
+	l.valign = Label.VALIGN_CENTER
+
+func _font_size(l:Label, size:int):
+	var f = l.get_font("font")
+	if !(f is DynamicFont) or f.size == size: return
+	var nf = f.duplicate()
+	nf.size = size
+	l.add_font_override("font", nf)

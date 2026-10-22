@@ -54,6 +54,8 @@ func _exit_tree():
 var fit_t:float = 0.0
 func _process(delta):
 	if !analyzer or !is_visible_in_tree(): return
+	var ps = get_parent().get("page_scale") # (short windows: the strip shrinks with the pages, menu2)
+	if ps != null and !is_equal_approx(margin_top, -(HEIGHT * ps + BOTTOM_GAP)): margin_top = -(HEIGHT * ps + BOTTOM_GAP)
 	fit_t -= delta
 	if fit_t <= 0:
 		fit_t = 0.3

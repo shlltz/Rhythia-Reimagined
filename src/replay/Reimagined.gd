@@ -7,6 +7,7 @@ const FILE = "user://reimagined.json"
 const COLL_FILE = "user://collections.json"
 const SKIN_DIR = "user://reimagined_skin"
 const DEFAULTS = {
+	"title_hide": ["browse", "multiplayer"], # title menu cards left out (still in the sidebar)
 	"trail_style": "game",      # game = the game's own trail (Settings) | osu | off
 	"trail_color": "",          # "" = cursor colour, else html colour
 	"trail_alpha": 1.0,
@@ -20,8 +21,10 @@ const DEFAULTS = {
 	"half_ghost_length": 1.0,   # Half Ghost: how long the notes take to fade (1.0 = game default)
 	"swept_hitbox": true,       # count notes the cursor passes through between frames (NoteManager)
 	"rewrite_feel": false,      # runs use the Rhythia rewrite's default look (RewriteFeel.gd)
+	"player_name": "",          # offline username (NamePanel.gd; shown on the loading / results screens)
 	"mp_name": "",              # multiplayer display name ("" = a generated playerNNNN; not an account)
 	"mp_recent": [],            # multiplayer: last joined addresses
+	"mp_relay": "",             # multiplayer: the relay server for online lobbies (typed by the player; none built in)
 	"lite_fx": false,           # lighter effects for low-end PCs (also switched on for the session by fps_watch)
 	"glitch_fx": true,          # glitch + chromatic aberration (10+ star maps, title logo)
 	"title_bg": "rain",         # title screen background: rain | snow | waves (topographic)
