@@ -29,13 +29,13 @@ void vertex() { p = VERTEX; }
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
 	if (topo > 0.5) {
-		vec2 v = p / 150.0 + seed;
-		vec2 q = vec2(fbm(v), fbm(v + vec2(5.2, 1.3)));
-		float h = fbm(v + 1.6 * q) * 9.0;
+		vec2 v = p / 360.0 + seed; // (broad, smooth shapes: two soft octaves, gentle warp)
+		float h = noise(v + 0.35 * vec2(noise(v * 0.7 + 3.1), noise(v * 0.7 + 7.4))) * 0.7 + noise(v * 1.9 + 11.0) * 0.3;
+		h *= 15.0;
 		float d = abs(fract(h - 0.5) - 0.5) / max(fwidth(h), 0.0001);
-		float line = 1.0 - clamp(d - 0.3, 0.0, 1.0);
-		float major = step(0.5, fract(floor(h) * 0.2 + 0.05)) * 0.5 + 0.5;
-		c = vec4(tint.rgb * 0.16 + vec3(0.025) + tint.rgb * line * major * 0.6, 1.0);
+		float line = 1.0 - smoothstep(0.35, 1.25, d); // (thin, even, anti-aliased)
+		float major = 1.0;
+		c = vec4(tint.rgb * 0.08 + vec3(0.02) + tint.rgb * line * 0.75, 1.0);
 	}
 	vec2 q = vec2(min(p.x, size.x - p.x), p.y);
 	float a = 1.0;
