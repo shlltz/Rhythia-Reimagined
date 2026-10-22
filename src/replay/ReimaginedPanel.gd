@@ -1509,7 +1509,7 @@ class HudEditor extends Control:
 			var lh = font.get_height() + 2
 			var y0 = r.position.y + r.size.y / 2 - lh * lines.size() / 2.0 + font.get_ascent()
 			for j in lines.size():
-				var f = font if j < lines.size() - 1 else font_small
+				var f = font if j < lines.size() - 1 and font.get_string_size(lines[j]).x <= r.size.x - 6 else font_small # (long names in narrow panels)
 				var tc = Color(1, 1, 1, (0.85 if on else 0.3) if j < lines.size() - 1 else 0.4)
 				var tw = f.get_string_size(lines[j]).x
 				draw_string(f, Vector2(r.position.x + (r.size.x - tw) / 2, y0 + j * lh), lines[j], tc)

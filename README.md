@@ -10,6 +10,9 @@ A mod pack for **Rhythia Legacy / Sound Space Plus nightly** (the Godot 3.6.2 bu
 **Just want to play?** Get a zip from the [Releases](../../releases) page:
 - **portable**: unzip it and run `SoundSpacePlus.exe`.
 - **patch**: unzip it into your game folder and run `Install.bat`.
+- **linux**: unzip it, then run `SoundSpacePlus.x86_64`.
+
+**Updating:** portable installs (2.0 or newer) update from Customize → Storage → Updates. With the patch, run the new `Install.bat` over the old one: it restores the original game file first. Your maps, scores, replays and settings live in `%APPDATA%\SoundSpacePlus` (Linux: `~/.local/share/SoundSpacePlus`) and aren't touched by either.
 
 ## Features
 

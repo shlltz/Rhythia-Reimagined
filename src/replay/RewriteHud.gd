@@ -31,6 +31,7 @@ var time:Label
 var progress:Control
 var health:Control
 var hit_row:Array = []
+var title_src:String = "~"
 
 var hit_a:float = REST_ALPHA
 var miss_a:float = REST_ALPHA
@@ -266,12 +267,16 @@ func _update(delta:float):
 		if m != last_misses: miss_a = 1.0
 		last_hits = h
 		last_misses = m
-		hit_a = move_toward(hit_a, REST_ALPHA, delta * 1.5)
-		miss_a = move_toward(miss_a, REST_ALPHA, delta * 1.5)
-		hits.add_color_override("font_color", Color(1, 1, 1, hit_a))
-		misses.add_color_override("font_color", Color(1, 1, 1, miss_a))
+		var ha = move_toward(hit_a, REST_ALPHA, delta * 1.5)
+		var ma = move_toward(miss_a, REST_ALPHA, delta * 1.5)
+		if ha != hit_a: hits.add_color_override("font_color", Color(1, 1, 1, ha)) # (only while it fades: an override redraws)
+		if ma != miss_a: misses.add_color_override("font_color", Color(1, 1, 1, ma))
+		hit_a = ha
+		miss_a = ma
 	if title:
-		title.text = hud.songnametxt.text
+		if hud.songnametxt.text != title_src: # (shortened with an ellipsis for this label's own font and width)
+			title_src = hud.songnametxt.text
+			title.text = load("res://mods/replay/CardUI.gd").fit(title_src, title.get_font("font"), title.rect_size.x - 40)
 		time.text = hud.timelabel.text
 		progress.set_value(hud.timebar.value)
 	if health:
