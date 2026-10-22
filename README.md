@@ -20,6 +20,12 @@ A mod pack for **Rhythia Legacy / Sound Space Plus nightly** (the Godot 3.6.2 bu
 | **Map page** | The cover art works as a visualizer: it hits on the map's own notes and has spectrum bars around it. Maps over 7★ get glowing screen sides. Maps over 10★ add chromatic aberration over the whole screen and glitch bursts on the cover and map card, make the cover and Start quake, a lightning bolt strikes when you select one, and hovering Start dims everything else. The mods menu wipes up. |
 | **Browse** | Search and download maps from rhythia.com inside the game, in a panel that slides up. |
 | **Replays** | A replay browser and viewer. You can seek, change speed, pause, step frame by frame and hide the UI. Misses show as red ticks on the timeline. |
+| **Replay Studio** | Accuracy, combo and cursor speed over the song, a cursor heatmap, aim against the hitbox and hit delay per note. Jump to any miss, compare with another replay or your best, and export 3-10 s clips as GIF (or MP4 with sound when ffmpeg is installed). |
+| **Editor** | A map editor for real `.sspm` maps: BPM and offset detected from the song, pattern tools, Quantum Editor keys (grid keys, flips, timing points, Bezier curves), a live star rating, and `.phxm` export. Details in [docs/EDITOR.md](docs/EDITOR.md). |
+| **Library** | Duplicate finder, tags, bulk rename with undo, smart playlists, statistics and cleanup, and an importer for the Rhythia rewrite's maps. |
+| **Skins** | A skin editor for notes, cursor, trail, hit/miss effects and sounds and HUD colours, with a live preview, several profiles and `.rrskin` files to share. |
+| **Retry from fail point** | After a fail, restart from the last checkpoint before it, with score, combo and health restored. Resumed runs are marked and can't set a personal best. |
+| **Updates** | The portable version checks GitHub for new releases. Updates are signed and verified before they install, and can be rolled back ([docs/UPDATES.md](docs/UPDATES.md)). |
 | **Customize** (F1) | Cursor trail: the game's own trail, an osu!-style trail, or off, with colour, opacity, length and size. A drag-and-drop HUD layout editor. Skins for the border, grid, trail, logo and sidebar icons. Interface toggles. Storage: move your user folder (maps, replays, scores) to another drive (Windows). |
 | **Gameplay** | osu!-style pause screen and results screen. Swept hitbox (Settings → Modifiers): a fast flick that crosses a note between two frames counts as a hit, with the same hitbox size and hit window. A green glow when you pass a map, then a zoom into the results. Adjustable half-ghost fade. |
 | **Menu** | Springy buttons, animations, audio visualizer, Alt + mouse wheel volume, and a pause-all-music button. Icons are Flaticon UIcons. |
@@ -44,7 +50,7 @@ py -3 ssp_mod.py tweaks      # build the share zip (With-Browser / No-Browser in
 py -3 ssp_mod.py portable    # build the ready-to-play zip
 ```
 
-Run `py -3 ssp_mod.py --help` to see every command.
+Run `py -3 ssp_mod.py --help` to see every command. Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/TESTING.md](docs/TESTING.md).
 
 ## How it works
 

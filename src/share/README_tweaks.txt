@@ -63,7 +63,9 @@ WHAT YOU GET
               10+ stars also get glitch + chromatic aberration (toggle: Customize > Interface)
   Pass        green glow around the screen once every note is done, zoom into the results
   Results     osu!-style results screen (layout from Rhythia's rewrite): counting score, grade,
-              PASSED / DISQUALIFIED / FAILED, Back / Retry (`) / Watch replay
+              PASSED / DISQUALIFIED / FAILED, Back / Retry (`) / Watch replay / Analyse;
+              after a fail, "From fail point" restarts from the last checkpoint before it with
+              score, combo and health as they were (marked as resumed: no personal best, no replay)
   Pause       osu!-style pause screen: ESC pauses (any time, even in the lead-in; Continue / Retry / Quit, ESC again = continue,
               counts back in by itself); SPACE only skips intros. A paused run is disqualified
               (no personal best). Quick retry: hold ` (left of 1) during a run - the screen fades
@@ -72,6 +74,17 @@ WHAT YOU GET
               (SHIFT 1s, CTRL 15s) | UP/DOWN speed 0.25x-2x | , . frame step | drag the bar
               | H hide UI (twice = whole HUD) | K keybind panel | ESC leave;
               misses show as red ticks on the replay bar
+  Studio      "Studio" in the replay browser, "Analyse" on the results screen: accuracy, combo and
+              cursor speed over the song, cursor heatmap, aim against the hitbox, hit delay per note,
+              miss list (N / SHIFT+N), compare with another replay or your best on the map,
+              WATCH FROM any moment, and 3-10 s clips as GIF (MP4 with sound if ffmpeg is installed)
+  Library     "Library" sidebar button: duplicate finder (same notes, even from another editor),
+              tags (search tag=name), bulk rename with undo, smart playlists (stars, played,
+              failed / added in N days, favourites, tags...) in the collection filter, statistics,
+              cache cleanup, and an importer for the Rhythia rewrite's map library
+  Skins       Customize > Skin > Skin editor: notes (shape, own .obj, colours, size, spin, image),
+              cursor + trail, hit / miss effects and sounds, HUD font and colours; live preview,
+              several profiles, .rrskin files to share them
   Colorsets   Settings > Notes > Note Colors: a "+" cell after the last colorset opens the Colorset
               Maker (name, colours with a picker, add / remove / reorder, mirror, load an existing
               set, Save / Save & Use). Saved as colorsets/<name>.txt like hand-made ones.
@@ -84,6 +97,10 @@ WHAT YOU GET
               the real game and returns to the same session. SPACE play | LEFT/RIGHT step | B bookmark
               | L loop | CTRL+Z/Y/C/V/D/A/S | ESC leave. Original library maps are never overwritten
               (built-in / online maps open as a *_edit copy).
+              AUTO tab: BPM + offset from the song itself, beat markers, pattern tools (streams,
+              jumps, circles, spirals, rotate / scale / mirror, slots 1-9). Quantum Editor keys:
+              QWE / ASD / ZXC grid, SHIFT+H / V flips, timing points, Bezier curves (SHIFT+D).
+              Live star rating while you map; EXPORT writes .phxm too (map page ... menu as well).
   Multiplayer "Multiplayer" title card + sidebar button. Create a lobby (your game hosts it while
               you play - no server needed) or join one: LAN lobbies are found automatically, or
               type the address / room code shown in the lobby. The host picks the map (SELECT MAP,
@@ -100,7 +117,10 @@ WHAT YOU GET
               bigger settings page
   Language    Vietnamese (pick "Tieng Viet" in the language menu, in place of Polish)
   Discord     status shows "Playing Glitchia"
-  FPS         small performance tweaks (visuals unchanged)
+  FPS         small performance tweaks (visuals unchanged); Customize > Device has a low-end
+              profile (with RESTORE)
+  Updates     portable version: Customize > Storage checks GitHub for a new release; updates are
+              signed and checked before they're installed, and ROLL BACK undoes one
 
 CREDITS
   Rhythia|Reimagined
