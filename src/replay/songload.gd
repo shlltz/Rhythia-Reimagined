@@ -203,7 +203,8 @@ func _process(delta):
 	$Music.volume_db = -8 - (50*black_fade)
 	if black_fade_target && black_fade != 1:
 		black_fade = min(black_fade + (delta/0.6),1)
-		$BlackFade.color = Color(0,0,0,black_fade * black_fade * (3.0 - 2.0 * black_fade)) # (eased)
+		var shade = 0.0 if !cancelled else black_fade * black_fade * (3.0 - 2.0 * black_fade) # (into a run: no black, RunIntro crossfades; back to the menu: eased black)
+		$BlackFade.color = Color(0,0,0,shade)
 	elif !black_fade_target && black_fade != 0:
 		black_fade = max(black_fade - (delta/0.3),0)
 		$BlackFade.color = Color(0,0,0,black_fade * black_fade * (3.0 - 2.0 * black_fade))
@@ -214,6 +215,7 @@ func _process(delta):
 	if cancelled and black_fade == 1: get_tree().change_scene("res://scenes/loaders/menuload.tscn")
 	
 	if leaving and result and black_fade == 1:
+		if ResourceLoader.exists("res://mods/replay/RunIntro.gd"): load("res://mods/replay/RunIntro.gd").start(get_tree())
 		get_tree().change_scene_to(result)
 
 # Esc on the loading screen: back to the map page (before the fade into the run starts)
