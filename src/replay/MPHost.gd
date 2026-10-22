@@ -3,12 +3,16 @@ extends Node
 # Accepts connections, splits the byte stream into lines, rate-limits and size-limits them, maps
 # connections to player ids for MPLobby (which holds all the rules), writes MPLobby's replies
 # without ever blocking the frame, and announces the lobby on the LAN (UDP broadcast).
+# Online lobbies: players can also come in through a relay tunnel (MPRelay.Tunnel, an outbound
+# WebSocket) as streams that look like TCP connections, so every rule below applies the same.
 # Lives under the hosting player's MPClient (root, survives scene changes, runs while paused).
 
 signal stopped(reason)
+signal tunnel_changed
 
 const P = preload("res://mods/replay/MPProto.gd")
 const Lobby = preload("res://mods/replay/MPLobby.gd")
+const Relay = preload("res://mods/replay/MPRelay.gd")
 const MSG_RATE = 40.0           # messages per second a connection may send (burst BURST)
 const BURST = 80.0
 const MAX_OUT = 1048576         # unsent bytes before a connection counts as stuck
@@ -20,6 +24,9 @@ var conns:Array = []
 var beacon:PacketPeerUDP
 var running:bool = false
 var _beacon_t:int = -100000
+var tunnel = null                # MPRelay.Tunnel while the lobby is also online through a relay
+var relay_base:String = ""
+var _tunnel_seen:int = -1
 
 func _ready():
 	name = "MPHost"
@@ -36,6 +43,12 @@ func start(cfg:Dictionary) -> String:
 	var ips = P.lan_ips()
 	for ip in ips: lobby.addresses.append("%s:%d" % [ip, port])
 	lobby.code = P.room_code(ips[0], port) if ips.size() > 0 else ""
+	relay_base = str(cfg.get("relay", ""))
+	if relay_base != "":
+		lobby.online = true
+		lobby.addresses = [] # (online lobbies don't show the host's private addresses to players)
+		lobby.code = ""
+		tunnel = Relay.Tunnel.new(relay_base, P.VERSION, P.MAX_PLAYERS - 1) # (the lobby's own player limit still applies)
 	beacon = PacketPeerUDP.new()
 	beacon.set_broadcast_enabled(true)
 	beacon.set_dest_address("255.255.255.255", P.LAN_PORT)
@@ -52,6 +65,7 @@ func stop(reason:String = "the host closed the lobby"):
 		if c.pid > 0: c.peer.put_data(P.encode({t = "closing", reason = reason}))
 		c.peer.disconnect_from_host()
 	conns = []
+	if tunnel: tunnel.end() # (the relay revokes the room code at once)
 	if server: server.stop()
 	if beacon: beacon.close()
 	print("[mp] lobby closed: " + reason)
@@ -63,18 +77,23 @@ func _exit_tree():
 func _process(_d):
 	if !running: return
 	var now = P.now_ms()
-	while server.is_connection_available():
-		var peer = server.take_connection()
-		if conns.size() >= P.MAX_PLAYERS * 3:
-			peer.disconnect_from_host()
-			continue
-		peer.set_no_delay(true)
-		conns.append({peer = peer, inbuf = PoolByteArray(), out = PoolByteArray(), pid = 0, opened = now,
-			last_rx = now, tokens = BURST, tok_t = now, bad = 0, closing = 0})
+	while server.is_connection_available(): _accept(server.take_connection(), now, false)
+	if tunnel:
+		tunnel.poll(now)
+		while tunnel.is_connection_available(): _accept(tunnel.take_connection(), now, true)
+		if tunnel.changes != _tunnel_seen:
+			_tunnel_seen = tunnel.changes
+			var c = tunnel.code if tunnel.state == "ready" else ""
+			if c != lobby.code or (c != "" and lobby.invite == ""):
+				lobby.code = c
+				lobby.invite = Relay.invite(relay_base, c) if c != "" else ""
+				lobby.lobby_dirty = true
+			emit_signal("tunnel_changed")
 	for c in conns.duplicate(): _read(c, now)
 	lobby.tick(now)
 	_dispatch(now)
 	for c in conns.duplicate(): _write(c, now)
+	if tunnel: tunnel.flush()
 	if lobby.closed:
 		stop("the host left")
 		return
@@ -83,6 +102,14 @@ func _process(_d):
 		var b = {rr_mp = P.VERSION, name = lobby.lobby_name, port = port, n = lobby.active_count(), max = lobby.max_players,
 			state = lobby.state, map = lobby.map.get("name", ""), pw = lobby.password != "", code = lobby.code}
 		beacon.put_packet(to_json(b).to_utf8()) # (errors ignored: some networks drop broadcasts)
+
+func _accept(peer, now:int, relayed:bool):
+	if conns.size() >= P.MAX_PLAYERS * 3:
+		peer.disconnect_from_host()
+		return
+	peer.set_no_delay(true)
+	conns.append({peer = peer, inbuf = PoolByteArray(), out = PoolByteArray(), pid = 0, opened = now,
+		last_rx = now, tokens = BURST, tok_t = now, bad = 0, closing = 0, relayed = relayed})
 
 func _read(c:Dictionary, now:int):
 	if c.peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:

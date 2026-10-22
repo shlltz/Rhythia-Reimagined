@@ -1,0 +1,9 @@
+# Caddy gets and renews the HTTPS certificate for RELAY_DOMAIN by itself (ports 80 + 443 must reach it).
+# WebSocket upgrades pass through reverse_proxy as they are; Caddy sets X-Forwarded-For to the real client.
+{$RELAY_DOMAIN} {
+	reverse_proxy relay:8080
+	log {
+		output stdout
+		format json
+	}
+}

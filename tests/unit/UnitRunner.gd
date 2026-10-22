@@ -2,7 +2,8 @@ extends SceneTree
 # Pure unit tests (no game files, no game autoloads; run.py copies the scripts in under
 # res://mods/replay/ with the build stamps): editor timing sections + undo selection, pattern tools,
 # audio tempo / offset from synthetic envelopes, the GIF writer (decoded back by a decoder in this
-# file), the updater's version rules and manifest signature checks. Exit code 1 on any failure.
+# file), the updater's version rules and manifest signature checks, online lobby addresses / codes /
+# invite links (MPRelay). Exit code 1 on any failure.
 
 var passed = 0
 var failed = 0
@@ -18,6 +19,7 @@ func _init():
 	_auto()
 	_gif()
 	_updater()
+	_relay()
 	print("== totals: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed > 0 else 0)
 
@@ -219,3 +221,22 @@ func _sha(b:PoolByteArray) -> PoolByteArray:
 	h.start(HashingContext.HASH_SHA256)
 	h.update(b)
 	return h.finish()
+
+# ------------------------------------------------------------------ online lobbies (relay addresses, codes, invites)
+func _relay():
+	var R = load("res://mods/replay/MPRelay.gd")
+	ok("relay: bare domain -> wss", R.base_url("relay.example.org") == "wss://relay.example.org")
+	ok("relay: https + path -> wss, trailing slash gone", R.base_url("https://r.example.org/rr/") == "wss://r.example.org/rr")
+	ok("relay: localhost / 127.x stay plain ws (testing)", R.base_url("127.0.0.1:8080") == "ws://127.0.0.1:8080" and R.base_url("localhost:9") == "ws://localhost:9")
+	ok("relay: junk refused", R.base_url("") == "" and R.base_url("a b") == "" and R.base_url("<script>") == "" and R.base_url("ftp:x y") == "")
+	ok("relay: codes normalised", R.norm_code("abcd efgh") == "ABCD-EFGH" and R.norm_code("ABCD-EFGH") == "ABCD-EFGH")
+	ok("relay: not codes", R.norm_code("ABCD-EFG") == "" and R.norm_code("ABCD-EFG0") == "" and R.norm_code("ABCDE-FGHJK") == "")
+	var inv = R.invite("wss://r.example.org/rr", "ABCD-EFGH")
+	ok("relay: invite link", inv == "https://r.example.org/rr/j/ABCD-EFGH", inv)
+	var back = R.parse_invite(inv)
+	ok("relay: invite round trip", back.get("base") == "wss://r.example.org/rr" and back.get("code") == "ABCD-EFGH", back)
+	ok("relay: local invite stays ws", R.parse_invite("http://127.0.0.1:47390/j/abcd-efgh").get("base") == "ws://127.0.0.1:47390")
+	ok("relay: bare code has no relay", R.parse_invite(" abcdefgh ").get("base") == "" and R.parse_invite("hello").empty())
+	ok("relay: a LAN address is not an invite", R.parse_invite("192.168.1.20:47320").empty())
+	ok("relay: refusals that can't be retried", "full" in R.FINAL and "expired" in R.FINAL and !("host_away" in R.FINAL))
+	ok("relay: messages explain", "full" in R.describe("full", "").to_lower() and "rr-mp-0" in R.describe("game_version", "the host plays rr-mp-1, you have rr-mp-0"))

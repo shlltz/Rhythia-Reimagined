@@ -14,6 +14,15 @@ py -3 tests/unit/run.py path/to/godot-3.6.2
 runs it with the official Godot 3.6.2 headless build. Locally, a copy of the game's own
 `SoundSpacePlus.exe` works too, as long as no `.pck` sits next to the copy.
 
+## Relay tests (no game needed)
+
+```bash
+py -3 relay/test_relay.py
+```
+
+Real sockets on 127.0.0.1 against the relay in `relay/rr_relay.py`: forwarding, refusals, limits,
+expiry, malformed frames, 100 rooms at once, TLS. CI runs it.
+
 ## Game tests (tests/multiplayer)
 
 ```bash
@@ -37,6 +46,7 @@ Every feature test should pass on both `own` and `share`. The newer drivers:
 | `GifTest.gd` | GIF writer decoded by ffmpeg |
 | `DeviceTest.gd` | low-end profile + restore, gyroscope cursor (fed through a test hook), touch-sized buttons |
 | `UpdaterTest.gd` | updates against a local server + sandbox: refusals, install, confirm, rollback; a real openssl-signed manifest |
+| `relay_e2e.py` (`MPRelayA/B/C.gd`, `MPRelayTls.gd`) | online lobbies: a real relay process + three game instances, latency, reconnects, refusals, TLS (`docs/RELAY.md`) |
 | `CheckpointTest.gd` | retry from the fail point |
 | `LibraryTest.gd`, `PhxmTest.gd`, `SkinTest.gd` | library tools, `.phxm`, skins |
 | `PerfBench.gd` | performance (`docs/PERF.md`) |

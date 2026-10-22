@@ -5,6 +5,7 @@ extends CanvasLayer
 # MPClient (root "RRMultiplayer"); every button calls a client action the host then checks.
 
 const P = preload("res://mods/replay/MPProto.gd")
+const Relay = preload("res://mods/replay/MPRelay.gd")
 const Look = preload("res://mods/replay/Look.gd")
 const UIAnim = preload("res://mods/replay/UIAnim.gd")
 const TOP_H = 56.0
@@ -36,6 +37,9 @@ var c_max_lbl:Label
 var c_port:LineEdit
 var c_status:Label
 var c_btn:Button
+var c_online_btn:Button
+var c_relay:LineEdit
+var j_relay:LineEdit
 # join
 var j_addr:LineEdit
 var j_pw:LineEdit
@@ -287,6 +291,8 @@ func _show(s:String):
 			if c_name.text == "": c_name.text = "%s's lobby" % client.my_name
 			c_status.text = ""
 			c_btn.disabled = false
+			c_online_btn.disabled = false
+			c_relay.text = str(client._cfg("mp_relay", ""))
 		"join":
 			back_btn.text = "BACK"
 			j_status.text = ""
@@ -300,13 +306,35 @@ func _show(s:String):
 			_refresh_chat()
 	_refresh_status()
 
+# the host's view of its relay tunnel: what players can do right now
+func _tunnel_status() -> String:
+	var h = client.host_node
+	if !h or !is_instance_valid(h) or !h.tunnel: return "LAN"
+	var tu = h.tunnel
+	match tu.state:
+		"connecting": return "CONNECTING TO THE RELAY"
+		"creating": return "CREATING ROOM"
+		"ready":
+			var n = 0
+			for c in h.conns:
+				if c.relayed and c.pid > 0: n += 1
+			return ("ONLINE %s   /   " % tu.code) + (("%d VIA RELAY" % n) if n > 0 else "WAITING FOR PLAYERS") + (("   /   RELAY %d MS" % tu.relay_rtt) if tu.relay_rtt >= 0 else "")
+		"reconnecting": return ("RELAY: RECONNECTING (%s)" % tu.error_text.to_upper()) if tu.error_text != "" else "RELAY: RECONNECTING"
+		"failed": return "RELAY FAILED: " + tu.error_text.to_upper()
+	return "LAN"
+
 func _refresh_status():
 	var t = ""
 	match client.status:
 		"idle": t = ""
 		"online":
-			t = ("%d ms" % client.rtt) if client.rtt >= 0 else "online"
-			if client.hosting(): t = "HOSTING   /   " + t
+			t = ("%d MS" % client.rtt) if client.rtt >= 0 else "ONLINE"
+			if client.relayed():
+				var rr = client.relay_rtt()
+				var j = client.jitter()
+				t = "RELAYED   /   PING " + t + ((" (%d TO RELAY)" % rr) if rr >= 0 else "") + (("   /   JITTER %d MS" % j) if j >= 0 else "")
+			elif client.hosting(): t = "HOSTING   /   " + _tunnel_status()
+			else: t = "DIRECT   /   PING " + t
 		"reconnecting": t = "RECONNECTING..."
 		_: t = client.status_text.to_upper()
 	status_lbl.text = t
@@ -343,7 +371,8 @@ func _build_home():
 	c[1].add_child(_lbl("HOW TO CONNECT", 13, Look.TEXT_3))
 	for line in [
 		"Same network (home Wi-Fi / LAN): one player creates a lobby, the others open JOIN and pick it from LAN lobbies, or type the room code or address shown in the lobby.",
-		"Over the internet: there is no central server or relay. The host forwards TCP port %d on their router to their computer and shares their public IP (e.g. 203.0.113.7:%d) - or everyone joins the same virtual LAN (Tailscale, ZeroTier, Radmin VPN) and uses that address." % [P.PORT, P.PORT],
+		"Over the internet: CREATE LOBBY > HOST ONLINE opens the lobby through a relay server - no port forwarding, VPN or IP addresses. Share the room code or the invite link; friends paste it into JOIN. This needs a relay server address: this game has none built in, so use one your community runs or run your own (relay/ folder, docs/RELAY.md).",
+		"Without a relay: the host forwards TCP port %d on their router and shares their public IP (e.g. 203.0.113.7:%d), or everyone joins the same virtual LAN (Tailscale, ZeroTier, Radmin VPN)." % [P.PORT, P.PORT],
 		"Firewall: allow SoundSpacePlus.exe when Windows asks (TCP %d for lobbies, UDP %d for finding lobbies on the LAN). Phones on mobile data can usually join but not host." % [P.PORT, P.LAN_PORT],
 		"Everyone needs the same map in their library. Multiplayer always plays with No Fail; scores here are session results, not verified records."]:
 		var l = _lbl(line, 14, Look.TEXT_2)
@@ -402,12 +431,22 @@ func _build_create():
 	c_port = _edit(str(P.PORT))
 	c_port.text = str(P.PORT)
 	b.add_child(c_port)
-	var note = _lbl("Your game hosts the lobby while you play - keep it open. Others connect to your address on this port.", 13, Look.TEXT_3)
+	var note = _lbl("Your game hosts the lobby while you play - keep it open. On this network, others connect to your address on this port.", 13, Look.TEXT_3)
 	note.autowrap = true
 	v.add_child(note)
-	c_btn = _btn("CREATE LOBBY", "_create", [], 0, 52)
+	v.add_child(_lbl("RELAY SERVER (for HOST ONLINE)", 13, Look.TEXT_3))
+	c_relay = _edit("relay.example.org")
+	c_relay.text = str(client._cfg("mp_relay", ""))
+	v.add_child(c_relay)
+	var br = _row(v, 12)
+	c_btn = _btn("CREATE LAN LOBBY", "_create", [false], 0, 52)
 	c_btn.add_font_override("font", _font(18))
-	v.add_child(c_btn)
+	c_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	br.add_child(c_btn)
+	c_online_btn = _btn("HOST ONLINE", "_create", [true], 0, 52)
+	c_online_btn.add_font_override("font", _font(18))
+	c_online_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	br.add_child(c_online_btn)
 	c_status = _lbl("", 14, Look.TEXT_2)
 	c_status.autowrap = true
 	v.add_child(c_status)
@@ -416,18 +455,28 @@ func _c_max(d:int):
 	c_max = int(clamp(c_max + d, 2, P.MAX_PLAYERS))
 	c_max_lbl.text = str(c_max)
 
-func _create():
+func _create(online:bool = false):
 	var port = int(c_port.text) if c_port.text.strip_edges().is_valid_integer() else -1
 	if port < 1024 or port > 65535:
 		c_status.text = "Use a port between 1024 and 65535 (default %d)." % P.PORT
 		c_status.add_color_override("font_color", Look.CRIT)
 		return
+	var relay = ""
+	if online:
+		relay = Relay.base_url(c_relay.text)
+		if relay == "":
+			c_status.add_color_override("font_color", Look.CRIT)
+			c_status.text = "HOST ONLINE needs a relay server address (like relay.example.org). This game has none built in: use one your community runs, or run your own (docs/RELAY.md)." if c_relay.text.strip_edges() == "" else "That relay address isn't usable. Type a name like relay.example.org (or wss://... / ws://127.0.0.1:8080 for a local test relay)."
+			return
+		client._cfg_set("mp_relay", c_relay.text.strip_edges())
 	c_btn.disabled = true
+	c_online_btn.disabled = true
 	c_status.add_color_override("font_color", Look.TEXT_2)
-	c_status.text = "Starting the lobby..."
-	var err = client.host_lobby({name = c_name.text, pw = c_pw.text, max = c_max, port = port})
+	c_status.text = "Creating the room..." if online else "Starting the lobby..."
+	var err = client.host_lobby({name = c_name.text, pw = c_pw.text, max = c_max, port = port, relay = relay})
 	if err != "":
 		c_btn.disabled = false
+		c_online_btn.disabled = false
 		c_status.add_color_override("font_color", Look.CRIT)
 		c_status.text = err
 		return
@@ -450,8 +499,8 @@ func _build_join():
 	left.rect_min_size.x = 380 if vw > 900 else 0
 	left.add_constant_override("separation", 8)
 	cols.add_child(left)
-	left.add_child(_lbl("ADDRESS OR ROOM CODE", 13, Look.TEXT_3))
-	j_addr = _edit("192.168.1.20:%d  or  ABCDE-FGHJK" % P.PORT)
+	left.add_child(_lbl("INVITE LINK, ROOM CODE OR ADDRESS", 13, Look.TEXT_3))
+	j_addr = _edit("https://relay.example.org/j/ABCD-EFGH  or  ABCD-EFGH  or  192.168.1.20:%d" % P.PORT)
 	j_addr.connect("text_entered", self, "_join_entered")
 	left.add_child(j_addr)
 	left.add_child(_lbl("PASSWORD (if the lobby has one)", 13, Look.TEXT_3))
@@ -459,6 +508,10 @@ func _build_join():
 	j_pw.secret = true
 	j_pw.connect("text_entered", self, "_join_entered")
 	left.add_child(j_pw)
+	left.add_child(_lbl("RELAY SERVER (only for a bare online code; invite links carry it)", 13, Look.TEXT_3))
+	j_relay = _edit("relay.example.org")
+	j_relay.text = str(client._cfg("mp_relay", ""))
+	left.add_child(j_relay)
 	j_btn = _btn("JOIN", "_join", [], 0, 52)
 	j_btn.add_font_override("font", _font(18))
 	left.add_child(j_btn)
@@ -482,10 +535,25 @@ func _join_entered(_t):
 	_join()
 
 func _join():
+	var inv = Relay.parse_invite(j_addr.text)
+	if !inv.empty():
+		var base = inv.base
+		if base == "":
+			base = Relay.base_url(j_relay.text)
+			if base == "":
+				j_status.add_color_override("font_color", Look.CRIT)
+				j_status.text = "%s is an online room code: paste the host's invite link instead, or type the relay server it uses under RELAY SERVER." % inv.code
+				return
+			client._cfg_set("mp_relay", j_relay.text.strip_edges())
+		j_btn.disabled = true
+		j_status.add_color_override("font_color", Look.TEXT_2)
+		j_status.text = "Joining room %s through %s ..." % [inv.code, base.replace("wss://", "").replace("ws://", "")]
+		client.join_online(base, inv.code, j_pw.text)
+		return
 	var a = P.parse_address(j_addr.text)
 	if a.empty():
 		j_status.add_color_override("font_color", Look.CRIT)
-		j_status.text = "Type an address like 192.168.1.20 or 192.168.1.20:%d, or a room code like ABCDE-FGHJK." % P.PORT
+		j_status.text = "Paste an invite link, an online room code like ABCD-EFGH, a LAN room code like ABCDE-FGHJK, or an address like 192.168.1.20:%d." % P.PORT
 		return
 	_join_to(a[0], a[1], j_pw.text)
 
@@ -700,19 +768,22 @@ func _build_lobby():
 
 func _copy_code():
 	var c = str(client.lobby.get("code", ""))
+	var inv = str(client.lobby.get("invite", ""))
 	var addr = client.lobby.get("addr", [])
-	OS.clipboard = c if c != "" else (str(addr[0]) if typeof(addr) == TYPE_ARRAY and addr.size() > 0 else "")
+	OS.clipboard = inv if inv != "" else (c if c != "" else (str(addr[0]) if typeof(addr) == TYPE_ARRAY and addr.size() > 0 else ""))
 	_notice("Copied: " + OS.clipboard, false)
 
 func _refresh_lobby():
 	if screen != "lobby": return
+	_refresh_status() # (the room code / tunnel state can change with the lobby)
 	var L = client.lobby
 	var online = client.online()
 	var host = client.is_host()
 	l_name.text = str(L.get("name", "...")) if online else ("Joining..." if client.status != "idle" else "Not connected")
 	var bits = []
 	var code = str(L.get("code", ""))
-	if code != "": bits.append("ROOM CODE " + code)
+	if code != "": bits.append(("ONLINE ROOM " if L.get("online", false) else "ROOM CODE ") + code)
+	elif L.get("online", false): bits.append("ONLINE ROOM: " + (_tunnel_status().to_lower() if host else "creating..."))
 	var addr = L.get("addr", [])
 	if typeof(addr) == TYPE_ARRAY and addr.size() > 0: bits.append(PoolStringArray(addr).join("  "))
 	if L.get("pw", false): bits.append("password")
@@ -721,6 +792,7 @@ func _refresh_lobby():
 	if !online: bits = [client.status_text]
 	l_sub.text = PoolStringArray(bits).join("   /   ")
 	l_code_btn.visible = online and (code != "" or (typeof(addr) == TYPE_ARRAY and addr.size() > 0))
+	l_code_btn.text = "COPY INVITE" if str(L.get("invite", "")) != "" else "COPY CODE"
 	var m = L.get("map", {})
 	if typeof(m) != TYPE_DICTIONARY or m.empty():
 		l_map_name.text = "No map yet"

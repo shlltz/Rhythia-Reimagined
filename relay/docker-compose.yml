@@ -1,0 +1,43 @@
+# Relay + Caddy (automatic HTTPS certificates). Copy .env.example to .env, set RELAY_DOMAIN, then:
+#   docker compose up -d --build
+# The relay port is only reachable through Caddy (expose, not ports), so RR_TRUST_PROXY=1 is safe here.
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RR_TRUST_PROXY: "1"
+    expose:
+      - "8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 64
+    ulimits:
+      nofile: 8192
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - relay
+
+volumes:
+  caddy_data:
+  caddy_config:

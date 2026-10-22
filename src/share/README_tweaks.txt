@@ -109,10 +109,12 @@ WHAT YOU GET
               together, No Fail is always on, live scores on the left, ranked results after,
               chat, kick / make host, reconnect after a short drop. Your own mods / settings come
               back after each match. Session results only: no personal bests, replays or recent plays.
-              Same network: nothing to set up. Internet: the host forwards TCP port 47320 on the
-              router (or everyone uses Tailscale / ZeroTier / Radmin VPN); there is no relay
-              server, so a host behind a strict NAT can't be reached. Allow SoundSpacePlus.exe
-              in the firewall (TCP 47320, UDP 47321 for LAN discovery).
+              Same network: nothing to set up. Internet: HOST ONLINE goes through a relay server -
+              no port forwarding, VPN or IP addresses; share the room code or the invite link and
+              friends paste it into JOIN. It needs a relay address: none is built in, so use one your
+              community runs or run your own (relay/ folder in the source, docs/RELAY.md). Without a
+              relay: the host forwards TCP port 47320 (or everyone uses Tailscale / ZeroTier /
+              Radmin VPN). Allow SoundSpacePlus.exe in the firewall (TCP 47320, UDP 47321 for LAN).
   Look        Exo 2 font, colours matching the Rhythia logo, Flaticon icons, osu-style results panel,
               bigger settings page
   Language    Vietnamese (pick "Tieng Viet" in the language menu, in place of Polish)

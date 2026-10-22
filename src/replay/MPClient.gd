@@ -14,17 +14,22 @@ signal changed(what)            # status | lobby | players | chat | board | resu
 signal notice(text, bad)
 
 const P = preload("res://mods/replay/MPProto.gd")
+const Relay = preload("res://mods/replay/MPRelay.gd")
 const RESTORE = "user://rr_mp_restore.json"
 const NAME = "RRMultiplayer"
 
 var status:String = "idle"      # idle | resolving | connecting | handshake | online | reconnecting
 var status_text:String = ""
-var peer:StreamPeerTCP
+var peer = null               # StreamPeerTCP, or MPRelay.Guest for an online lobby (same calls)
 var inbuf:PoolByteArray = PoolByteArray()
 var outbuf:PoolByteArray = PoolByteArray()
 var addr_host:String = ""
 var addr_ip:String = ""
 var addr_port:int = 0
+var relay_base:String = ""        # online lobby: the relay this client goes through ("" = direct TCP)
+var relay_code:String = ""
+var _attempts:int = 0
+var _rtts:Array = []              # recent round trips (jitter)
 var password:String = ""
 var my_name:String = ""
 var token:String = ""
@@ -135,6 +140,7 @@ func host_lobby(cfg:Dictionary) -> String:
 	host_node = h
 	h.connect("stopped", self, "_host_stopped")
 	password = str(cfg.get("pw", ""))
+	relay_base = "" # (the host's own game always talks to its lobby directly)
 	_open("127.0.0.1", int(cfg.get("port", P.PORT)))
 	return ""
 
@@ -143,6 +149,7 @@ func join(host:String, port:int, pw:String):
 	owner_key = ""
 	password = pw
 	token = ""
+	relay_base = ""
 	_open(host, port)
 	var R = load("res://mods/replay/Reimagined.gd")
 	var rec = Array(_cfg("mp_recent", []))
@@ -151,6 +158,35 @@ func join(host:String, port:int, pw:String):
 	rec.push_front(a)
 	while rec.size() > 6: rec.pop_back()
 	_cfg_set("mp_recent", rec)
+
+# an online lobby: through the relay at base, room code like "ABCD-EFGH"
+func join_online(base:String, code:String, pw:String):
+	if connected_or_trying(): leave()
+	owner_key = ""
+	password = pw
+	token = ""
+	relay_base = base
+	relay_code = code
+	_open("", 0)
+	var rec = Array(_cfg("mp_recent", []))
+	var a = Relay.invite(base, code)
+	rec.erase(a)
+	rec.push_front(a)
+	while rec.size() > 6: rec.pop_back()
+	_cfg_set("mp_recent", rec)
+
+func relayed() -> bool:
+	return relay_base != ""
+
+func relay_rtt() -> int:
+	return int(peer.relay_rtt) if relayed() and peer else -1
+
+# mean change between consecutive round trips (ms), -1 until there are a few
+func jitter() -> int:
+	if _rtts.size() < 3: return -1
+	var d = 0.0
+	for i in range(1, _rtts.size()): d += abs(_rtts[i] - _rtts[i - 1])
+	return int(round(d / (_rtts.size() - 1)))
 
 func _open(host:String, port:int):
 	addr_host = host
@@ -168,7 +204,11 @@ func _open(host:String, port:int):
 	_sync = []
 	offset = 0
 	rtt = -1
-	if host.is_valid_ip_address():
+	_rtts = []
+	_attempts = 0
+	if relayed():
+		_connect_now()
+	elif host.is_valid_ip_address():
 		addr_ip = host
 		_connect_now()
 	else:
@@ -177,9 +217,17 @@ func _open(host:String, port:int):
 		_connect_t = P.now_ms()
 
 func _connect_now():
-	peer = StreamPeerTCP.new()
 	inbuf = PoolByteArray()
 	outbuf = PoolByteArray()
+	if relayed():
+		peer = Relay.Guest.new(relay_base, relay_code, P.VERSION)
+		_connect_t = P.now_ms()
+		if peer.state == StreamPeerTCP.STATUS_ERROR:
+			_conn_failed(peer.error_text)
+			return
+		_set_status("connecting", "connecting to the relay")
+		return
+	peer = StreamPeerTCP.new()
 	var err = peer.connect_to_host(addr_ip, addr_port) # (doesn't wait: get_status() reports progress)
 	_connect_t = P.now_ms()
 	if err != OK:
@@ -217,8 +265,16 @@ func _close_peer():
 # host keeps the slot and score), unless the player left on purpose
 func _conn_failed(why:String):
 	print("[mp] %s: connection problem: %s" % [name, why])
+	var final_ = relayed() and peer != null and str(peer.error_code) in Relay.FINAL # (no room / full / closed: retrying can't help)
 	_close_peer()
 	var now = P.now_ms()
+	if final_ and (_was_online or _reconnecting):
+		_reconnecting = false
+		_was_online = false
+		_reset_match_if_waiting()
+		_set_status("idle", why)
+		emit_signal("notice", why, true)
+		return
 	if !leaving and (_was_online or _reconnecting):
 		var first = !_reconnecting
 		if first:
@@ -226,7 +282,8 @@ func _conn_failed(why:String):
 			_reconnect_until = now + 30000
 			emit_signal("notice", "Connection to the lobby lost - reconnecting...", true)
 		if now < _reconnect_until:
-			_retry_t = now + (400 if first else 2000)
+			_attempts += 1
+			_retry_t = now + int(min(8000, 400 * pow(2, _attempts - 1))) # (0.4, 0.8, 1.6 ... 8 s)
 			_set_status("reconnecting", "connection lost - retrying (%s)" % why)
 			return
 		_reconnecting = false
@@ -275,6 +332,9 @@ func _process(_d):
 				_set_status("handshake", "joining")
 				_last_rx = now
 				send({t = "hello", v = P.VERSION, name = my_name, pw = password, token = token, owner = owner_key})
+			elif relayed():
+				if st == StreamPeerTCP.STATUS_ERROR or st == StreamPeerTCP.STATUS_NONE: _conn_failed(str(peer.error_text))
+				elif peer._opened and status_text != "joining room " + relay_code: _set_status("connecting", "joining room " + relay_code)
 			elif st == StreamPeerTCP.STATUS_ERROR or st == StreamPeerTCP.STATUS_NONE or now - _connect_t > 7000:
 				_conn_failed("couldn't reach %s:%d (wrong address, the host isn't reachable from here, or a firewall blocks it)" % [addr_ip, addr_port])
 		"handshake", "online":
@@ -315,7 +375,7 @@ func _read(now:int):
 		if !peer: return
 	if start > 0: inbuf = buf.subarray(start, size - 1) if start < size else PoolByteArray()
 	if inbuf.size() > P.MAX_BUFFER: _conn_failed("too much data from the host")
-	elif st != StreamPeerTCP.STATUS_CONNECTED and peer: _conn_failed("the host closed the connection")
+	elif st != StreamPeerTCP.STATUS_CONNECTED and peer: _conn_failed(str(peer.error_text) if relayed() and str(peer.error_text) != "" else "the host closed the connection")
 
 func _write():
 	if !peer or outbuf.size() == 0: return
@@ -345,6 +405,7 @@ func _handle(m:Dictionary, now:int):
 			if s != null: offset = float(s) - now
 			_was_online = true
 			_reconnecting = false
+			_attempts = 0
 			_set_status("online", "in lobby")
 			_ping_t = 0
 			send({t = "ping", c = now})
@@ -398,6 +459,8 @@ func _handle(m:Dictionary, now:int):
 			var s = P.num(m, "s", 0, 1e15)
 			if c == null or s == null or now < int(c): return
 			rtt = now - int(c)
+			_rtts.append(rtt)
+			while _rtts.size() > 16: _rtts.pop_front()
 			_sync.append([rtt, float(s) + rtt / 2.0 - now])
 			while _sync.size() > 8: _sync.pop_front()
 			var best = _sync[0]

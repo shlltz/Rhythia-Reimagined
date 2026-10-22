@@ -1,4 +1,5 @@
-# Checks that run without the game: Python syntax of the mod tool + test scripts, and the pure
+# Checks that run without the game: Python syntax of the mod tool + test scripts, the multiplayer
+# relay's tests (relay/test_relay.py), and the pure
 # GDScript unit tests (tests/unit) in the official Godot 3.6.2 headless build. The game tests
 # (tests/multiplayer, mpbench.py) need a Sound Space Plus install and run locally.
 name: checks
@@ -14,7 +15,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: compile
-        run: python -m py_compile ssp_mod.py tests/unit/run.py tests/multiplayer/*.py
+        run: python -m py_compile ssp_mod.py tests/unit/run.py tests/multiplayer/*.py relay/*.py
+      - name: relay tests (real sockets, incl. TLS with a throwaway certificate)
+        run: python relay/test_relay.py
   unit:
     runs-on: ubuntu-latest
     steps:

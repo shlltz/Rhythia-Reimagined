@@ -19,7 +19,8 @@ They're patched into the game's `.pck` by `ssp_mod.py`; there is no Godot projec
 - `src/<mod>/`: each mod's scripts. Most features live in `src/replay/`.
 - `tests/unit/`: pure script tests, no game needed (CI runs these).
 - `tests/multiplayer/`: tests that run the real game (`docs/TESTING.md`).
-- `docs/`: `EDITOR.md`, `UPDATES.md`, `PERF.md`, `GODOT.md`, `RELEASE.md`, `ROADMAP.md`.
+- `relay/`: the multiplayer relay service (Python, standard library) + its tests and deployment files.
+- `docs/`: `EDITOR.md`, `UPDATES.md`, `RELAY.md`, `PERF.md`, `GODOT.md`, `RELEASE.md`, `ROADMAP.md`.
 
 ## Rules for changes
 

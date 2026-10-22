@@ -24,3 +24,7 @@ tools/
 *.apk
 tests/**/t/
 __pycache__/
+
+# a relay deployment's own settings
+relay/.env
+*.pem

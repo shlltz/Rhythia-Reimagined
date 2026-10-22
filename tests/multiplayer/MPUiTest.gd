@@ -58,7 +58,7 @@ func run():
 	shot("join")
 	m.j_addr.text = "not an address!"
 	m._join()
-	ok("bad address refused with a message", m.j_status.text.begins_with("Type an address"))
+	ok("bad address refused with a message", m.j_status.text.begins_with("Paste an invite link"))
 	m.j_addr.text = "127.0.0.1:47399"
 	m._join()
 	var t = 0.0
