@@ -5,22 +5,33 @@ extends Control
 # small texture do the rest. The loading screen and the results screen use the same texture (Engine
 # meta rr_backdrop) and look, so the background carries on from the map page into the run and back.
 
-const SMALL = 192
+const SMALL = 256                 # the texture drawn (made from a ~40 px copy: smooth, no blocks)
+const TINY = 40
 const FADE = 0.35
-const DIM = 0.44
+const DIM = 0.44                  # loading / results screens
+const MENU_DIM = 0.3              # behind the map selection menu (dimmer, fades towards both sides)
 const SETTLE = 0.12               # s a pick has to stay before its cover is fetched (scrolling the list)
 const SHADER = """shader_type canvas_item;
 uniform float grey = 0.0;
 uniform float dim = 0.36;
-uniform float radius = 0.012;
+uniform float radius = 0.02;
+uniform float sides = 0.0;        // 1 = fade out towards the left and right screen edges
 void fragment() {
-	vec2 r = vec2(radius, radius * 1.6);
-	vec4 c = texture(TEXTURE, UV) * 0.2;
-	c += (texture(TEXTURE, UV + vec2(r.x, 0.0)) + texture(TEXTURE, UV - vec2(r.x, 0.0)) + texture(TEXTURE, UV + vec2(0.0, r.y)) + texture(TEXTURE, UV - vec2(0.0, r.y))) * 0.12;
-	c += (texture(TEXTURE, UV + r) + texture(TEXTURE, UV - r) + texture(TEXTURE, UV + vec2(r.x, -r.y)) + texture(TEXTURE, UV + vec2(-r.x, r.y))) * 0.08;
+	vec4 c = vec4(0.0);
+	float wsum = 0.0;
+	for (int x = -2; x <= 2; x++) {
+		for (int y = -2; y <= 2; y++) {
+			float w = exp(-float(x * x + y * y) / 4.5); // (gaussian weights: no ring or box edges)
+			c += texture(TEXTURE, UV + vec2(float(x), float(y) * 1.6) * radius * 0.5) * w;
+			wsum += w;
+		}
+	}
+	c /= wsum;
 	float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
 	c.rgb = mix(c.rgb, vec3(l), grey) * dim;
-	COLOR = vec4(c.rgb, 1.0) * COLOR;
+	float a = 1.0;
+	if (sides > 0.5) a = smoothstep(0.0, 0.38, SCREEN_UV.x) * smoothstep(1.0, 0.62, SCREEN_UV.x);
+	COLOR = vec4(c.rgb, a) * COLOR;
 }"""
 const PAGES = ["Main/Maps", "Main/Results", "Main/MapRegistry"] # new menu / classic page + grid
 
@@ -50,13 +61,16 @@ static func small_texture(s, loaded_only:bool = false):
 	if !(img is Image) or img.get_width() < 2: return null
 	img = img.duplicate()
 	if img.is_compressed(): img.decompress()
-	var w = int(min(SMALL, img.get_width()))
-	img.resize(w, int(max(2, round(w * float(img.get_height()) / img.get_width()))), Image.INTERPOLATE_BILINEAR)
+	var asp = float(img.get_height()) / img.get_width()
+	while img.get_width() > TINY * 2: # (halving steps: an even average, no shimmer)
+		img.resize(int(img.get_width() / 2), int(max(2, img.get_height() / 2)), Image.INTERPOLATE_BILINEAR)
+	img.resize(TINY, int(max(2, round(TINY * asp))), Image.INTERPOLATE_BILINEAR)
+	img.resize(SMALL, int(max(2, round(SMALL * asp))), Image.INTERPOLATE_CUBIC) # (smooth gradients, no blocks)
 	var t = ImageTexture.new()
 	t.create_from_image(img, Texture.FLAG_FILTER)
 	return t
 
-static func make_rect() -> TextureRect:
+static func make_rect(menu:bool = false) -> TextureRect:
 	var r = TextureRect.new()
 	r.anchor_right = 1
 	r.anchor_bottom = 1
@@ -67,7 +81,8 @@ static func make_rect() -> TextureRect:
 	m.shader = Shader.new()
 	m.shader.code = SHADER
 	m.set_shader_param("grey", 1.0 if mono() else 0.0)
-	m.set_shader_param("dim", DIM)
+	m.set_shader_param("dim", MENU_DIM if menu else DIM)
+	m.set_shader_param("sides", 1.0 if menu else 0.0)
 	r.material = m
 	return r
 
@@ -76,9 +91,9 @@ func _init():
 	anchor_right = 1
 	anchor_bottom = 1
 	mouse_filter = MOUSE_FILTER_IGNORE
-	back = make_rect()
+	back = make_rect(true)
 	add_child(back)
-	front = make_rect()
+	front = make_rect(true)
 	add_child(front)
 	modulate.a = 0.0
 	if Engine.has_meta("rr_backdrop"): # (back from a run: the same cover is already up)

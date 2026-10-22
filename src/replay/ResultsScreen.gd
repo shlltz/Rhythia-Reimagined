@@ -155,7 +155,8 @@ func _ready():
 	]
 	for i in tiles.size():
 		var r = Rect2(28 + (i % 4) * (tw + 12), y0 + int(i / 4) * 92, tw, 80)
-		var tl = CardUI.tile(holder, r, tiles[i][0], tiles[i][1], fs, fb, tiles[i][2])
+		var vf = fb if fb.get_string_size(tiles[i][1]).x <= tw - 30 else _f(18) # (a long value - "11 days ago" - steps down instead of being cut)
+		var tl = CardUI.tile(holder, r, tiles[i][0], CardUI.fit(tiles[i][1], vf, tw - 30), fs, vf, tiles[i][2])
 		if tiles[i][0] == "Mods": _mod_tags(tl)
 	var name_ = CardUI.player()
 	var foot = CardUI.label(holder, ("Played by %s  ·  " % name_ if name_ != "" else "") + CardUI.today(), _f(16), Color(1, 1, 1, 0.45), Vector2(30, H - 44), W - 60)
