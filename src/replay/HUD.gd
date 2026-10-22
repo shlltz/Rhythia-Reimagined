@@ -254,8 +254,23 @@ func paint(node:Control,color:Color):
 
 var config_time:float = 2.5
 
+# the panels fade in at the start of a run instead of popping up
+const FADE_IN = 0.9
+const FADE_HUDS = ["ComboHud", "EnergyHud", "LeftHud", "RightHud", "TimerHud"]
+var fade_in:float = 0.0
+
+func _fade_in(delta:float):
+	var intro = get_tree().root.get_node_or_null("RRRunIntro")
+	if intro and intro.steady < 2: return # (starts with the crossfade from the loading screen)
+	fade_in = min(fade_in + min(delta, 1.0 / 30.0) / FADE_IN, 1.0) # (a hitching first frame doesn't finish the fade at once)
+	var e = 1.0 - pow(1.0 - fade_in, 3)
+	for n in FADE_HUDS:
+		var h = get_node_or_null(n)
+		if h and "opacity" in h: h.opacity = e
+
 func _process(delta:float):
 	gtimer += delta
+	if fade_in < 1.0: _fade_in(delta)
 	if Rhythia.show_config:
 		config_time = max(config_time-delta,0)
 		if config_time <= 0: $ConfigHud.visible = false

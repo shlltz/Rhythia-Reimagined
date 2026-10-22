@@ -1,12 +1,12 @@
 extends CanvasLayer
 # Pass effects: once every note is done on a pass, a green glow
-# fades in around all four screen edges; when the map ends on a pass, the last frame zooms in
+# fades in around all four screen edges; when the map ends on a pass, the last frame zooms out
 # and fades to black before the results screen (instead of the plain black fade).
 # Added to Game by Game._ready when this file exists; Game.end() calls zoom_in().
 
 const GREEN = Color(0.3, 1.0, 0.45)
 const WIDTH = 0.12       # glow depth, share of the screen height
-const ZOOM_TIME = 0.6
+const ZOOM_TIME = 0.9
 
 var game:Node
 var glow:float = 0.0
@@ -45,7 +45,7 @@ func _draw_glow():
 	for q in quads:
 		draw.draw_polygon(PoolVector2Array(q), PoolColorArray([edge, edge, clear, clear]))
 
-# freeze the last frame, zoom into it while fading to black; Game.end() yields on this
+# freeze the last frame, pull back from it while fading to black; Game.end() yields on this
 func zoom_in():
 	var img = get_viewport().get_texture().get_data()
 	img.flip_y()
@@ -62,6 +62,12 @@ func zoom_in():
 	black.anchor_right = 1
 	black.anchor_bottom = 1
 	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var under = ColorRect.new() # (black around the shrinking frame)
+	under.color = Color(0, 0, 0)
+	under.anchor_right = 1
+	under.anchor_bottom = 1
+	under.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(under)
 	add_child(shot)
 	add_child(black)
 	yield(get_tree(), "idle_frame") # sizes settle
@@ -70,7 +76,8 @@ func zoom_in():
 	while k < 1.0:
 		yield(get_tree(), "idle_frame")
 		k = min(1.0, k + get_process_delta_time() / ZOOM_TIME)
-		var e = k * k * (3.0 - 2.0 * k)
-		var z = 1.0 + 0.6 * e
+		var e = 1.0 - pow(1.0 - k, 3) # (eases out: a smooth pull back from the grid)
+		var z = 1.0 - 0.18 * e
 		shot.rect_scale = Vector2(z, z)
-		black.color.a = clamp((k - 0.35) / 0.65, 0.0, 1.0)
+		var f = clamp((k - 0.3) / 0.7, 0.0, 1.0)
+		black.color.a = f * f * (3.0 - 2.0 * f)

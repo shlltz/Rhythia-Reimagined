@@ -11,6 +11,7 @@ const W = 760.0
 const BANNER_H = 300.0
 const H = 552.0
 const INTRO = 0.5
+const SHOW = 3.0                  # s the card stays at least (songload waits for it); Esc goes back
 const MUFFLE_BUS = "RRMuffle"
 const MUFFLE_HZ = 650.0           # low-pass cutoff once muffled
 const MUFFLE_TIME = 0.6           # s from open to muffled
@@ -216,9 +217,11 @@ func _process(delta):
 	bg.rect_scale = Vector2(z, z)
 	bg.rect_position = -drift * 12.0
 	logo.rect_rotation = fmod(t * 24.0, 360.0) # a slow turn
-	var target = progress if progress >= 0.0 else 0.9 * (1.0 - exp(-t / 1.4))
-	if ready_: target = 1.0
-	shown = lerp(shown, target, 1.0 - exp(-delta * 8.0))
+	var target = pow(min(t / SHOW, 1.0), 2.4) # (starts slow, speeds up, full at SHOW)
+	if progress >= 0.0: target = min(target, progress)
+	if !ready_: target = min(target, 0.96) # (waits just short of the end until the map is loaded)
+	shown = lerp(shown, target, 1.0 - exp(-delta * 14.0))
+	if target >= 1.0 and shown > 0.97: shown = 1.0 # (lands on full instead of creeping towards it)
 	bar.update()
 	if player:
 		_muffle(min(t / MUFFLE_TIME, 1.0))
