@@ -1,5 +1,8 @@
 # Online lobbies and the relay
 
+> **Multiplayer is shelved for now:** the game files are in `src/shelved/multiplayer/` and aren't in
+> the builds (its README says how to put them back). The relay service below is unchanged.
+
 Online lobbies let players on different networks play together without port forwarding, a VPN or IP
 addresses. The idea comes from e4mc (Minecraft): the host's game keeps one **outbound** connection
 to a public relay, and guests reach the host through that relay.

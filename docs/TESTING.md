@@ -46,7 +46,8 @@ Every feature test should pass on both `own` and `share`. The newer drivers:
 | `GifTest.gd` | GIF writer decoded by ffmpeg |
 | `DeviceTest.gd` | low-end profile + restore, gyroscope cursor (fed through a test hook), touch-sized buttons |
 | `UpdaterTest.gd` | updates against a local server + sandbox: refusals, install, confirm, rollback; a real openssl-signed manifest |
-| `relay_e2e.py` (`MPRelayA/B/C.gd`, `MPRelayTls.gd`) | online lobbies: a real relay process + three game instances, latency, reconnects, refusals, TLS (`docs/RELAY.md`) |
+| `relay_e2e.py` (`MPRelayA/B/C.gd`, `MPRelayTls.gd`) | online lobbies (multiplayer is shelved: `src/shelved/multiplayer/README.md`) |
+| `MapScreensTest.gd` | title cards, map page backdrop, start zoom, loading screen (muffle, logo, no black), results card, no-cover look |
 | `CheckpointTest.gd` | retry from the fail point |
 | `LibraryTest.gd`, `PhxmTest.gd`, `SkinTest.gd` | library tools, `.phxm`, skins |
 | `PerfBench.gd` | performance (`docs/PERF.md`) |

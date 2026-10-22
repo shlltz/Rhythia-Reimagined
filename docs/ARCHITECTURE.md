@@ -55,7 +55,7 @@ The share builds leave out personal-look mods (`TWEAKS_EXCLUDE`) and use the sha
 | Skins | `Skins.gd`, `SkinPanel.gd` |
 | Device / updates | `Device.gd`, `GyroCursor.gd`, `Updater.gd` |
 | Star ratings | `src/stars/` |
-| Multiplayer | `MP*.gd`; online lobbies: `MPRelay.gd` + the relay service in `relay/` (`docs/RELAY.md`) |
+| Multiplayer (shelved) | `src/shelved/multiplayer/` (not in builds; how to bring it back is in its README); relay service in `relay/` |
 
 ## Files a mod writes in the user folder
 

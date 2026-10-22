@@ -19,7 +19,7 @@ func _init():
 	_auto()
 	_gif()
 	_updater()
-	_relay()
+	# _relay() (multiplayer is shelved: src/shelved/multiplayer; put it back with the files)
 	print("== totals: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed > 0 else 0)
 

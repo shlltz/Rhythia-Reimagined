@@ -8,8 +8,9 @@ var target2:String = Rhythia.selected_space.path
 var black_fade_target:bool = false
 var black_fade:float = 0
 
-# mod: osu!lazer-style loading screen (LoadScreen.gd). It stays at least MIN_SHOW
-# seconds so the map card can be read; restarts go straight to song.tscn, not here.
+# mod: map card loading screen (LoadScreen.gd: the map page's cover carries on behind it, the
+# preview keeps playing muffled). It stays at least MIN_SHOW seconds so the card can be read;
+# restarts go straight to song.tscn, not here.
 const LoadScreen = preload("res://mods/replay/LoadScreen.gd")
 const MIN_SHOW = 1.3
 var screen:Control
@@ -24,6 +25,8 @@ func _ready():
 		Rhythia.vr_player.transform.origin = Vector3(0,-2.5,4.5)
 	$BlackFade.visible = true
 	black_fade = 1
+	if Engine.has_meta("rr_launch") and Engine.get_meta("rr_launch").get("seamless", false):
+		black_fade = 0 # (from the map page: the cover is already on screen, no black in between)
 	$BlackFade.color = Color(0,0,0,black_fade)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	screen = LoadScreen.new()
@@ -72,6 +75,7 @@ func progress(v):
 	$P.visible = true
 	$P.value = v*100
 	screen.set_status("Loading replay  %d%%" % int(v * 100))
+	screen.set_progress(v)
 
 func finish():
 	if finishing: return

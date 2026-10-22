@@ -80,6 +80,8 @@ for name, script in insts:
         os.makedirs(os.path.join(ud, 'maps'))
         # answer the stock first-launch "record replays?" prompt (its defaults), so init doesn't wait on it
         open(os.path.join(ud, 'settings.json'), 'w').write('{"record_replays": false, "record_limit": 0}')
+        if not os.environ.get('RR_ASK_NAME'): # (the first-start username panel would sit over every test)
+            open(os.path.join(ud, 'reimagined.json'), 'w').write('{"player_name": "Tester"}')
     for mp in extra_maps.get(name, []):
         dst = os.path.join(ud, 'maps', os.path.basename(mp))
         if not os.path.exists(dst): shutil.copyfile(mp, dst)
