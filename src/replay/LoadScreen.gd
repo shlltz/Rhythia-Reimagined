@@ -213,7 +213,7 @@ func _process(delta):
 	card.margin_bottom = H / 2 + 24.0 * (1.0 - e)
 	var z = zoom0 * (1.0 + 0.035 * (1.0 - exp(-t / 2.5))) # (the menu's zoom keeps going, slower and slower)
 	bg.rect_pivot_offset = rect_size / 2
-	bg.rect_scale = Vector2(z, z) * (1.06 if zoom0 == 1.0 else 1.0)
+	bg.rect_scale = Vector2(z, z)
 	bg.rect_position = -drift * 12.0
 	logo.rect_rotation = fmod(t * 24.0, 360.0) # a slow turn
 	var target = progress if progress >= 0.0 else 0.9 * (1.0 - exp(-t / 1.4))
