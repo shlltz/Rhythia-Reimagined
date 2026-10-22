@@ -142,7 +142,7 @@ static func banner(parent:Control, tex:Texture, rect:Rect2, rad:int = 18, song =
 	m.shader.code = BANNER_SHADER
 	m.set_shader_param("size", rect.size)
 	m.set_shader_param("radius", float(r(rad)))
-	m.set_shader_param("grey", 1.0 if mono() else 0.0)
+	m.set_shader_param("grey", 0.0) # (cover art keeps its colour)
 	t.material = m
 	parent.add_child(t)
 	t.rect_position = rect.position

@@ -6,15 +6,16 @@ extends Control
 # meta rr_backdrop) and look, so the background carries on from the map page into the run and back.
 
 const SMALL = 256                 # the texture drawn (made from a ~40 px copy: smooth, no blocks)
-const TINY = 40
+const TINY = 96                   # (bigger = sharper backdrop)
 const FADE = 0.35
 const DIM = 0.44                  # loading / results screens
 const MENU_DIM = 0.3              # behind the map selection menu (dimmer, fades towards both sides)
+const MENU_ZOOM = 0.72            # map selection menu: zoomed out to show more of the cover
 const SETTLE = 0.12               # s a pick has to stay before its cover is fetched (scrolling the list)
 const SHADER = """shader_type canvas_item;
 uniform float grey = 0.0;
 uniform float dim = 0.36;
-uniform float radius = 0.02;
+uniform float radius = 0.008;
 uniform float sides = 0.0;        // 1 = fade out towards the left and right screen edges
 void fragment() {
 	vec4 c = vec4(0.0);
@@ -30,7 +31,7 @@ void fragment() {
 	float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
 	c.rgb = mix(c.rgb, vec3(l), grey) * dim;
 	float a = 1.0;
-	if (sides > 0.5) a = smoothstep(0.0, 0.38, SCREEN_UV.x) * smoothstep(1.0, 0.62, SCREEN_UV.x);
+	if (sides > 0.5) a = smoothstep(0.0, 0.38, SCREEN_UV.x) * smoothstep(1.0, 0.62, SCREEN_UV.x) * smoothstep(0.0, 0.25, UV.x) * smoothstep(1.0, 0.75, UV.x);
 	COLOR = vec4(c.rgb, a) * COLOR;
 }"""
 const PAGES = ["Main/Maps", "Main/Results", "Main/MapRegistry"] # new menu / classic page + grid
@@ -80,7 +81,7 @@ static func make_rect(menu:bool = false) -> TextureRect:
 	var m = ShaderMaterial.new()
 	m.shader = Shader.new()
 	m.shader.code = SHADER
-	m.set_shader_param("grey", 1.0 if mono() else 0.0)
+	m.set_shader_param("grey", 0.0) # (the cover keeps its colour, also in the monochrome look)
 	m.set_shader_param("dim", MENU_DIM if menu else DIM)
 	m.set_shader_param("sides", 1.0 if menu else 0.0)
 	r.material = m
@@ -128,7 +129,9 @@ func _process(delta):
 	# a slow drift with the menu's mouse parallax, slightly zoomed so the edges never show
 	var size = rect_size
 	var px = menu.get("parallax") if "parallax" in menu else Vector2.ZERO
-	var s = 1.06 * zoom
+	# zoomed out on the menu; a map start (menu2 scales the menu up by LAUNCH_ZOOM) zooms back to full
+	var k = clamp((menu.rect_scale.x - 1.0) / 0.12, 0.0, 1.0)
+	var s = 1.06 * zoom * lerp(MENU_ZOOM, 1.0, k * k * (3.0 - 2.0 * k))
 	for r in [front, back]:
 		r.rect_pivot_offset = size / 2
 		r.rect_scale = Vector2(s, s)
