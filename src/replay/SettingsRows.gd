@@ -162,7 +162,7 @@ func _switch(c:CheckBox):
 			c.add_stylebox_override(k, sb)
 	var s = Switch.new()
 	s.box = c
-	s.accent = Color(1, 1, 1) if style.mono else style.ACCENT
+	s.accent = Color(1, 1, 1) if style.mono else Look.accent()
 	s.square = style.mono
 	s.anchor_left = 1; s.anchor_right = 1; s.anchor_top = 0.5; s.anchor_bottom = 0.5
 	s.margin_left = -52; s.margin_right = -8; s.margin_top = -11; s.margin_bottom = 11
@@ -451,7 +451,7 @@ func _ask_reset_tab():
 	_refresh_all()
 
 func _style_button(b:Button):
-	var acc = Color(1, 1, 1) if style.mono else style.ACCENT
+	var acc = Color(1, 1, 1) if style.mono else Look.accent()
 	var n = StyleBoxFlat.new()
 	n.bg_color = Color(1, 1, 1, 0.04)
 	n.border_color = Color(1, 1, 1, 0.25)
