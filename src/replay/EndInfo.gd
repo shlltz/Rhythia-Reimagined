@@ -34,7 +34,6 @@ func _rr_grade_look():
 		var old = l.get_font("font") if l else null
 		var gf = Look.grade_font(old.size if old is DynamicFont else 64)
 		if gf: l.add_font_override("font", gf)
-	if has_node("LetterGrade"): Look.static_glitch($LetterGrade, 5.3, 3.0)
 
 var rainbow_letter_grade:bool = false
 func update_letter_grade(acc:float=0):
