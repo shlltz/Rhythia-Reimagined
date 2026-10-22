@@ -119,6 +119,8 @@ for name, script in insts:
         if os.path.exists(os.path.join(root, fn)): txt += open(os.path.join(root, fn), encoding='utf-8', errors='replace').read()
     errs = [l for l in txt.splitlines() if 'SCRIPT ERROR' in l or ('ERROR:' in l and 'localization' not in l and 'library' not in l and 'id == 0' not in l and 'File must be opened' not in l and 'arvr' not in l)]
     print('%s: %d error lines (%.0f s)' % (name, len(errs), time.time() - t0))
+    rc = procs[[i for i, x in enumerate(insts) if x[0] == name][0]].returncode
+    if rc not in (0, None, 1) and rc & 0xffffffff >= 0xc0000000: print('  CRASHED: exit code 0x%08x' % (rc & 0xffffffff))
     for l in errs[:15]: print('  ' + l)
 after = os.path.getmtime(real_sj) if os.path.exists(real_sj) else None
 print('real settings.json touched:', before != after)
