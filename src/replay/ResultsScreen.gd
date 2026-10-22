@@ -375,7 +375,7 @@ func _stamp():
 		var Look = load(CardUI.LOOK)
 		var gk = _grade(float(run.hits) / max(1.0, float(run.total)))[0]
 		if gk in ["SS", "S", "F"]:
-			var fc = Look.BLOOD if gk == "F" else Look.hot()
+			var fc = Look.CRIT if gk == "F" else Look.hot()
 			flash = ColorRect.new()
 			flash.color = Color(fc.r, fc.g, fc.b, 0.3 if gk != "S" else 0.22)
 			flash.anchor_right = 1; flash.anchor_bottom = 1
