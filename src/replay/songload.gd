@@ -12,7 +12,8 @@ var black_fade:float = 0
 # preview keeps playing muffled). It stays at least MIN_SHOW seconds so the card can be read;
 # restarts go straight to song.tscn, not here.
 const LoadScreen = preload("res://mods/replay/LoadScreen.gd")
-const MIN_SHOW = 1.3
+const MIN_SHOW = 3.0 # (= LoadScreen.SHOW: the bar is full then)
+var cancelled:bool = false
 var screen:Control
 var shown_at:int = 0
 
@@ -106,8 +107,10 @@ func finish():
 	screen.set_status("Ready")
 	var left = MIN_SHOW - (OS.get_ticks_msec() - shown_at) / 1000.0
 	if left > 0: yield(get_tree().create_timer(left),"timeout")
+	if cancelled: return
 	black_fade_target = true
 	yield(get_tree().create_timer(0.5),"timeout")
+	if cancelled: return
 
 	
 	# Warnings that can't be disabled (since they're always a problem)
@@ -200,14 +203,24 @@ func _process(delta):
 	$Music.volume_db = -8 - (50*black_fade)
 	if black_fade_target && black_fade != 1:
 		black_fade = min(black_fade + (delta/0.6),1)
-		$BlackFade.color = Color(0,0,0,black_fade)
+		$BlackFade.color = Color(0,0,0,black_fade * black_fade * (3.0 - 2.0 * black_fade)) # (eased)
 	elif !black_fade_target && black_fade != 0:
 		black_fade = max(black_fade - (delta/0.3),0)
-		$BlackFade.color = Color(0,0,0,black_fade)
+		$BlackFade.color = Color(0,0,0,black_fade * black_fade * (3.0 - 2.0 * black_fade))
 	
-	if !leaving and !finishing:
+	if !leaving and !finishing and !cancelled:
 		if RQueue.is_ready(target) and RQueue.is_ready(target2):
 			finish()
+	if cancelled and black_fade == 1: get_tree().change_scene("res://scenes/loaders/menuload.tscn")
 	
 	if leaving and result and black_fade == 1:
 		get_tree().change_scene_to(result)
+
+# Esc on the loading screen: back to the map page (before the fade into the run starts)
+func _input(ev):
+	if cancelled or black_fade_target or !(ev is InputEventKey) or !ev.pressed or ev.echo or ev.scancode != KEY_ESCAPE: return
+	get_tree().set_input_as_handled()
+	cancelled = true
+	Rhythia.replaying = false
+	if Engine.has_meta("rr_launch"): Engine.remove_meta("rr_launch")
+	black_fade_target = true

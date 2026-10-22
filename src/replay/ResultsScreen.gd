@@ -123,6 +123,7 @@ func _ready():
 	grade_text.rect_size = Vector2(220, 120)
 	acc_label = CardUI.label(holder, "%.2f%%" % (acc * 100), _f(20), Color(1, 1, 1, 0.75), Vector2(RING_C.x - 110, RING_C.y + 40), 220)
 	acc_label.align = Label.ALIGN_CENTER
+	acc_label.visible = false # (only the grade in the ring: accuracy is in the tiles)
 	if mono: _mono_grade(g)
 	grade_text.rect_pivot_offset = grade_text.rect_size / 2
 	grade_text.modulate.a = 0
