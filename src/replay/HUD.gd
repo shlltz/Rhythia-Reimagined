@@ -609,6 +609,8 @@ func _reimagined(cf:Dictionary):
 		get_parent().call_deferred("add_child", ot)
 	if ResourceLoader.exists("res://mods/replay/RewriteHud.gd") and load("res://mods/replay/RewriteHud.gd").on():
 		load("res://mods/replay/RewriteHud.gd").attach(self) # (panels drawn like the rewrite's)
+	elif ResourceLoader.exists("res://mods/replay/HudParts.gd"):
+		load("res://mods/replay/HudParts.gd").apply_legacy(self) # (parts moved / sized in Customize)
 
 # Rhythia-reimagined HUD refinement: the classic side panels, ring and bars stay; captions become
 # small and faded over big values (the player's own HUD colours kept: only alpha / size change), the

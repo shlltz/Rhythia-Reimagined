@@ -30,6 +30,7 @@ var title:Label
 var time:Label
 var progress:Control
 var health:Control
+var hit_row:Array = []
 
 var hit_a:float = REST_ALPHA
 var miss_a:float = REST_ALPHA
@@ -61,6 +62,7 @@ func _ready():
 	_energy(S)
 	_combo(bool(R.val("alt_combo")))
 	_grid(S)
+	_parts()
 	hp = _hp_target()
 	_update(0.0)
 
@@ -155,6 +157,7 @@ func _right(S):
 	h.add_child(line)
 	sum = _label(h, 60, sz.y * 0.7 + 24, 80, 0.77)
 	simple_misses = _label(h, 60, sz.y * 0.5, 90)
+	hit_row = [hits, misses, hi, mi, line]
 	for n in [h.get_child(0), acc, hits, misses, hi, mi, line, sum]: n.visible = full
 	simple_misses.visible = !full
 
@@ -219,6 +222,21 @@ func _grid(S):
 	mi.transform = Transform(Basis().scaled(Vector3(s, s, s)), outer.transform.origin + Vector3(0, 0, -0.002))
 	sp.add_child(mi)
 	outer.visible = false
+
+# Customize > HUD layout: the parts moved / sized / hidden inside their panels
+func _parts():
+	var P = load("res://mods/replay/HudParts.gd")
+	var mods = hud.get_node_or_null("EnergyVP/Control/Modifiers")
+	var map = {"LeftHud": {"score": [score], "ring": [ring, mult], "combo": [alt_combo]},
+		"RightHud": {"acc": [acc], "hits": hit_row, "sum": [sum], "simple": [simple_misses]},
+		"TimerHud": {"title": [title], "time": [time], "bar": [progress]},
+		"EnergyHud": {"bar": [health], "mods": [mods]}}
+	for panel in map:
+		for part in map[panel]:
+			var nodes = []
+			for n in map[panel][part]:
+				if n: nodes.append(n)
+			P.apply("rewrite", panel, part, nodes)
 
 func _hp_target() -> float:
 	return clamp(Game.energy / max(Game.max_energy, 0.001), 0.0, 1.0)
