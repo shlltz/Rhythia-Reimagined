@@ -11,6 +11,7 @@ const ITEMS = [["Continue", Color(0.35, 0.85, 0.45)], ["Retry", Color(1.0, 0.78,
 const BTN_W = 420.0
 const BTN_H = 64.0
 const BTN_GAP = 18.0
+const CARD_PAD = 40.0
 
 var dim:ColorRect
 var box:Control
@@ -23,7 +24,7 @@ func _ready():
 	layer = 60
 	pause_mode = Node.PAUSE_MODE_PROCESS
 	dim = ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.8)
+	dim.color = Color(0, 0, 0, 0.86)
 	dim.anchor_right = 1
 	dim.anchor_bottom = 1
 	add_child(dim)
@@ -34,6 +35,13 @@ func _ready():
 	box.margin_top = -h / 2; box.margin_bottom = h / 2
 	if ResourceLoader.exists("res://uitheme.tres"): box.theme = load("res://uitheme.tres")
 	add_child(box)
+	# a card behind it all: the grid and HUD showed through the title and the warning line
+	var card = Panel.new()
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_stylebox_override("panel", Look.box(Color(Look.SURFACE.r, Look.SURFACE.g, Look.SURFACE.b, 0.94), Color(1, 1, 1, 0.12), 1, 0 if mono else 16))
+	card.margin_left = -CARD_PAD; card.margin_right = BTN_W + CARD_PAD
+	card.margin_top = -CARD_PAD; card.margin_bottom = h + CARD_PAD * 0.5
+	box.add_child(card)
 	_label("PAUSED", 0, 60, 2.0, Color(1, 1, 1))
 	if mono:
 		_label(Look.tag("run disqualified - no personal best"), 66, 26, 1.0, Color(Look.CRIT.r, Look.CRIT.g, Look.CRIT.b, 0.85).lightened(0.2))
@@ -64,8 +72,15 @@ func _label(t:String, y:float, h:float, scale:float, col:Color) -> Label:
 	l.align = Label.ALIGN_CENTER
 	l.valign = Label.VALIGN_CENTER
 	l.margin_left = 0; l.margin_right = BTN_W; l.margin_top = y; l.margin_bottom = y + h
-	l.rect_pivot_offset = Vector2(BTN_W / 2, h / 2)
-	l.rect_scale = Vector2(scale, scale)
+	if scale != 1.0: # (a bigger font, not a scaled label: that blurred)
+		var f = box.get_font("font", "Label")
+		if f is DynamicFont:
+			f = f.duplicate()
+			f.size = int(f.size * scale)
+			l.add_font_override("font", f)
+		else:
+			l.rect_pivot_offset = Vector2(BTN_W / 2, h / 2)
+			l.rect_scale = Vector2(scale, scale)
 	l.modulate = col
 	box.add_child(l)
 	return l
@@ -93,7 +108,8 @@ func visible_menu(on:bool):
 	set_process_input(on)
 
 func _draw_frame():
-	Look.brackets(box, Rect2(Vector2(-24, 130), Vector2(BTN_W + 48, ITEMS.size() * (BTN_H + BTN_GAP) + 22)), 18.0, Color(1, 1, 1, 0.35), 2.0)
+	var h = 150 + ITEMS.size() * (BTN_H + BTN_GAP)
+	Look.brackets(box, Rect2(Vector2(-CARD_PAD, -CARD_PAD), Vector2(BTN_W + CARD_PAD * 2, h + CARD_PAD * 1.5)).grow(10), 22.0, Color(1, 1, 1, 0.4), 2.0)
 
 func _hover(i:int):
 	sel = i

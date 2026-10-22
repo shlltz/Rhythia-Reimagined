@@ -159,14 +159,14 @@ func run():
 	yield(shot("customize_touch"), "completed")
 	cp.close()
 	yield(wait(0.5), "completed")
-	menu.open_library()
+	menu.open_replays() # (was the Library panel: shelved in 2.2.3)
 	yield(wait(0.8), "completed")
-	var lp = menu.get_node("LibraryPanel")
+	var lp = menu.get_node("ReplayBrowser")
 	bad = []
 	for b in _all(lp):
 		if b is BaseButton and b.is_visible_in_tree() and b.rect_size.y < 44: bad.append("%s %s" % [b.get_class(), b.get("text")])
-	ok("Library: every visible button finger-sized", bad.empty(), str(bad).left(300))
-	yield(shot("library_touch"), "completed")
+	ok("Replays: every visible button finger-sized", bad.empty(), str(bad).left(300))
+	yield(shot("replays_touch"), "completed")
 	Engine.remove_meta("rr_touch_ui")
 	out("== totals: %d passed, %d failed" % [passed, failed])
 	OS.kill(OS.get_process_id())

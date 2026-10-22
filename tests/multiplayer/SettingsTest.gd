@@ -153,6 +153,16 @@ func run():
 	ok("tab reset applied after confirming", Rhythia.fov == 70 and Rhythia.hitwindow_ms == 55, "%s %s" % [Rhythia.fov, Rhythia.hitwindow_ms])
 	ok("tab reset button disabled when nothing differs", rows.tab_reset.disabled, rows.tab_reset.text)
 
+	# every tab opens and keeps drawing (the Notes tab once froze in a layout loop)
+	var frames = Engine.get_frames_drawn()
+	for i in tabs.get_tab_count():
+		tabs.current_tab = i
+		yield(wait(0.5), "completed")
+	ok("every tab opens", Engine.get_frames_drawn() - frames > 20, Engine.get_frames_drawn() - frames)
+	tabs.current_tab = 1
+	yield(wait(0.5), "completed")
+	yield(shot("notes"), "completed")
+
 	# folded section + search
 	var colors = tabs.get_node("UI/UIColor/Group")
 	tabs.current_tab = 3
@@ -175,5 +185,5 @@ func run():
 	tabs.current_tab = 4
 	yield(wait(0.6), "completed")
 	yield(shot("video"), "completed")
-	out("RESULT %d passed, %d failed" % [passed, failed])
+	out("== totals: %d passed, %d failed" % [passed, failed])
 	OS.kill(OS.get_process_id())

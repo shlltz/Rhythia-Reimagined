@@ -171,6 +171,8 @@ func _switch(c:CheckBox):
 	c.connect("toggled", s, "_toggled")
 	c.connect("mouse_entered", s, "update")
 	c.connect("mouse_exited", s, "update")
+	c.connect("focus_entered", s, "update")
+	c.connect("focus_exited", s, "update")
 
 func _describe(r:Control, ctl:Control, e:Dictionary):
 	var tip = r.hint_tooltip if r.hint_tooltip != "" else ctl.hint_tooltip
@@ -319,11 +321,32 @@ func _refresh_all():
 
 # rows fill the page up to ROW_W, so a control stays near its name on wide screens
 func fit(width:float):
+	var row_w = min(width - 40.0 - 100.0, ROW_W) # (Group margins: 40 left, the rest right)
 	for t in tabs.get_children():
 		if !(t is Control): continue
 		for sec in t.get_children():
 			var g = sec.get_node_or_null("Group") if sec is Control else null
 			if g is MarginContainer: g.add_constant_override("margin_right", int(max(60.0, width - 40.0 - ROW_W)))
+	# the colour-set grid set its columns from its own width on every resize: with wrapping
+	# descriptions that toggled the scroll bar, which changed the width again - the page froze.
+	# Its columns now follow the page width instead (changes only with the window).
+	var cs = tabs.get_node_or_null("Notes/Notes/Group/H/ColorSet2")
+	if cs:
+		for g in _colorset_grids(cs):
+			g.set_meta("rr_cols", int(max(1, floor((row_w - 40.0) / 100.0))))
+			fix_colorset_grid(g)
+
+static func fix_colorset_grid(g:Node):
+	if !g.has_meta("rr_cols"): return
+	if g.is_connected("resized", g, "col"): g.disconnect("resized", g, "col")
+	g.columns = g.get_meta("rr_cols")
+
+func _colorset_grids(n:Node) -> Array:
+	var out = []
+	for c in n.get_children():
+		if c is GridContainer and c.has_method("col"): out.append(c)
+		out += _colorset_grids(c)
+	return out
 
 # ---------------------------------------------------------------- folding
 func _fold(sec:Control):
@@ -542,6 +565,13 @@ class Switch extends Control:
 		var knob = Color(1, 1, 1, a) if k < 0.5 or !square else Color(0, 0, 0, a)
 		if square: draw_rect(Rect2(x, 3, d, d), knob)
 		else: draw_circle(Vector2(x + d / 2, r.size.y / 2), d / 2, knob)
+		if box.has_focus(): # (keyboard: where Space / Enter will toggle)
+			var ring = StyleBoxFlat.new()
+			ring.draw_center = false
+			ring.border_color = Color(accent.r, accent.g, accent.b, 0.9)
+			ring.set_border_width_all(2)
+			if !square: ring.set_corner_radius_all(int(r.size.y / 2) + 4)
+			draw_style_box(ring, r.grow(4))
 
 class ResetArrow extends Button:
 	func _ready():
