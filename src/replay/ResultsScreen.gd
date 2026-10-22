@@ -117,10 +117,12 @@ func _ready():
 	holder.add_child(ring)
 	ring.rect_size = Vector2(W, H)
 	grade_ring = ring
-	grade_text = CardUI.label(holder, g[0], _f(96), g[2], Vector2(RING_C.x - 110, RING_C.y - 86), 220)
+	# the letter alone, centred in the ring (the box is tall enough for the personal build's bigger face)
+	grade_text = CardUI.label(holder, g[0], _f(128), g[2], Vector2(RING_C.x - 110, RING_C.y - 100), 220)
 	grade_text.align = Label.ALIGN_CENTER
+	grade_text.valign = Label.VALIGN_CENTER
 	grade_text.clip_text = false
-	grade_text.rect_size = Vector2(220, 120)
+	grade_text.rect_size = Vector2(220, 200)
 	acc_label = CardUI.label(holder, "%.2f%%" % (acc * 100), _f(20), Color(1, 1, 1, 0.75), Vector2(RING_C.x - 110, RING_C.y + 40), 220)
 	acc_label.align = Label.ALIGN_CENTER
 	acc_label.visible = false # (only the grade in the ring: accuracy is in the tiles)
@@ -222,7 +224,7 @@ func _mono_grade(g:Array):
 		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var side = RING_R * 2.3
 		tr.rect_size = Vector2(side, side)
-		tr.rect_position = (grade_text.rect_size - tr.rect_size) / 2 + Vector2(0, 6)
+		tr.rect_position = (grade_text.rect_size - tr.rect_size) / 2
 		tr.material = ShaderMaterial.new()
 		tr.material.shader = Shader.new()
 		tr.material.shader.code = "shader_type canvas_item;\nuniform float edge = 0.0;\nvoid fragment() {\n\tvec4 c = texture(TEXTURE, UV);\n\tvec2 q = abs(UV - vec2(0.5)) * 2.0;\n\tc.a *= smoothstep(edge, edge + 0.22, UV.x) * (1.0 - smoothstep(0.45, 1.0, q.x)) * (1.0 - smoothstep(0.45, 1.0, q.y)) * (1.0 - smoothstep(0.7, 1.15, length(q)));\n\tCOLOR = c * COLOR;\n}"
@@ -231,7 +233,7 @@ func _mono_grade(g:Array):
 		grade_text.self_modulate.a = 0.0 # (the label keeps its pop-in animation, the art rides on it)
 		acc_label.visible = false # (the art fills the ring)
 	elif CardUI._has("grade_font"):
-		var gf = Look.grade_font(110)
+		var gf = Look.grade_font(150) # (its letters are ~70% of the size: about half the ring)
 		if gf: grade_text.add_font_override("font", gf)
 		if CardUI._has("static_glitch"): Look.static_glitch(grade_text, 2.0, 4.0)
 
@@ -384,7 +386,7 @@ func _stamp():
 			get_child(0).add_child(flash)
 			shake = 1.0
 	grade_text.modulate.a = 1
-	grade_text.rect_scale = Vector2(1.6, 1.6)
+	grade_text.rect_scale = Vector2(1.3, 1.3) # (pops in, settles inside the ring)
 	var passed = run.end_type == Globals.END_PASS and !run.replay
 	if run.get("stored"):
 		sfx.play("menuclick.ogg", -8.0)
