@@ -89,7 +89,7 @@ for name, script in insts:
     if os.environ.get('RR_NONET'): b = set_setting(b, 'application/networking/enabled', struct.pack('<II', 1, 0)) # (bool false)
     pk.new['res://project.binary'] = b
     src = open(os.path.join(S, script), encoding='utf-8').read()
-    src = src.replace('@@S@@', SP).replace('@@OUT@@', root.replace(chr(92), '/')).replace('@@NAME@@', name)
+    src = src.replace('@@S@@', SP).replace('@@OUT@@', root.replace(chr(92), '/')).replace('@@NAME@@', name).replace('@@RWSKIN@@', os.environ.get('RR_RWSKIN', '').replace(chr(92), '/'))
     first = extra_maps.get(insts[0][0], []) # @@MAP1@@ = the first map (in every library), @@MAP2@@ = the second (first instance only)
     src = src.replace('@@MAP1@@', os.path.basename(first[0]) if first else '').replace('@@MAP2@@', os.path.basename(first[1]) if len(first) > 1 else '')
     pk.add('res://mods/bench/Driver.gd', src.encode('utf-8'))

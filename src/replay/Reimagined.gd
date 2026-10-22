@@ -14,6 +14,9 @@ const DEFAULTS = {
 	"trail_length": 1.0,        # osu! trail lifetime multiplier
 	"trail_size": 1.0,
 	"hud": {},                  # HUD sprite -> [dx, dy, scale, shown]
+	"hud_style": "rewrite",     # run HUD: rewrite (RewriteHud.gd) | classic (the game's own panels)
+	"alt_combo": false,         # rewrite HUD: combo count in the left panel instead of behind the notes
+	"hp_ease": 60.0,            # rewrite HUD: how fast the health bar follows (10 smooth .. 100 instant)
 	"hide_config_hud": true,    # HIT WINDOW / HITBOX SIZE panel at the start of a map
 	"hide_hitbox_text": true,   # "Default hitboxes, default hitwindow" on the map page
 	"sort": "stars",            # map list: stars | name | mapper

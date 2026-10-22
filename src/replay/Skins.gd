@@ -49,6 +49,13 @@ const FILES = {
 	"touch": ["cursor", "image", ["png", "jpg", "webp"]],
 	"hit": ["sounds", "audio", ["ogg", "mp3"]], "miss": ["sounds", "audio", ["ogg", "mp3"]], # (the game's AudioLoader can't load wav from files)
 	"hud_font": ["hud", "font", ["ttf", "otf"]],
+	"fail": ["sounds", "audio", ["ogg", "mp3"]], "menu": ["sounds", "audio", ["ogg", "mp3"]],
+	# rewrite HUD pieces (RewriteHud.gd), as rewrite skins have them
+	"rw_grid": ["hud", "image", ["png", "jpg", "webp"]], "rw_panel_left": ["hud", "image", ["png", "jpg", "webp"]],
+	"rw_panel_right": ["hud", "image", ["png", "jpg", "webp"]], "rw_health": ["hud", "image", ["png", "jpg", "webp"]],
+	"rw_health_bg": ["hud", "image", ["png", "jpg", "webp"]], "rw_progress": ["hud", "image", ["png", "jpg", "webp"]],
+	"rw_progress_bg": ["hud", "image", ["png", "jpg", "webp"]], "rw_hits": ["hud", "image", ["png", "jpg", "webp"]],
+	"rw_misses": ["hud", "image", ["png", "jpg", "webp"]],
 }
 const CATEGORIES = ["notes", "cursor", "effects", "sounds", "hud"]
 # the game's own defaults (stock Rhythia.gd)
@@ -283,13 +290,14 @@ static func clear_active():
 
 # hit / miss sounds: the skin's, else the game's own (user folder file or built-in)
 static func _apply_sounds(name:String):
-	for e in [["hit", "hit_snd", "def_hit_snd"], ["miss", "miss_snd", "def_miss_snd"]]:
+	for e in [["hit", "hit_snd", "def_hit_snd"], ["miss", "miss_snd", "def_miss_snd"], ["fail", "fail_snd", "def_fail_snd"], ["menu", "menu_bgm", "def_menu_bgm"]]:
 		var f = file_of(name, e[0])
 		var st = Globals.audioLoader.load_file(f) if f != "" else null
 		if !(st is AudioStream): st = Rhythia.get_stream_with_default("user://" + e[0], Rhythia.get(e[2]))
-		if st is AudioStreamOGGVorbis or st is AudioStreamMP3: st.loop = false
+		if e[0] != "menu" and (st is AudioStreamOGGVorbis or st is AudioStreamMP3): st.loop = false
 		Rhythia.set(e[1], st)
 	Globals.error_sound = Rhythia.miss_snd
+	if Rhythia.fail_asp: Rhythia.fail_asp.stream = Rhythia.fail_snd
 
 static func _register_mesh(name:String, path:String) -> String:
 	var id = "rrskin_" + clean_name(name).to_lower().replace(" ", "_")
@@ -476,6 +484,154 @@ static func import_pkg(path:String):
 	f.store_string(JSON.print(data, "\t"))
 	f.close()
 	var name = unique_name(str(raw.get("name", path.get_file().get_basename())))
+	d.make_dir_recursive(Globals.p(DIR))
+	if d.rename(tmp, path_of(name)) != OK: return "couldn't install the skin"
+	return [name, warn]
+
+# ------------------------------------------------------------------ rhythia rewrite skins
+# A rewrite skin (Rhythia/Client: user folder skins/<name>/ = config.toml, game/*.png, hit / miss /
+# fail / menu .mp3) becomes a skin here: the files it shares with this game go to their slots, its
+# HUD images to the rewrite HUD's, its colour set and note shape (config.toml) are looked up in the
+# rewrite's user folder (colorsets/, meshes/), else its built-in ones are used. Its menu
+# backgrounds ("spaces") and UI button images have no place in this game and are left out.
+const RW_FILES = {"cursor.png": "cursor", "grid.png": "rw_grid", "panel_left_background.png": "rw_panel_left",
+	"panel_right_background.png": "rw_panel_right", "health.png": "rw_health", "health_background.png": "rw_health_bg",
+	"progress.png": "rw_progress", "progress_background.png": "rw_progress_bg", "hits.png": "rw_hits",
+	"misses.png": "rw_misses", "hit.mp3": "hit", "miss.mp3": "miss", "fail.mp3": "fail", "menu.mp3": "menu"}
+# the rewrite's own colour sets (user/colorsets/*.txt in its repository)
+const RW_COLORSETS = {"default": ["ff0059", "ffd8e6"], "cotton candy": ["00ffed", "ff8ff9"], "tan": ["d7af7a", "ebd3b0"],
+	"light blue and white": ["0f81b7", "e7eaec"], "café au lait": ["d9b49b", "ffe4cb"],
+	"nebula": ["ff64b1", "e864c4", "d264d7", "ba64ec", "a564ff", "ba64ec", "d264d7", "e864c4"],
+	"sunset": ["ff6d33", "ff623d", "ff5747", "ff4b50", "ff3f59", "ff3363", "ff3f59", "ff4b50", "ff5747", "ff623d"],
+	"tundra": ["ffffff", "c8d9ff", "8fb2ff", "5286ff", "2655ff", "5286ff", "8fb2ff", "c8d9ff", "ffffff"]}
+# its note shapes -> ours when its .obj isn't at hand
+const RW_MESHES = {"squircle": "ssp_rounded", "square": "ssp_square", "cube": "ssp_block", "plane": "ssp_plane"}
+
+# the rewrite's user folder: next to ours (both are custom user dirs in the same place), or where its
+# user_folder_path.txt points
+static func rewrite_root() -> String:
+	var root = OS.get_user_data_dir().get_base_dir() + "/Rhythia"
+	var f = File.new()
+	if f.open(root + "/user_folder_path.txt", File.READ) == OK:
+		var p = f.get_as_text().strip_edges().replace("\\", "/")
+		f.close()
+		if p != "" and Directory.new().dir_exists(p): root = p
+	return root
+
+# [[name, folder]] of the rewrite skins installed on this computer
+static func rewrite_skins() -> Array:
+	var out = []
+	var dir = rewrite_root() + "/skins"
+	var d = Directory.new()
+	if d.open(dir) != OK: return out
+	d.list_dir_begin(true, true)
+	var n = d.get_next()
+	while n != "":
+		var p = dir + "/" + n
+		if d.current_is_dir() and (File.new().file_exists(p + "/config.toml") or Directory.new().dir_exists(p + "/game")): out.append([n, p])
+		n = d.get_next()
+	d.list_dir_end()
+	out.sort()
+	return out
+
+static func _read_bytes(p:String):
+	var f = File.new()
+	if !f.file_exists(p) or f.open(p, File.READ) != OK: return null
+	var b = f.get_buffer(f.get_len())
+	f.close()
+	return b
+
+# config.toml: flat `key = "value"` lines (Tomlyn writes snake_case; PascalCase is read too)
+static func _toml(text:String) -> Dictionary:
+	var out = {}
+	for line in text.split("\n"):
+		line = line.strip_edges()
+		if line == "" or line.begins_with("#") or line.begins_with("[") or line.find("=") < 0: continue
+		var k = line.substr(0, line.find("=")).strip_edges().replace("_", "").to_lower()
+		var v = line.substr(line.find("=") + 1).strip_edges()
+		if v.begins_with("\"") and v.find("\"", 1) > 0: v = v.substr(1, v.find("\"", 1) - 1)
+		out[k] = v
+	return out
+
+static func _colors(text:String) -> Array:
+	var out = []
+	for c in text.replace("\r", "").replace("\n", ",").split(","):
+		c = c.strip_edges().trim_prefix("#")
+		if c != "" and c.is_valid_html_color(): out.append("#" + c)
+	return out
+
+# src = a rewrite skin folder, its config.toml, or a .zip of one -> [name, warnings] or an error String
+static func import_rewrite(src:String):
+	var files = {}   # file name -> bytes
+	var root = ""    # the rewrite user folder the skin sits in ("" for a zip)
+	var name = ""
+	if src.get_extension().to_lower() == "toml": src = src.get_base_dir()
+	if src.get_extension().to_lower() == "zip":
+		var want = ["config.toml"]
+		for k in RW_FILES: want.append(k)
+		var z = load("res://mods/fixes/Phxm.gd")._read_zip(src, want)
+		if z is String: return z
+		files = z
+		name = src.get_file().get_basename()
+	else:
+		if !Directory.new().dir_exists(src): return "folder not found"
+		for k in RW_FILES:
+			var b = _read_bytes(src + ("/" if k.ends_with(".mp3") else "/game/") + k)
+			if b == null and !k.ends_with(".mp3"): b = _read_bytes(src + "/" + k)
+			if b != null: files[k] = b
+		var c = _read_bytes(src + "/config.toml")
+		if c != null: files["config.toml"] = c
+		name = src.get_file()
+		root = src.get_base_dir().get_base_dir()
+	var found = 0
+	for k in RW_FILES:
+		if files.has(k): found += 1
+	if found == 0 and !files.has("config.toml"): return "not a Rhythia rewrite skin (no config.toml or game/*.png)"
+	var cfg = _toml(files["config.toml"].get_string_from_utf8()) if files.has("config.toml") else {}
+	var warn = []
+	var tmp = Globals.p(TMP) + "/" + str(OS.get_ticks_usec())
+	var d = Directory.new()
+	d.make_dir_recursive(tmp)
+	var f = File.new()
+	for k in RW_FILES:
+		if !files.has(k): continue
+		var out = tmp + "/" + RW_FILES[k] + "." + k.get_extension()
+		if f.open(out, File.WRITE) != OK: continue
+		f.store_buffer(files[k])
+		f.close()
+		var err = validate_file(RW_FILES[k], out)
+		if err != "":
+			warn.append("%s left out: %s" % [k, err])
+			d.remove(out)
+	var data = {"settings": {}, "author": ""}
+	# colour set: the rewrite user folder's file, else its built-in list
+	var cs = str(cfg.get("notecolors", "default"))
+	var cols = []
+	if root != "":
+		var b = _read_bytes(root + "/colorsets/" + cs + ".txt")
+		if b != null: cols = _colors(b.get_string_from_utf8())
+	if cols.empty() and RW_COLORSETS.has(cs.to_lower()):
+		for c in RW_COLORSETS[cs.to_lower()]: cols.append("#" + c)
+	if !cols.empty():
+		data["colors"] = cols
+		data["mirror"] = false
+	elif cs != "":
+		warn.append("colour set \"%s\" not found" % cs)
+	# note shape: its .obj from the rewrite user folder, else the nearest of ours
+	var mesh = str(cfg.get("notemesh", "squircle"))
+	var got_mesh = false
+	if root != "" and f.file_exists(root + "/meshes/" + mesh + ".obj"):
+		var out = tmp + "/mesh.obj"
+		if d.copy(root + "/meshes/" + mesh + ".obj", out) == OK:
+			if validate_file("mesh", out) == "": got_mesh = true
+			else: d.remove(out)
+	if !got_mesh:
+		if RW_MESHES.has(mesh.to_lower()): data.settings["selected_mesh"] = RW_MESHES[mesh.to_lower()]
+		elif mesh != "": warn.append("note shape \"%s\" not found" % mesh)
+	if f.open(tmp + "/skin.json", File.WRITE) != OK: return "can't write the skin"
+	f.store_string(JSON.print(data, "\t"))
+	f.close()
+	name = unique_name(name + " (rewrite)")
 	d.make_dir_recursive(Globals.p(DIR))
 	if d.rename(tmp, path_of(name)) != OK: return "couldn't install the skin"
 	return [name, warn]

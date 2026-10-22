@@ -34,6 +34,8 @@ var pending_slot:String = ""
 var pending_mode:String = ""      # file slot | import | export
 var closing:bool = false
 var name_edit:LineEdit
+var rw_menu:PopupMenu
+var rw_found:Array = []
 
 func _ready():
 	layer = 31
@@ -160,11 +162,17 @@ func _build_left():
 	v.add_child(g)
 	for b in [["New", "_new", "A new skin from the look you have now (settings + your user-folder images and sounds)"],
 			["Duplicate", "_dup", "A copy of the selected skin"], ["Rename", "_rename", "Rename the selected skin to the name above"],
-			["Delete", "_delete_ask", "Delete the selected skin (asks first)"], ["Import", "_import", "Add a skin from a .rrskin file"],
+			["Delete", "_delete_ask", "Delete the selected skin (asks first)"], ["Import", "_import", "Add a skin from a .rrskin file, or a Rhythia rewrite skin (its config.toml or a .zip)"],
 			["Export", "_export", "Save the selected skin as a .rrskin file to share"]]:
 		var bt = _btn(b[0], self, b[1], [], 122)
 		bt.hint_tooltip = b[2]
 		g.add_child(bt)
+	var rw = _btn("From Rhythia rewrite...", self, "_rewrite_menu", [], 250)
+	rw.hint_tooltip = "Add a skin from the Rhythia rewrite: one installed on this computer, or (Import) its folder's config.toml / a .zip of it"
+	v.add_child(rw)
+	rw_menu = PopupMenu.new()
+	rw_menu.connect("id_pressed", self, "_rewrite_pick")
+	root.add_child(rw_menu)
 	var use = _btn("Use this skin", self, "_use", [], 250)
 	v.add_child(use)
 	v.add_child(_btn("Stop using skins", self, "_unuse", [], 250))
@@ -259,8 +267,30 @@ func _unuse():
 func _import():
 	pending_mode = "import"
 	file_dialog.mode = FileDialog.MODE_OPEN_FILE
-	file_dialog.filters = PoolStringArray(["*.rrskin ; Rhythia|Reimagined skins"])
+	file_dialog.filters = PoolStringArray(["*.rrskin, *.zip, *.toml ; Skins", "*.rrskin ; Rhythia|Reimagined skins", "*.zip, *.toml ; Rhythia rewrite skins (.zip or its config.toml)"])
 	file_dialog.popup_centered_ratio(0.7)
+
+# rewrite skins installed on this computer (its user folder next to ours)
+func _rewrite_menu():
+	rw_found = S.rewrite_skins()
+	if rw_found.empty():
+		_say("No Rhythia rewrite skins found on this computer. Import its skin folder's config.toml or a .zip instead.", true)
+		return
+	rw_menu.clear()
+	for i in rw_found.size(): rw_menu.add_item(rw_found[i][0], i)
+	rw_menu.rect_size = Vector2(250, 0)
+	rw_menu.popup(Rect2(get_viewport().get_mouse_position(), Vector2(250, 0)))
+
+func _rewrite_pick(i:int):
+	if i >= 0 and i < rw_found.size(): _imported(S.import_rewrite(rw_found[i][1]))
+
+func _imported(r):
+	if r is String:
+		_say("Import failed: " + r, true)
+		return
+	_refresh_list()
+	_select(r[0])
+	_say("Imported \"%s\"." % r[0] + (("  " + PoolStringArray(r[1]).join("; ")) if !r[1].empty() else ""), !r[1].empty())
 
 func _export():
 	if cur_name == "": return
@@ -272,13 +302,12 @@ func _export():
 
 func _file_picked(p:String):
 	if pending_mode == "import":
-		var r = S.import_pkg(p)
-		if r is String:
-			_say("Import failed: " + r, true)
-			return
-		_refresh_list()
-		_select(r[0])
-		_say("Imported \"%s\"." % r[0] + (("  " + PoolStringArray(r[1]).join("; ")) if !r[1].empty() else ""), !r[1].empty())
+		var ext = p.get_extension().to_lower()
+		var rrskin = ext == "rrskin"
+		if ext == "zip": # (a zip may be either kind: ours has skin.json)
+			var z = load("res://mods/fixes/Phxm.gd")._read_zip(p, ["skin.json"])
+			rrskin = z is Dictionary and z.has("skin.json")
+		_imported(S.import_pkg(p) if rrskin else S.import_rewrite(p))
 	elif pending_mode == "export":
 		if dirty: _save()
 		if !p.ends_with(".rrskin"): p += ".rrskin"
@@ -375,6 +404,8 @@ func _show_group(g:String):
 			_check_row("Play hit sounds", "play_hit_snd")
 			_file_row("Miss sound", "miss")
 			_check_row("Play miss sounds", "play_miss_snd")
+			_file_row("Fail sound", "fail")
+			_file_row("Menu music", "menu")
 			var h = HBoxContainer.new()
 			h.add_child(_btn("Play hit", self, "_play", ["hit"], 120))
 			h.add_child(_btn("Play miss", self, "_play", ["miss"], 120))
@@ -387,6 +418,11 @@ func _show_group(g:String):
 			var hf = S.hud_font(20, cur_name)
 			if hf: sample.add_font_override("font", hf)
 			group_box.add_child(sample)
+			group_box.add_child(_label("Rewrite HUD images (a rewrite skin brings these)", 14, Color(1, 1, 1, 0.6)))
+			for r in [["Grid frame", "rw_grid"], ["Left panel", "rw_panel_left"], ["Right panel", "rw_panel_right"],
+					["Health bar", "rw_health"], ["Health bar back", "rw_health_bg"], ["Progress bar", "rw_progress"],
+					["Progress bar back", "rw_progress_bg"], ["Hits icon", "rw_hits"], ["Misses icon", "rw_misses"]]:
+				_file_row(r[0], r[1])
 
 func _row(text:String, ctl:Control):
 	var h = HBoxContainer.new()
