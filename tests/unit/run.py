@@ -8,7 +8,7 @@ import os, re, shutil, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.normpath(os.path.join(HERE, '..', '..', 'src', 'replay'))
-FILES = ['EditorModel.gd', 'EditorPatterns.gd', 'EditorAuto.gd', 'GifWriter.gd', 'Updater.gd', 'update_key.pub']
+FILES = ['EditorModel.gd', 'EditorPatterns.gd', 'EditorAuto.gd', 'GifWriter.gd', 'Updater.gd', 'update_key.pub', 'MPProto.gd', 'MPRelay.gd']
 STAMPS = {b'@@VERSION@@': b'0.0.0', b'@@CHANNEL@@': b'own', b'@@BUILD_ID@@': b'unit'}
 
 def main():

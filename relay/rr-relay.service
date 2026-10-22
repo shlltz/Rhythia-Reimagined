@@ -1,0 +1,28 @@
+# systemd unit for running the relay without Docker (behind Caddy / nginx for HTTPS).
+# sudo useradd --system --no-create-home rrrelay
+# sudo install -D -m 644 rr_relay.py /opt/rr-relay/rr_relay.py
+# sudo install -D -m 644 .env /etc/rr-relay.env    (RR_RELAY_BIND=127.0.0.1, RR_TRUST_PROXY=1)
+# sudo cp rr-relay.service /etc/systemd/system/ && sudo systemctl enable --now rr-relay
+[Unit]
+Description=Rhythia-reimagined multiplayer relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=rrrelay
+EnvironmentFile=/etc/rr-relay.env
+ExecStart=/usr/bin/python3 /opt/rr-relay/rr_relay.py
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=10
+MemoryMax=256M
+TasksMax=64
+LimitNOFILE=8192
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

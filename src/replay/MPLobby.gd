@@ -28,6 +28,8 @@ var chat_log:Array = []
 var last_results:Array = []
 var code:String = ""           # set by the transport: room code and reachable addresses
 var addresses:Array = []
+var invite:String = ""           # online lobbies: the relay invite link (MPRelay.invite)
+var online:bool = false
 var closed:bool = false        # the owner left: the transport shuts the server down
 var kicked_tokens:Array = []   # a removed player's client can't come back in by reconnecting
 var now:int = 0
@@ -455,7 +457,8 @@ func _send(target:int, msg:Dictionary):
 # ---------------------------------------------------------------- views sent to players
 func lobby_dict() -> Dictionary:
 	return {name = lobby_name, max = max_players, pw = password != "", host = host_pid, owner = owner_pid,
-		state = state, map = map, rules = rules, m = match_id, code = code, addr = addresses, n = active_count()}
+		state = state, map = map, rules = rules, m = match_id, code = code, addr = addresses, n = active_count(),
+		online = online, invite = invite}
 
 func players_list() -> Array:
 	var l = []
