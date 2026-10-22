@@ -1,4 +1,4 @@
-# Major update roadmap (v0.13 line)
+# Major update roadmap (v2.0)
 
 Status of the big feature request, kept honest: `[x]` done and tested, `[~]` partly done (what is
 missing is written next to it), `[ ]` not started, `[!]` blocked (reason given), `[-]` out of scope.
@@ -88,4 +88,4 @@ GitHub releases + signed manifest ──> updater (download, verify, back up, sw
 - [~] mobile (Customize > Device): gyroscope cursor (GyroCursor.gd; turn / tilt, second finger recentres, touch drags blocked), drag / position modes (the game's own), finger-sized buttons in the mod panels on touch screens, low-end profile with RESTORE. DeviceTest.gd 16/16 own + share with the gyroscope and touch hint fed in on desktop; on a desktop the profile is within noise (docs/PERF.md). Not verified on a real phone: axis signs and sensitivity are reasoned, not felt
 - [-] Android device testing: out of scope here (the mobile version has its own maintainer)
 - [x] auto-update (Updater.gd, docs/UPDATES.md): signed manifest on GitHub releases (RSA/SHA-256, key in tools/, public half built in), pck size + hash verified, backup + rollback scripts, a self-written helper swaps the pck after the game exits, the new version confirms, ROLL BACK; portable builds only, others get the release page, personal builds never update; refuses any pck the game is not running from (unique build id). UpdaterTest.gd 25/25 own + share against a local server + sandbox (incl. tampered / foreign-key / foreign-URL / bad-hash refusals, and an openssl-signed manifest from ssp_mod.py verified in-game). Live GitHub path not exercised until a release carries update.json
-- [~] packaging + release validation: v0.13.0 ported to the public branch (private-look code left out), built and scanned; publishing pending
+- [x] packaging + release validation: v2.0.0 ported to the public branch (private-look code left out), built, scanned (no excluded code, no personal paths or keys) and published

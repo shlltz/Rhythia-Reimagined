@@ -42,4 +42,4 @@ existing installs can't verify new updates: they'd have to download a new versio
    exe. Engine options like `--main-pack` don't show in the game's command line, so they can't be
    checked directly.
 
-Existing installs from before v0.13 have no updater; they need one manual download.
+Existing installs from before v2.0 have no updater; they need one manual download.

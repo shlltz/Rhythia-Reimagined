@@ -1,6 +1,6 @@
 # Performance baseline
 
-Measured with `tests/multiplayer/PerfBench.gd` (own build, v0.13 work on branch `major`,
+Measured with `tests/multiplayer/PerfBench.gd` (own build, v2.0 work on branch `major`,
 2026-10-21). Machine: Intel i7-13650HX, GLES3, 144 Hz display, vsync off, uncapped fps.
 Map: the 36 s test map (345 notes, ~10 notes/s, peak 30/s), autoplay.
 
