@@ -41,7 +41,7 @@ func _process(_d):
 	if rec != null and last_us > 0 and is_instance_valid(game):
 		var ms = (now - last_us) / 1000.0
 		var sp = game.get_node_or_null("Spawn")
-		rec.append([ms, sp.ms if sp else -1.0, int(game.get("hits")), added.duplicate(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0])
+		rec.append([ms, sp.ms if sp else float(OS.get_ticks_msec()), int(game.get("hits")) if game.get("hits") != null else 0, added.duplicate(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0])
 	added = []
 	last_us = now
 
@@ -115,6 +115,18 @@ func census(run:int):
 func run():
 	Directory.new().remove(OUT)
 	yield(wait(10.0), "completed")
+	if OS.get_environment("RR_SPIKE_MENU") == "1": # (the menu as the title closes: 6 s of frames)
+		game = get_tree().current_scene
+		rec = []
+		var tm0 = get_tree().current_scene.get_node_or_null("TitleMenu")
+		if tm0 and tm0.visible: tm0._close("")
+		yield(wait(6.0), "completed")
+		var r0 = rec
+		rec = null
+		report("menu after the title closes", r0)
+		out("== done")
+		OS.kill(OS.get_process_id())
+		return
 	var tm = get_tree().current_scene.get_node_or_null("TitleMenu")
 	if tm and tm.visible: tm._close("")
 	yield(wait(2.0), "completed")

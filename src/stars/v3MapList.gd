@@ -215,13 +215,13 @@ func build_list():
 		var s = Rhythia.registry_song.get_item(id)
 		if s and Rhythia.is_favorite(id) and search_matches(s):
 			favorite.append(s)
-	favorite.sort_custom(self,_sort_fn())
+	favorite = _fast_sort(favorite, _sort_fn())
 	disp.append_array(favorite)
 	# "difficulty" sort = star rating (Steam Rhythia formula), across all categories
 	var rest:Array = []
 	for group in [easy,medium,hard,logic,amogus,unknown]:
 		append_filtering_favorites(rest,group)
-	rest.sort_custom(self,_sort_fn())
+	rest = _fast_sort(rest, _sort_fn())
 	disp.append_array(rest)
 
 var rr_batch:bool = false # reset_filters changes 6 filters: rebuild the list once, not 6 times (~200 ms hitch)
@@ -261,14 +261,103 @@ func update_search_flipped(flip:bool):
 
 func update_search_flip_name(flip:bool):
 	flip_name = flip
-	easy.sort_custom(self,"sortsongsimple")
-	medium.sort_custom(self,"sortsongsimple")
-	hard.sort_custom(self,"sortsongsimple")
-	logic.sort_custom(self,"sortsongsimple")
-	amogus.sort_custom(self,"sortsongsimple")
+	easy = _fast_sort(easy, "sortsongsimple")
+	medium = _fast_sort(medium, "sortsongsimple")
+	hard = _fast_sort(hard, "sortsongsimple")
+	logic = _fast_sort(logic, "sortsongsimple")
+	amogus = _fast_sort(amogus, "sortsongsimple")
 	if ready: reload_to_current_page()
 
 func sortab(a, b): return a < b
+
+# perf mod: the list's sorts done natively. Each map gets one integer key that orders like the
+# comparator named by fn: its names, ids, stars and sort keys are first ranked by a native sort (a
+# reversed part takes the rank from the other end), the ranks are packed into the integer with the
+# map's index last, then the keys get one native sort. A GDScript comparator took ~60 ms for 2,300
+# maps (the online maps included) on every list rebuild.
+const FAST_MIN = 48 # (below this the comparator is as quick)
+var rr_lower:Dictionary = {} # song -> [name, name.to_lower(), creator.to_lower()] (redone when the name changes)
+func _fast_sort(arr:Array, fn:String) -> Array:
+	var n = arr.size()
+	var b = 1
+	while (1 << b) < n + 1: b += 1
+	if n < FAST_MIN or b * 4 + 1 > 62 or !(fn in ["sortsong", "sortsongsimple", "sortname", "sortmapper", "sortkey", "sortkey_desc"]):
+		arr.sort_custom(self, fn)
+		return arr
+	var low = []
+	low.resize(n)
+	for i in n:
+		var a = arr[i]
+		var c = rr_lower.get(a)
+		if c == null or c[0] != a.name:
+			c = [a.name, a.name.to_lower(), a.creator.to_lower()]
+			rr_lower[a] = c
+		low[i] = c
+	var nm = _ranks(arr, low, "name")
+	var idr = _ranks(arr, low, "id")
+	var keys = [] # (a plain Array: its ints are 64-bit, a PoolIntArray's only 32)
+	keys.resize(n)
+	match fn:
+		"sortsong":
+			var st = _ranks(arr, low, "stars")
+			for i in n:
+				var v = star_of.get(arr[i], -1.0)
+				var k = 1 if v < 0 else 0
+				k = (k << b) | _flip(st, v, flip_display)
+				k = (k << b) | _flip(nm, low[i][1], flip_name)
+				k = (k << b) | _flip(idr, arr[i].id, flip_name)
+				keys[i] = (k << b) | i
+		"sortsongsimple":
+			for i in n:
+				var k = (_flip(nm, low[i][1], flip_name) << b) | _flip(idr, arr[i].id, flip_name)
+				keys[i] = (k << b) | i
+		"sortname":
+			for i in n:
+				var k = (_flip(nm, low[i][1], flip_display) << b) | idr[0][arr[i].id]
+				keys[i] = (k << b) | i
+		"sortmapper":
+			var cr = _ranks(arr, low, "creator")
+			for i in n:
+				var k = (_flip(cr, low[i][2], flip_display) << b) | _flip(nm, low[i][1], flip_display)
+				k = (k << b) | idr[0][arr[i].id]
+				keys[i] = (k << b) | i
+		_: # sortkey (low first) / sortkey_desc (high first); maps without a key last either way
+			var kr = _ranks(arr, low, "key")
+			var desc = fn == "sortkey_desc"
+			for i in n:
+				var a = arr[i]
+				var has = rr_key.has(a)
+				var k = 0 if has else 1
+				k = (k << b) | (_flip(kr, rr_key[a], desc != flip_display) if has else 0)
+				k = (k << b) | _flip(nm, low[i][1], flip_display)
+				k = (k << b) | idr[0][a.id]
+				keys[i] = (k << b) | i
+	var ks = keys
+	ks.sort()
+	var out = []
+	out.resize(n)
+	var mask = (1 << b) - 1
+	for i in n: out[i] = arr[ks[i] & mask]
+	return out
+
+# [value -> its place among the distinct values of the maps (native sort), how many]
+func _ranks(arr:Array, low:Array, what:String) -> Array:
+	var seen = {}
+	for i in arr.size():
+		match what:
+			"name": seen[low[i][1]] = true
+			"id": seen[arr[i].id] = true
+			"creator": seen[low[i][2]] = true
+			"stars": seen[star_of.get(arr[i], -1.0)] = true
+			"key": if rr_key.has(arr[i]): seen[rr_key[arr[i]]] = true
+	var vals = seen.keys()
+	vals.sort()
+	var r = {}
+	for i in vals.size(): r[vals[i]] = i
+	return [r, vals.size()]
+
+func _flip(r:Array, v, rev:bool) -> int:
+	return r[1] - 1 - r[0][v] if rev else r[0][v]
 
 func sortsongsimple(a:Song, b:Song):
 	if flip_name:
@@ -581,6 +670,9 @@ func reset_filters():
 	rr_batch = false
 	reload_to_current_page()
 
+# perf mod: which songs are already in a difficulty list, as a set - the stock check was
+# add_to.find(map) for every song (O(n^2): ~150 ms on the main thread once the online maps arrive)
+var bucketed:Dictionary = {}
 func prepare_songs():
 	for i in range(songs.size()):
 		var map:Song = songs[i]
@@ -592,14 +684,14 @@ func prepare_songs():
 			Globals.DIFF_LOGIC: add_to = logic
 			Globals.DIFF_AMOGUS: add_to = amogus
 			_: add_to = unknown
-		#if map not in add_to
-		if add_to.find(map) == -1:
+		if !bucketed.has(map):
+			bucketed[map] = true
 			add_to.append(map)
-	easy.sort_custom(self,"sortsongsimple")
-	medium.sort_custom(self,"sortsongsimple")
-	hard.sort_custom(self,"sortsongsimple")
-	logic.sort_custom(self,"sortsongsimple")
-	amogus.sort_custom(self,"sortsongsimple")
+	easy = _fast_sort(easy, "sortsongsimple")
+	medium = _fast_sort(medium, "sortsongsimple")
+	hard = _fast_sort(hard, "sortsongsimple")
+	logic = _fast_sort(logic, "sortsongsimple")
+	amogus = _fast_sort(amogus, "sortsongsimple")
 
 func make_song_button(id:int=-1):
 	if id < 0 or id >= disp.size():
