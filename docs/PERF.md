@@ -38,3 +38,34 @@ settings (`rh` = the game's, `rr` = Reimagined's).
   the profile leaves it alone. On a weak phone GPU it may well help; that's untested.
 - The audio vs clock figure is the game's own playback-position reading, which moves in mix
   blocks. It's a baseline to compare against, not a measured offset.
+
+## v2.6.0 optimization pass (2026-10-23)
+
+Same machine, own build, uncapped fps. Probes: `ScreenProbe.gd` (per screen), `DrawProbe.gd`
+(draw calls per canvas item), `ListProbe.gd` (map list), `SpikeProbe.gd` (slow frames),
+`SwitchProbe.gd` (map switching).
+
+| Measure | Before | After |
+|---|---|---|
+| Title menu: 2D draw calls / frame | 550, 1.41 ms (p99 2.50) | 99, 1.13 ms (p99 1.39) |
+| Map page: 2D draw calls / frame | 806, 1.75 ms | 474, 0.72 ms |
+| 10+ star map page | 945, 1.97 ms | 551, 0.89 ms |
+| PerfBench idle menu, 102 maps (p50) | 2.00 ms | 0.58-0.62 ms |
+| PerfBench map switching (p50 / p99) | 1.87 / 4.24 ms | 0.82 / 3.76 ms |
+| Map list rebuild with 2,181 online maps | 64 ms | 20 ms |
+| prepare_songs (same library) | 22 ms | 10 ms |
+| Worst menu frame as the online maps arrive | 142-147 ms | 51-54 ms |
+| Gameplay (p50 / p99) | 0.64 / 1.18 ms | 0.63 / 1.17 ms (unchanged) |
+
+- The spectrum bars (90 around the title logo, 80 around the map cover) were antialiased
+  `draw_line`s, which Godot 3 doesn't batch: about five draw calls each. They're now one triangle
+  array with a 1px soft edge (`Ring.bars`).
+- The map list sorted with GDScript comparators on every rebuild, and `prepare_songs` checked
+  each map with `Array.find` (O(n²)). Sorting is now one native sort of ranked integer keys
+  (checked against every comparator and flip setting in `ListProbe.gd`), and a set replaces `find`.
+- Checked and left alone: per-script frame cost in the menus (no script above noise), map
+  switching across the 618-map library (0.6 ms mean in `select_song`, 1 of 120 switches over
+  16.7 ms), boot (menu at ~1.7 s; the rest of PerfBench's "startup" is the boot animation),
+  memory over repeated runs (stable; one orphan node per run, not identifiable in a release
+  build), threads (every one joined). The end-of-map freeze (PassFx) reads the last frame back from
+  the GPU (~35 ms); the picture is frozen at that moment by design.
