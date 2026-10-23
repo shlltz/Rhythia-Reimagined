@@ -29,8 +29,7 @@ const DESCS = {"FOV": "Field of view of the gameplay camera, in degrees.",
 	"ShowHealth": "Show the energy bar.",
 	"Replays": "Record a replay of every run (sidebar > Replays, or drag a replay file into the game).",
 	"Fullscreen": "Fill the whole screen.",
-	"SweptHitbox": "Also counts notes your cursor passes through between two frames (fast flicks). Same hitbox size and hit window. Off = classic. Applies on the next map.",
-	"RewriteFeel": "Play with the Rhythia rewrite's default look: approach rate 30 at distance 15, FoV 70, its note fade. Your own settings come back when this is off. Applies on the next map."}
+	"SweptHitbox": "Also counts notes your cursor passes through between two frames (fast flicks). Same hitbox size and hit window. Off = classic. Applies on the next map."}
 
 var style:Node # SettingsStyle
 var tabs:TabContainer

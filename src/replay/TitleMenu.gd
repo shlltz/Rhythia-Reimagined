@@ -427,6 +427,7 @@ func _draw_ring():
 	var r = LOGO / 2 * logo.rect_scale.x * 0.92
 	var n = 90
 	var col = Color(1, 1, 1, 0.22 + 0.3 * punch)
+	var segs = []
 	for i in n:
 		var k = int(float(i % (n / 2)) / (n / 2) * min(vis.mags.size(), 64))
 		var v = clamp(vis.mags[k] / vis.ceiling, 0.0, 1.0)
@@ -434,7 +435,8 @@ func _draw_ring():
 		var d = Vector2(cos(a), sin(a))
 		var c = col # bars facing the (see-through) cards fade out while they're open
 		c.a *= 1.0 - open_amt * clamp((d.x - 0.15) * 2.5, 0.0, 1.0)
-		if c.a > 0.005: ring.draw_line(d * r, d * (r + 6 + v * 70 * (1.0 + 0.35 * punch)), c, 4.0, true)
+		if c.a > 0.005: segs.append([d * r, d * (r + 6 + v * 70 * (1.0 + 0.35 * punch)), 4.0, c])
+	R.bars(ring, segs) # (one draw call for all the bars)
 
 func _draw_glow():
 	if punch < 0.01 and beat < 0.01: return

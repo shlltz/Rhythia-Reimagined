@@ -50,7 +50,7 @@ The share builds leave out personal-look mods (`TWEAKS_EXCLUDE`) and use the sha
 | Customize panel | `ReimaginedPanel.gd` (tabs), `Reimagined.gd` (settings) |
 | Map editor | `Editor.gd`, `EditorModel.gd`, `EditorCapture.gd`, `EditorAuto.gd`, `EditorPatterns.gd` |
 | Replays | `Replay.gd` (format), `ReplayViewer.gd`, `ReplayBrowser.gd`, `ReplayStats.gd`, `ReplayStudio.gd`, `ClipRecorder.gd`, `ClipExport.gd`, `GifWriter.gd` |
-| Gameplay hooks | `Game.gd`, `NoteManager.gd`, `HUD.gd`, `Checkpoint.gd` (retry from the fail point), `RewriteFeel.gd` |
+| Gameplay hooks | `Game.gd`, `NoteManager.gd`, `HUD.gd`, `Checkpoint.gd` (retry from the fail point) |
 | Library | `Library.gd`, `LibraryPanel.gd`, `RewriteImport.gd`; `.phxm` in `src/fixes/Phxm.gd` |
 | Skins | `Skins.gd`, `SkinPanel.gd` |
 | Device / updates | `Device.gd`, `GyroCursor.gd`, `Updater.gd` |

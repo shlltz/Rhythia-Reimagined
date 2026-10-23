@@ -447,22 +447,27 @@ func _draw():
 class CoverViz extends Control:
 	var hype = null
 	const BARS = 20
+	var ring = null       # replay/Ring.gd: all bars in one draw call (antialiased lines are ~5 each)
+	var star_cache = null
 	func _ready():
 		anchor_right = 1
 		anchor_bottom = 1
 		mouse_filter = MOUSE_FILTER_IGNORE
 		show_behind_parent = true
+		if ResourceLoader.exists("res://mods/replay/Ring.gd"): ring = load("res://mods/replay/Ring.gd")
+		star_cache = load("res://mods/stars/StarCache.gd")
 	func _process(_d):
 		update()
 	func _draw():
 		var vis = get_tree().root.get_node_or_null("Menu/AudioVisualizer")
 		if !vis or vis.mags.size() < 8 or vis.ceiling <= 0: return
 		var col = Color(1, 1, 1, 0.55)
-		if hype and hype.hype: col = load("res://mods/stars/StarCache.gd").color_for(hype.stars)
+		if hype and hype.hype: col = star_cache.color_for(hype.stars)
 		var s = rect_size
 		var n = min(vis.mags.size(), 64)
 		var sides = [[Vector2(0, 0), Vector2(s.x, 0), Vector2(0, -1)], [Vector2(s.x, 0), Vector2(s.x, s.y), Vector2(1, 0)],
 				[Vector2(s.x, s.y), Vector2(0, s.y), Vector2(0, 1)], [Vector2(0, s.y), Vector2(0, 0), Vector2(-1, 0)]]
+		var segs = []
 		for si in 4:
 			var a = sides[si][0]
 			var b = sides[si][1]
@@ -477,4 +482,7 @@ class CoverViz extends Control:
 				var p = a.linear_interpolate(b, (i + 0.5) / BARS)
 				var c = col
 				c.a *= min(1.0, (v - 0.03) * 10.0) * (0.35 + 0.65 * v)
-				draw_line(p + out * 6, p + out * (6 + v * 76), c, 5.0, true)
+				segs.append([p + out * 6, p + out * (6 + v * 76), 5.0, c])
+		if ring: ring.bars(self, segs)
+		else:
+			for g in segs: draw_line(g[0], g[1], g[3], g[2], true)
