@@ -39,6 +39,10 @@ Every feature test should pass on both `own` and `share`. The newer drivers:
 
 | Driver | What it checks |
 |---|---|
+| `ScreenProbe.gd` | render cost per screen: frame time, 2D items / draw calls, 3D draw calls, vertices, video memory (RR_SHOTS=1 saves a picture of each) |
+| `DrawProbe.gd` | which canvas items cost the 2D draw calls on the title menu, map list and a 10+ star map page (each hidden in turn) |
+| `SpikeProbe.gd` | the slowest gameplay frames with song time, hits and the nodes created that frame; node census between runs (RR_SPIKE_RUNS=n) |
+| `SwitchProbe.gd` | map switching: time inside select_song and the worst frame after it, per map |
 | `EditorInteractionTest.gd` | real mouse / key input: placing, hover, selection (click, Ctrl, Shift, box), grid and track drags, scrub, seek bar, wheel, clipboard, undo / redo chains, moves across notes, Esc and text-box focus, save / reload, missing audio, audio sync, a 20k-note map, five window sizes, a test play |
 | `EditorToolsTest.gd` | audio capture + BPM / offset (click tracks through the real capture, a real song against its notes), patterns, slots, undo selection |
 | `EditorParityTest.gd` | grid keys, flips, Ctrl+Q / T / B, timing points, Bezier curves |

@@ -16,6 +16,63 @@ static func arc(ci:CanvasItem, c:Vector2, r:float, w:float, a0:float, a1:float, 
 		disc(ci, c + Vector2(cos(a0), sin(a0)) * r, h, col)
 		disc(ci, c + Vector2(cos(a1), sin(a1)) * r, h, col)
 
+# straight bars (the spectrum rings): every [from, to, width, colour] in one triangle array with a
+# 1px soft edge along both sides. One draw call for all of them: an antialiased draw_line is not
+# batched by Godot 3 and cost about five each (the title's 90 bars were ~450 of its 550 draw calls).
+static func bars(ci:CanvasItem, segs:Array):
+	var n = segs.size()
+	if n == 0: return
+	var pts = PoolVector2Array()
+	pts.resize(n * 8)
+	var cs = PoolColorArray()
+	cs.resize(n * 8)
+	var j = 0
+	for s in segs:
+		var a:Vector2 = s[0]
+		var b:Vector2 = s[1]
+		var col:Color = s[3]
+		var d = b - a
+		var l = d.length()
+		d = d / l if l > 0.0001 else Vector2(1, 0)
+		var nr = Vector2(-d.y, d.x)
+		var h = s[2] * 0.5
+		var o0 = nr * (h + FEATHER * 0.5)
+		var o1 = nr * max(h - FEATHER * 0.5, 0.0)
+		var clear = Color(col.r, col.g, col.b, 0.0)
+		pts[j] = a - o0
+		pts[j + 1] = a - o1
+		pts[j + 2] = a + o1
+		pts[j + 3] = a + o0
+		pts[j + 4] = b - o0
+		pts[j + 5] = b - o1
+		pts[j + 6] = b + o1
+		pts[j + 7] = b + o0
+		cs[j] = clear
+		cs[j + 1] = col
+		cs[j + 2] = col
+		cs[j + 3] = clear
+		cs[j + 4] = clear
+		cs[j + 5] = col
+		cs[j + 6] = col
+		cs[j + 7] = clear
+		j += 8
+	VisualServer.canvas_item_add_triangle_array(ci.get_canvas_item(), _bar_indices(n), pts, cs)
+
+# per bar: 4 vertices across at each end, 3 quads across (cached per bar count)
+static func _bar_indices(n:int) -> PoolIntArray:
+	var cache:Dictionary = Engine.get_meta("rr_bar_idx") if Engine.has_meta("rr_bar_idx") else {}
+	if cache.has(n): return cache[n]
+	var idx = PoolIntArray()
+	for i in n:
+		var b = i * 8
+		for k in 3:
+			idx.append(b + k); idx.append(b + 4 + k); idx.append(b + k + 1)
+			idx.append(b + 4 + k); idx.append(b + 5 + k); idx.append(b + k + 1)
+	if cache.size() > 64: cache.clear()
+	cache[n] = idx
+	Engine.set_meta("rr_bar_idx", cache)
+	return idx
+
 # filled circle with a soft edge
 static func disc(ci:CanvasItem, c:Vector2, r:float, col:Color):
 	if col.a <= 0.0 or r <= 0.0: return
