@@ -1107,6 +1107,9 @@ func _field_input(ev):
 	if !m: return
 	if ev is InputEventMouseMotion:
 		field_mouse = ev.position
+		if field_drag != null and !(ev.button_mask & BUTTON_MASK_LEFT): # (released outside the window: ends here)
+			_field_release()
+			return
 		if field_drag != null:
 			if !field_drag.live and ev.position.distance_to(field_drag.p0) >= DRAG_PX: field_drag.live = true
 			if field_drag.live:
@@ -1119,7 +1122,7 @@ func _field_input(ev):
 	if _wheel(ev): return
 	if ev.button_index == BUTTON_LEFT:
 		if ev.pressed:
-			if field_drag != null: return
+			if field_drag != null: _cancel_drag() # (its release never came)
 			var hit = _note_at(ev.position)
 			if hit != null:
 				_click_select(hit, ev.shift, ev.control)
@@ -1129,11 +1132,7 @@ func _field_input(ev):
 			elif _in_place_area(ev.position):
 				_place_note(_snap_pos(_to_grid(ev.position)))
 		elif field_drag != null:
-			var d = drag_delta
-			field_drag = null
-			drag_delta = Vector2.ZERO
-			if d != Vector2.ZERO: _move_selection(d, 0)
-			field.update()
+			_field_release()
 	elif ev.button_index == BUTTON_RIGHT and ev.pressed and field_drag == null:
 		var h = _note_at(ev.position)
 		if h != null: _delete_notes([h], "delete note")
@@ -1141,12 +1140,20 @@ func _field_input(ev):
 			sel = {}
 			_sel_changed()
 
+func _field_release():
+	var d = drag_delta
+	field_drag = null
+	drag_delta = Vector2.ZERO
+	if d != Vector2.ZERO: _move_selection(d, 0)
+	field.update()
+
 func _field_exit():
 	field_mouse = null
 	field.update()
 	_hint("")
 
-func _place_note(g:Vector2):
+# auto-advance: after a grid key always, after a click only while paused (as the Quantum Editor)
+func _place_note(g:Vector2, from_key:bool = false):
 	var ms = max(_place_ms(), 0)
 	var n = [g.x, g.y, ms]
 	if m.has_note(n): # (a click on a note's own cell at its own time: that note gets selected)
@@ -1160,7 +1167,7 @@ func _place_note(g:Vector2):
 	m.end()
 	sel = {Model.key_of(n): n}
 	sel_anchor = n
-	if advance: _seek(m.grid_next(ms, 1))
+	if advance and (from_key or !playing): _seek(m.grid_next(ms, 1))
 	_sel_changed()
 
 # where the pattern cursor is at time t (grid units): rests on a note, then glides to the next one and
@@ -1506,6 +1513,9 @@ func _tl_input(ev):
 	if !m: return
 	if ev is InputEventMouseMotion:
 		tl_mouse = ev.position
+		if tl_drag != null and !(ev.button_mask & (1 << (tl_drag.btn - 1))): # (released outside the window: ends here)
+			_tl_release(ev.position)
+			return
 		if tl_drag != null: _tl_drag_to(ev.position)
 		_hint("track")
 		tl.update()
@@ -1513,7 +1523,9 @@ func _tl_input(ev):
 	if !(ev is InputEventMouseButton): return
 	if _wheel(ev): return
 	if ev.pressed:
-		if tl_drag != null: return
+		if tl_drag != null:
+			if tl_drag.btn != ev.button_index and Input.is_mouse_button_pressed(tl_drag.btn): return
+			_cancel_drag() # (its release never came)
 		tl_mouse = ev.position
 		match ev.button_index:
 			BUTTON_LEFT:
@@ -1677,7 +1689,10 @@ func _seek_input(ev):
 	if !m: return
 	if ev is InputEventMouseMotion:
 		_hint("seek")
-		if seek_drag: _seek(_seek_t(ev.position.x))
+		if seek_drag and !(ev.button_mask & BUTTON_MASK_LEFT): # (released outside the window)
+			seek_drag = false
+			_drag_resume()
+		elif seek_drag: _seek(_seek_t(ev.position.x))
 		return
 	if !(ev is InputEventMouseButton): return
 	if _wheel(ev): return
@@ -3158,7 +3173,7 @@ func _input(ev):
 		var gk = GRID_KEYS.find(ev.scancode)
 		if gk < 0: gk = PAD_KEYS.find(ev.scancode)
 		if gk >= 0 and !ev.shift and !ev.alt: # a note on that cell at the (snapped) playhead
-			_place_note(Vector2(gk % 3, gk / 3))
+			_place_note(Vector2(gk % 3, gk / 3), true)
 			get_tree().set_input_as_handled()
 			return
 		match ev.scancode:
