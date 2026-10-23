@@ -20,7 +20,7 @@ const TEST_ID = "rr_editor_test"
 const BIN = 25.0                     # waveform bin, ms
 const APPROACH = 700.0               # how far ahead the field shows notes, ms
 const DIFFS = ["Unknown", "Easy", "Medium", "Hard", "Logic", "Tasukete"]
-const SNAPS = [1, 2, 3, 4, 6, 8, 12, 16]
+const SNAPS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 
 var menu:Node
 var m                                # Model
@@ -51,22 +51,28 @@ var loop_on:bool = false
 var loop_a:float = -1.0
 var loop_b:float = -1.0
 
-# view
-var view0:float = 0.0                # left edge of the timeline, ms
-var ppm:float = 0.15                 # pixels per ms
-var follow:bool = true
+# view: the track keeps the playhead at cursor_frac of its width and scrolls the map under it (as the
+# Quantum Editor does); zoom = pixels per ms in fixed 1.25x steps (zoom_i), so it never drifts
+var ppm:float = 0.15
+var zoom_i:int = 0
+var cursor_frac:float = 0.4
 var time_snap:bool = true
 var pos_snap:String = "cell"         # cell | half | free
 var advance:bool = false
 var sel:Dictionary = {}              # key -> note
+var sel_anchor = null                # where a Shift+click range starts (the last plainly clicked note)
 var clip:Array = []
-var hover_cell:Vector2 = Vector2(-9, -9)
+var field_mouse = null               # mouse over the grid / the track (local position) or null
+var tl_mouse = null
 var show_cursor:bool = true # pattern cursor: glides from note to note, arriving on each note's time
-var field_drag = null                # {start: Vector2 grid, keys}
-var tl_drag = null
+var show_numbers:bool = false        # note numbers on the grid
+var field_drag = null                # {grab: Vector2, start: Vector2 grid, p0: Vector2, notes, live}
+var tl_drag = null                   # {mode: move | scrub | box, btn, ...}
+var seek_drag:bool = false
 var drag_delta:Vector2 = Vector2.ZERO
 var drag_dt:int = 0
-var box_sel = null                   # {a: ms, b: ms, add: bool}
+var box_sel = null                   # {a: ms, b: ms}
+var resume_after_drag:bool = false   # the song paused for a scrub / seek drag plays on after it
 
 # waveform (peaks per BIN ms, 0..1; captured by playing the song muted at 4x)
 var wave:PoolRealArray = PoolRealArray()
@@ -140,10 +146,16 @@ func _ready():
 	root.add_child(bg)
 	_build_audio()
 	_build_top()
+	_build_track()
 	_build_left()
+	_build_right()
 	_build_field()
-	_build_timeline()
+	_build_transport()
+	_build_status()
 	_build_start()
+	_build_keys()
+	root.connect("resized", self, "_layout")
+	_layout()
 	confirm = ConfirmationDialog.new()
 	confirm.connect("confirmed", self, "_confirmed")
 	root.add_child(confirm)
@@ -334,6 +346,19 @@ func _style_input(c:Control):
 func _panel_style(bg:Color) -> StyleBoxFlat:
 	return Look.box(bg, Look.LINE, 1, 0)
 
+# colours (selection / playhead / marks / grid frame)
+func _hot(a:float) -> Color:
+	return Color(1, 0.35, 0.4, a)
+
+func _play_col() -> Color:
+	return Color(1, 1, 1, 0.95)
+
+func _mark_col(a:float) -> Color:
+	return Color(1, 1, 1, a)
+
+func _bracket_col() -> Color:
+	return Look.LINE_HI
+
 # editing playback goes through its own bus (into the game's Music bus) so slow speeds can keep the
 # song's pitch with a pitch shifter that is only enabled when speed != 1: no delay at normal speed
 func _edit_bus() -> String:
@@ -374,58 +399,126 @@ func _build_audio():
 	click_player.bus = hit_players[0].bus
 	add_child(click_player)
 
-# ------------------------------------------------------------------ top bar
+# ------------------------------------------------------------------ layout
+# The Quantum Editor's arrangement: tool bar on top, the track (timeline) across the whole width under
+# it, tools on the left, the grid in the middle, the selection's properties and the snapping on the
+# right, transport + seek bar and a status line (hints, time, star rating) at the bottom.
+const TOP_H = 46
+const TRANS_H = 46
+const STATUS_H = 24
+var track_h:float = 120.0
+var left_w:float = 300.0
+var right_w:float = 270.0
+var top_bar:Panel
+var track_panel:Panel
+var left_panel:Panel
+var right_panel:Panel
+var seekbar:Control
+var play_btn:Button
+var pos_lbl:Label
+var zoom_lbl:Label
+var hint_lbl:Label
+var keys_panel:Control
+var sel_lbl:Label
+var beat_lbl:Label
+var sel_btns:Array = []
+var ck_snap:CheckBox
+var ck_adv:CheckBox
+var ck_cursor:CheckBox
+var loop_btn:Button
+
+func _layout():
+	var vs = root.rect_size
+	if vs.x < 10 or !field: return
+	track_h = clamp(round(vs.y * 0.16), 104.0, 176.0)
+	left_w = clamp(round(vs.x * 0.22), 290.0, 380.0)
+	right_w = clamp(round(vs.x * 0.21), 280.0, 360.0)
+	var top = TOP_H + track_h
+	var bot = -(TRANS_H + STATUS_H)
+	track_panel.margin_top = TOP_H
+	track_panel.margin_bottom = top
+	left_panel.margin_top = top
+	left_panel.margin_right = left_w
+	left_panel.margin_bottom = bot
+	right_panel.margin_top = top
+	right_panel.margin_left = -right_w
+	right_panel.margin_bottom = bot
+	field.margin_top = top
+	field.margin_left = left_w
+	field.margin_right = -right_w
+	field.margin_bottom = bot
+	_zoom_lbl()
+
+func _tip(c, t:String):
+	c.hint_tooltip = t
+	return c
+
+func _sep() -> Control:
+	var s = ColorRect.new()
+	s.color = Look.LINE
+	s.rect_min_size = Vector2(1, 0)
+	s.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return s
+
+func _check(text:String, on:bool, method:String) -> CheckBox:
+	var ck = CheckBox.new()
+	ck.text = text
+	ck.pressed = on
+	ck.focus_mode = Control.FOCUS_NONE
+	ck.add_font_override("font", _font(13))
+	ck.connect("toggled", self, method)
+	return ck
+
 func _build_top():
-	var bar = Panel.new()
-	bar.add_stylebox_override("panel", _panel_style(Look.SURFACE))
-	bar.anchor_right = 1
-	bar.margin_bottom = 52
-	root.add_child(bar)
+	top_bar = Panel.new()
+	top_bar.add_stylebox_override("panel", _panel_style(Look.SURFACE))
+	top_bar.anchor_right = 1
+	top_bar.margin_bottom = TOP_H
+	root.add_child(top_bar)
 	var h = HBoxContainer.new()
 	h.anchor_right = 1
 	h.anchor_bottom = 1
-	h.margin_left = 14
-	h.margin_right = -14
-	h.margin_top = 10
-	h.margin_bottom = -10
-	h.add_constant_override("separation", 8)
-	bar.add_child(h)
+	h.margin_left = 12
+	h.margin_right = -12
+	h.margin_top = 8
+	h.margin_bottom = -8
+	h.add_constant_override("separation", 6)
+	top_bar.add_child(h)
 	var t = _lbl("// EDITOR", 20, Look.TEXT)
-	t.rect_min_size = Vector2(130, 0)
+	t.rect_min_size = Vector2(118, 0)
 	t.valign = Label.VALIGN_CENTER
 	h.add_child(t)
 	state_lbl = _lbl("", 14, Look.TEXT_2)
-	state_lbl.rect_min_size = Vector2(110, 0) # (the bar fits 1280 px: EXIT was cut off)
+	state_lbl.rect_min_size = Vector2(96, 0) # (the bar fits 1280 px)
 	state_lbl.valign = Label.VALIGN_CENTER
 	h.add_child(state_lbl)
-	star_lbl = _lbl("★ ...", 14, Look.TEXT)
-	star_lbl.rect_min_size = Vector2(200, 0)
-	star_lbl.valign = Label.VALIGN_CENTER
-	star_lbl.mouse_filter = Control.MOUSE_FILTER_PASS # (its tooltip)
-	h.add_child(star_lbl)
-	for b in [["NEW", "_ask_new"], ["OPEN", "_ask_open"], ["SAVE", "_save_pressed"], ["EXPORT", "_export"]]:
-		h.add_child(_btn(b[0], b[1], [], false, 78))
-	h.add_child(_btn("TEST (F5)", "_test", [false], false, 100))
-	h.add_child(_btn("TEST FROM HERE", "_test", [true], false, 150))
+	for b in [["NEW", "_ask_new", "New map from an audio file"], ["OPEN", "_ask_open", "Open a map from the library"],
+			["SAVE", "_save_pressed", "Save the .sspm (Ctrl+S)"], ["EXPORT", "_export", "Export a .phxm (Ctrl+Alt+E)"]]:
+		h.add_child(_tip(_btn(b[0], b[1], [], false, 64), b[2]))
+	h.add_child(_sep())
+	h.add_child(_tip(_btn("UNDO", "_undo", [], false, 60), "Undo (Ctrl+Z)"))
+	h.add_child(_tip(_btn("REDO", "_redo", [], false, 60), "Redo (Ctrl+Y, Ctrl+Shift+Z)"))
+	h.add_child(_sep())
+	h.add_child(_tip(_btn("TEST", "_test", [false], false, 64), "Play the map from the start (F5)"))
+	h.add_child(_tip(_btn("TEST HERE", "_test", [true], false, 96), "Play it from the playhead (Shift+F5)"))
 	top_msg = _lbl("", 14, Look.TEXT_2)
 	top_msg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top_msg.valign = Label.VALIGN_CENTER
 	top_msg.clip_text = true
 	h.add_child(top_msg)
-	h.add_child(_btn("EXIT (ESC)", "_exit", [], false, 110))
+	h.add_child(_tip(_btn("KEYS", "_toggle_keys", [], false, 60), "Every shortcut (?)"))
+	h.add_child(_tip(_btn("EXIT", "_exit", [], false, 64), "Back to the menu (Esc with nothing selected). The session is kept."))
 
 func msg(s:String, bad:bool = false):
 	top_msg.text = s
 	top_msg.add_color_override("font_color", Look.CRIT.lightened(0.2) if bad else Look.TEXT_2)
 
-# ------------------------------------------------------------------ left panel
+# ------------------------------------------------------------------ left panel (map, timing, note list, auto, checks)
 func _build_left():
-	var p = Panel.new()
+	left_panel = Panel.new()
+	var p = left_panel
 	p.add_stylebox_override("panel", _panel_style(Look.SURFACE))
 	p.anchor_bottom = 1
-	p.margin_top = 52
-	p.margin_right = 340
-	p.margin_bottom = -270
 	root.add_child(p)
 	var v = VBoxContainer.new()
 	v.anchor_right = 1
@@ -437,11 +530,13 @@ func _build_left():
 	v.add_constant_override("separation", 8)
 	p.add_child(v)
 	var tabs = HBoxContainer.new()
-	tabs.add_constant_override("separation", 4)
+	tabs.add_constant_override("separation", 3)
 	v.add_child(tabs)
 	var grp = ButtonGroup.new()
-	for t in [["props", "PROPS"], ["timing", "TIMING"], ["notes", "NOTES"], ["auto", "AUTO"], ["checks", "CHECKS"]]:
-		var b = _btn(t[1], "_page_tab", [t[0]], true, 60)
+	for t in [["props", "MAP"], ["timing", "TIMING"], ["notes", "NOTES"], ["auto", "AUTO"], ["checks", "CHECKS"]]:
+		var b = _btn(t[1], "_page_tab", [t[0]], true, 0)
+		b.add_font_override("font", _font(12))
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.group = grp
 		tabs.add_child(b)
 		page_btns[t[0]] = b
@@ -452,7 +547,6 @@ func _build_left():
 		v.add_child(sc)
 		var pv = VBoxContainer.new()
 		pv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		pv.rect_min_size.x = 300
 		pv.add_constant_override("separation", 7)
 		sc.add_child(pv)
 		pages[id] = [sc, pv]
@@ -463,6 +557,293 @@ func _build_left():
 	_build_checks(pages.checks[1])
 	_page("props")
 	page_btns.props.pressed = true
+
+# ------------------------------------------------------------------ right panel (selection, snapping, view)
+func _build_right():
+	right_panel = Panel.new()
+	var p = right_panel
+	p.add_stylebox_override("panel", _panel_style(Look.SURFACE))
+	p.anchor_left = 1
+	p.anchor_right = 1
+	p.anchor_bottom = 1
+	root.add_child(p)
+	var sc = ScrollContainer.new()
+	sc.anchor_right = 1
+	sc.anchor_bottom = 1
+	sc.margin_left = 10
+	sc.margin_right = -10
+	sc.margin_top = 10
+	sc.margin_bottom = -10
+	sc.scroll_horizontal_enabled = false
+	p.add_child(sc)
+	var v = VBoxContainer.new()
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_constant_override("separation", 6)
+	sc.add_child(v)
+	v.add_child(_lbl("SELECTION", 12, Look.TEXT_3))
+	sel_lbl = _lbl("nothing selected", 14, Look.TEXT)
+	sel_lbl.autowrap = true
+	sel_lbl.rect_min_size.x = 200
+	v.add_child(sel_lbl)
+	var tr = HBoxContainer.new()
+	tr.add_constant_override("separation", 4)
+	v.add_child(tr)
+	for f in [["t", "TIME (MS)", 0.0, float(Model.MAX_MS), 1.0, 2.0], ["x", "X", -1.0, 3.0, 0.01, 1.0], ["y", "Y", -1.0, 3.0, 0.01, 1.0]]:
+		var c = VBoxContainer.new()
+		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		c.size_flags_stretch_ratio = f[5]
+		c.add_child(_lbl(f[1], 11, Look.TEXT_3))
+		var sb = SpinBox.new()
+		sb.min_value = f[2]
+		sb.max_value = f[3]
+		sb.step = f[4]
+		sb.editable = false
+		sb.connect("value_changed", self, "_insp_changed", [f[0]])
+		_style_input(sb)
+		sb.get_line_edit().add_constant_override("minimum_spaces", 3) # (three boxes fit the panel)
+		c.add_child(sb)
+		tr.add_child(c)
+		insp[f[0]] = sb
+	beat_lbl = _lbl("", 12, Look.TEXT_3)
+	beat_lbl.autowrap = true
+	beat_lbl.rect_min_size.x = 200
+	v.add_child(beat_lbl)
+	var g1 = GridContainer.new()
+	g1.columns = 2
+	g1.add_constant_override("hseparation", 4)
+	g1.add_constant_override("vseparation", 4)
+	for b in [["FLIP H", "_op_mirror", [true], "Shift+H"], ["FLIP V", "_op_mirror", [false], "Shift+V"],
+			["ROTATE 90", "_op_rotate", [], ""], ["DELETE", "_delete_sel", [], "Delete / Backspace"],
+			["-1 MS", "_op_nudge", [-1], "Alt+Down"], ["+1 MS", "_op_nudge", [1], "Alt+Up"],
+			["-1 STEP", "_op_step", [-1], "one grid step earlier"], ["+1 STEP", "_op_step", [1], "one grid step later"],
+			["SNAP TO GRID", "_snap_selection", [], "each note to its nearest grid line"], ["DUPLICATE", "_duplicate", [], "Ctrl+D"],
+			["REPEAT x2", "_op_repeat", [2], ""], ["REPEAT x4", "_op_repeat", [4], ""]]:
+		var bt = _btn(b[0], b[1], b[2])
+		bt.add_font_override("font", _font(12))
+		bt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if b[3] != "": bt.hint_tooltip = b[3]
+		g1.add_child(bt)
+		sel_btns.append(bt)
+	v.add_child(g1)
+	var gap = Control.new()
+	gap.rect_min_size.y = 6
+	v.add_child(gap)
+	v.add_child(_lbl("SNAPPING", 12, Look.TEXT_3))
+	ob_div = OptionButton.new()
+	for d in SNAPS: ob_div.add_item("1/%d beat" % d, d)
+	ob_div.connect("item_selected", self, "_div_changed")
+	_style_input(ob_div)
+	ob_div.hint_tooltip = "Beat divisor: grid steps per beat (Shift + wheel)"
+	v.add_child(ob_div)
+	var row = HBoxContainer.new()
+	row.add_constant_override("separation", 3)
+	for d in [2, 3, 4, 6, 8, 12, 16]:
+		var b2 = _btn(str(d), "_set_div", [d], false, 0)
+		b2.add_font_override("font", _font(12))
+		b2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b2.hint_tooltip = "1/%d beat" % d
+		row.add_child(b2)
+	v.add_child(row)
+	ck_snap = _check("Snap time (hold Alt: free)", true, "_set_time_snap")
+	v.add_child(ck_snap)
+	v.add_child(_lbl("NOTE POSITION (CTRL+Q)", 11, Look.TEXT_3))
+	var pr = HBoxContainer.new()
+	pr.add_constant_override("separation", 3)
+	var g = ButtonGroup.new()
+	for s in [["cell", "CELLS"], ["half", "HALF"], ["free", "FREE"]]:
+		var b3 = _btn(s[1], "_set_pos_snap", [s[0]], true, 0)
+		b3.add_font_override("font", _font(12))
+		b3.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b3.group = g
+		b3.pressed = s[0] == "cell"
+		pr.add_child(b3)
+		pos_btns[s[0]] = b3
+	v.add_child(pr)
+	ck_adv = _check("Auto-advance after placing", false, "_set_advance")
+	v.add_child(ck_adv)
+	var gap2 = Control.new()
+	gap2.rect_min_size.y = 6
+	v.add_child(gap2)
+	v.add_child(_lbl("VIEW", 12, Look.TEXT_3))
+	ck_cursor = _check("Pattern cursor (Shift+C)", true, "_set_cursor")
+	v.add_child(ck_cursor)
+	v.add_child(_check("Note numbers on the grid", false, "_set_numbers"))
+
+func _set_cursor(on:bool):
+	show_cursor = on
+	field.update()
+
+func _set_numbers(on:bool):
+	show_numbers = on
+	field.update()
+
+# ------------------------------------------------------------------ transport + seek bar, status line
+const SPEEDS = [0.25, 0.5, 0.75, 1.0]
+
+func _build_transport():
+	var p = Panel.new()
+	p.add_stylebox_override("panel", _panel_style(Look.SURFACE))
+	p.anchor_top = 1
+	p.anchor_right = 1
+	p.anchor_bottom = 1
+	p.margin_top = -(TRANS_H + STATUS_H)
+	p.margin_bottom = -STATUS_H
+	root.add_child(p)
+	var h = HBoxContainer.new()
+	h.anchor_right = 1
+	h.anchor_bottom = 1
+	h.margin_left = 10
+	h.margin_right = -10
+	h.margin_top = 7
+	h.margin_bottom = -7
+	h.add_constant_override("separation", 6)
+	p.add_child(h)
+	h.add_child(_tip(_btn("|<", "_seek_start", [], false, 36), "To the start (Home)"))
+	play_btn = _btn("PLAY", "_toggle_play", [], false, 86)
+	_tip(play_btn, "Play / pause (Space)")
+	h.add_child(play_btn)
+	pos_lbl = _lbl("0:00.000", 16, Look.TEXT)
+	pos_lbl.rect_min_size = Vector2(90, 0)
+	pos_lbl.valign = Label.VALIGN_CENTER
+	h.add_child(pos_lbl)
+	seekbar = Control.new()
+	seekbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	seekbar.mouse_filter = Control.MOUSE_FILTER_STOP
+	seekbar.connect("draw", self, "_draw_seek")
+	seekbar.connect("gui_input", self, "_seek_input")
+	seekbar.connect("mouse_exited", self, "_hint", [""])
+	h.add_child(seekbar)
+	var sb = OptionButton.new()
+	for s in SPEEDS: sb.add_item("%sx" % _num_txt(s))
+	sb.select(SPEEDS.find(1.0))
+	sb.connect("item_selected", self, "_speed_changed")
+	_style_input(sb)
+	sb.rect_min_size.x = 76
+	sb.hint_tooltip = "Playback speed (the pitch stays)"
+	h.add_child(sb)
+	loop_btn = _btn("LOOP", "_set_loop", [], true, 58)
+	_tip(loop_btn, "Loop a region (L); [ and ] set its start / end")
+	h.add_child(loop_btn)
+	h.add_child(_tip(_btn("[", "_loop_mark", [true], false, 28), "Loop start at the playhead ([)"))
+	h.add_child(_tip(_btn("]", "_loop_mark", [false], false, 28), "Loop end at the playhead (])"))
+	h.add_child(_sep())
+	h.add_child(_tip(_btn("-", "_zoom", [-1], false, 30), "Zoom out (Ctrl + wheel down)"))
+	zoom_lbl = _lbl("", 12, Look.TEXT_2)
+	zoom_lbl.rect_min_size = Vector2(60, 0)
+	zoom_lbl.align = Label.ALIGN_CENTER
+	zoom_lbl.valign = Label.VALIGN_CENTER
+	zoom_lbl.mouse_filter = Control.MOUSE_FILTER_PASS
+	zoom_lbl.hint_tooltip = "How much of the song the track shows"
+	h.add_child(zoom_lbl)
+	h.add_child(_tip(_btn("+", "_zoom", [1], false, 30), "Zoom in (Ctrl + wheel up)"))
+
+func _build_status():
+	var p = Panel.new()
+	p.add_stylebox_override("panel", _panel_style(Look.BG))
+	p.anchor_top = 1
+	p.anchor_right = 1
+	p.anchor_bottom = 1
+	p.margin_top = -STATUS_H
+	root.add_child(p)
+	var h = HBoxContainer.new()
+	h.anchor_right = 1
+	h.anchor_bottom = 1
+	h.margin_left = 10
+	h.margin_right = -10
+	h.add_constant_override("separation", 14)
+	p.add_child(h)
+	time_lbl = _lbl("", 12, Look.TEXT_2)
+	time_lbl.rect_min_size = Vector2(390, 0)
+	time_lbl.valign = Label.VALIGN_CENTER
+	time_lbl.clip_text = true
+	h.add_child(time_lbl)
+	hint_lbl = _lbl("", 12, Look.TEXT_3)
+	hint_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint_lbl.valign = Label.VALIGN_CENTER
+	hint_lbl.clip_text = true
+	h.add_child(hint_lbl)
+	star_lbl = _lbl("★ ...", 12, Look.TEXT)
+	star_lbl.rect_min_size = Vector2(230, 0)
+	star_lbl.align = Label.ALIGN_RIGHT
+	star_lbl.valign = Label.VALIGN_CENTER
+	star_lbl.mouse_filter = Control.MOUSE_FILTER_PASS # (its tooltip)
+	h.add_child(star_lbl)
+	_hint("")
+
+# ------------------------------------------------------------------ shortcut list (KEYS / ?)
+const KEY_LIST = [
+	["Space", "play / pause"],
+	["Wheel, Left / Right", "one grid step (playback pauses)"],
+	["Ctrl + wheel, Ctrl + = / -", "zoom the track"],
+	["Shift + wheel", "beat divisor"],
+	["Ctrl+Left / Ctrl+Right", "one measure"],
+	["Home / End,  , / .", "start / end, previous / next note"],
+	["Q W E / A S D / Z X C, numpad", "a note on that cell at the playhead"],
+	["Click an empty cell", "a note there at the playhead"],
+	["Click a note", "select it (Ctrl: toggle, Shift: the range from the last one)"],
+	["Drag a selected note", "move: by cells on the grid, in time on the track"],
+	["Alt (held)", "no time snap while placing or dragging"],
+	["Right-click", "a note: delete it; empty: deselect"],
+	["Track: drag / right-drag", "scrub / box select (Ctrl or Shift adds)"],
+	["Track ruler, seek bar", "jump there"],
+	["Ctrl+A / C / X / V / D", "select all, copy, cut, paste at the playhead, duplicate"],
+	["Delete, Backspace", "delete the selection"],
+	["Ctrl+Z, Ctrl+Y / Ctrl+Shift+Z", "undo, redo"],
+	["Up / Down, Alt+Up / Alt+Down", "move the selection a row, nudge 1 ms"],
+	["Shift+H / Shift+V, Shift+D", "flip, curve through the selection"],
+	["Shift+1..9, Ctrl+Shift+1..9", "put / store a pattern slot"],
+	["Ctrl+Q", "free note positions (quantum)"],
+	["Ctrl+T, Ctrl+B, B", "TIMING tab, bookmarks, bookmark here"],
+	["Ctrl+Shift+B", "timing point (2 notes selected: BPM from their gap)"],
+	["L, [ / ]", "loop, loop start / end"],
+	["Shift+C", "pattern cursor"],
+	["F5 / Shift+F5", "test from the start / the playhead"],
+	["Ctrl+S, Ctrl+Alt+E", "save, export .phxm"],
+	["Esc", "deselect (nothing selected: leave)"],
+	["?", "this list"],
+]
+
+func _build_keys():
+	keys_panel = Panel.new()
+	keys_panel.add_stylebox_override("panel", Look.box(Look.SURFACE_HI, Look.LINE_HI, 1, 0))
+	keys_panel.anchor_left = 0.5
+	keys_panel.anchor_right = 0.5
+	keys_panel.anchor_top = 0.5
+	keys_panel.anchor_bottom = 0.5
+	keys_panel.margin_left = -440
+	keys_panel.margin_right = 440
+	keys_panel.margin_top = -310
+	keys_panel.margin_bottom = 310
+	keys_panel.visible = false
+	root.add_child(keys_panel)
+	var v = VBoxContainer.new()
+	v.anchor_right = 1
+	v.anchor_bottom = 1
+	v.margin_left = 18
+	v.margin_right = -18
+	v.margin_top = 14
+	v.margin_bottom = -14
+	v.add_constant_override("separation", 8)
+	keys_panel.add_child(v)
+	v.add_child(_lbl("// SHORTCUTS", 18, Look.TEXT))
+	var sc = ScrollContainer.new()
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.scroll_horizontal_enabled = false
+	v.add_child(sc)
+	var g = GridContainer.new()
+	g.columns = 2
+	g.add_constant_override("hseparation", 18)
+	g.add_constant_override("vseparation", 3)
+	sc.add_child(g)
+	for k in KEY_LIST:
+		var a = _lbl(k[0], 13, Look.TEXT)
+		a.rect_min_size.x = 270
+		g.add_child(a)
+		g.add_child(_lbl(k[1], 13, Look.TEXT_2))
+	v.add_child(_lbl("? or Esc closes this list.", 12, Look.TEXT_3))
+
+func _toggle_keys():
+	keys_panel.visible = !keys_panel.visible
 
 func _page_tab(pressed:bool, id:String):
 	if pressed and !_paging: _page(id)
@@ -501,12 +882,12 @@ func _build_props(p:Control):
 	audio_lbl = _lbl("", 13, Look.TEXT_2)
 	audio_lbl.autowrap = true
 	audio_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	audio_lbl.rect_min_size.x = 290
+	audio_lbl.rect_min_size.x = 250
 	p.add_child(audio_lbl)
 	p.add_child(_btn("CHANGE AUDIO...", "_pick_audio", [false]))
 	var note = _lbl("Only fields the .sspm format stores are listed. BPM / offset are editor aids (TIMING tab), they are not saved in the map.", 12, Look.TEXT_3)
 	note.autowrap = true
-	note.rect_min_size.x = 290
+	note.rect_min_size.x = 250
 	p.add_child(note)
 
 func _prop_changed(txt:String, key:String):
@@ -541,60 +922,26 @@ func _build_timing(p:Control):
 	sp_off.suffix = "ms"
 	sp_off.connect("value_changed", self, "_timing_changed")
 	_field_row(p, "Offset (first beat)", sp_off)
-	ob_div = OptionButton.new()
-	for i in SNAPS.size(): ob_div.add_item("1/%d beat" % SNAPS[i] if SNAPS[i] > 1 else "1 beat", SNAPS[i])
-	ob_div.connect("item_selected", self, "_div_changed")
-	_field_row(p, "Grid resolution", ob_div)
-	var row = HBoxContainer.new()
-	row.add_constant_override("separation", 4)
-	for pr in [[4, "1/4"], [8, "1/8"], [3, "1/3"], [6, "1/6"], [12, "1/12"]]:
-		row.add_child(_btn(pr[1], "_set_div", [pr[0]], false, 52))
-	p.add_child(_lbl("GRID PRESETS", 12, Look.TEXT_3))
-	p.add_child(row)
-	var ck = CheckBox.new()
-	ck.text = "Snap time to grid"
-	ck.pressed = true
-	ck.focus_mode = Control.FOCUS_NONE
-	ck.add_font_override("font", _font(14))
-	ck.connect("toggled", self, "_set_time_snap")
-	p.add_child(ck)
-	p.add_child(_lbl("NOTE POSITION SNAP", 12, Look.TEXT_3))
-	var pr = HBoxContainer.new()
-	pr.add_constant_override("separation", 4)
-	var g = ButtonGroup.new()
-	for s in [["cell", "CELLS"], ["half", "HALF"], ["free", "FREE"]]:
-		var b = _btn(s[1], "_set_pos_snap", [s[0]], true, 90)
-		b.group = g
-		b.pressed = s[0] == "cell"
-		pr.add_child(b)
-		pos_btns[s[0]] = b
-	p.add_child(pr)
-	var ck2 = CheckBox.new()
-	ck2.text = "Advance one grid step after placing"
-	ck2.focus_mode = Control.FOCUS_NONE
-	ck2.add_font_override("font", _font(14))
-	ck2.connect("toggled", self, "_set_advance")
-	p.add_child(ck2)
-	var ck3 = CheckBox.new()
-	ck3.text = "Hit sound on notes while playing"
-	ck3.pressed = true
-	ck3.focus_mode = Control.FOCUS_NONE
-	ck3.add_font_override("font", _font(14))
-	ck3.connect("toggled", self, "_set_hit_sound")
-	p.add_child(ck3)
-	var ck4 = CheckBox.new()
-	ck4.text = "Metronome (click on every beat)"
-	ck4.focus_mode = Control.FOCUS_NONE
-	ck4.add_font_override("font", _font(14))
-	ck4.connect("toggled", self, "_set_metronome")
-	p.add_child(ck4)
 	p.add_child(_lbl("TOOLS", 12, Look.TEXT_3))
 	var r1 = HBoxContainer.new()
 	r1.add_constant_override("separation", 4)
 	r1.add_child(_btn("TAP BPM", "_tap", [], false, 96))
 	r1.add_child(_btn("OFFSET = HERE", "_offset_here", [], false, 150))
 	p.add_child(r1)
-	p.add_child(_btn("SNAP SELECTION TO GRID", "_snap_selection"))
+	p.add_child(_lbl("PLAYBACK", 12, Look.TEXT_3))
+	var ck3 = CheckBox.new()
+	ck3.text = "Hit sound on notes"
+	ck3.pressed = true
+	ck3.focus_mode = Control.FOCUS_NONE
+	ck3.add_font_override("font", _font(14))
+	ck3.connect("toggled", self, "_set_hit_sound")
+	p.add_child(ck3)
+	var ck4 = CheckBox.new()
+	ck4.text = "Metronome (every beat)"
+	ck4.focus_mode = Control.FOCUS_NONE
+	ck4.add_font_override("font", _font(14))
+	ck4.connect("toggled", self, "_set_metronome")
+	p.add_child(ck4)
 	p.add_child(_lbl("TIMING POINTS (BPM CHANGES, CTRL+SHIFT+B)", 12, Look.TEXT_3))
 	var tr = HBoxContainer.new()
 	tr.add_constant_override("separation", 4)
@@ -624,41 +971,12 @@ func _build_timing(p:Control):
 	book_list.connect("item_selected", self, "_bookmark_go")
 	_style_input(book_list)
 	p.add_child(book_list)
+	var note = _lbl("The beat divisor, time / position snapping and auto-advance are on the right.", 12, Look.TEXT_3)
+	note.autowrap = true
+	note.rect_min_size.x = 250
+	p.add_child(note)
 
 func _build_notes(p:Control):
-	p.add_child(_lbl("SELECTION", 12, Look.TEXT_3))
-	var row = HBoxContainer.new()
-	row.add_constant_override("separation", 4)
-	for f in [["t", "ms", 0.0, 36000000.0, 1.0], ["x", "x", -1.0, 3.0, 0.01], ["y", "y", -1.0, 3.0, 0.01]]:
-		var c = VBoxContainer.new()
-		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		c.add_child(_lbl(f[1].to_upper(), 12, Look.TEXT_3))
-		var sb = SpinBox.new()
-		sb.min_value = f[2]
-		sb.max_value = f[3]
-		sb.step = f[4]
-		sb.editable = false
-		sb.connect("value_changed", self, "_insp_changed", [f[0]])
-		_style_input(sb)
-		c.add_child(sb)
-		row.add_child(c)
-		insp[f[0]] = sb
-	p.add_child(row)
-	insp.info = _lbl("nothing selected", 13, Look.TEXT_2)
-	p.add_child(insp.info)
-	p.add_child(_lbl("OPERATIONS ON THE SELECTION", 12, Look.TEXT_3))
-	var g1 = GridContainer.new()
-	g1.columns = 2
-	g1.add_constant_override("hseparation", 4)
-	g1.add_constant_override("vseparation", 4)
-	for b in [["MIRROR X", "_op_mirror", [true]], ["MIRROR Y", "_op_mirror", [false]], ["ROTATE 90", "_op_rotate", []],
-			["DELETE", "_delete_sel", []], ["-1 ms", "_op_nudge", [-1]], ["+1 ms", "_op_nudge", [1]],
-			["-10 ms", "_op_nudge", [-10]], ["+10 ms", "_op_nudge", [10]], ["-1 step", "_op_step", [-1]], ["+1 step", "_op_step", [1]],
-			["REPEAT x2", "_op_repeat", [2]], ["REPEAT x4", "_op_repeat", [4]]]:
-		var bt = _btn(b[0], b[1], b[2])
-		bt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		g1.add_child(bt)
-	p.add_child(g1)
 	p.add_child(_lbl("NOTE LIST (time filter, e.g. 1:00-1:30)", 12, Look.TEXT_3))
 	note_list_filter = LineEdit.new()
 	note_list_filter.placeholder_text = "all"
@@ -666,10 +984,14 @@ func _build_notes(p:Control):
 	_style_input(note_list_filter)
 	p.add_child(note_list_filter)
 	note_list = ItemList.new()
-	note_list.rect_min_size = Vector2(0, 220)
+	note_list.rect_min_size = Vector2(0, 300)
 	note_list.connect("item_selected", self, "_note_list_pick")
 	_style_input(note_list)
 	p.add_child(note_list)
+	var note = _lbl("A row selects its note and moves the playhead to it. Time, position and the operations on the selection are on the right.", 12, Look.TEXT_3)
+	note.autowrap = true
+	note.rect_min_size.x = 250
+	p.add_child(note)
 
 func _build_checks(p:Control):
 	p.add_child(_btn("RUN CHECKS", "_run_checks"))
@@ -690,14 +1012,20 @@ func _build_checks(p:Control):
 	_style_input(hist_list)
 	p.add_child(hist_list)
 
-# ------------------------------------------------------------------ field (3x3 grid: where notes are)
+# ------------------------------------------------------------------ grid (3x3 field: where notes are)
+# As in the Quantum Editor: the grid shows the notes from the playhead to APPROACH ms ahead, each a
+# square in its cell with an approach outline closing in on it. Click an empty cell = a note there at
+# the snapped playhead (selected); click a note = select it (Ctrl toggles, Shift selects the time
+# range from the last clicked note); drag a selected note = move the selection by cells, the whole
+# selection staying inside the grid; right-click a note = delete it, right-click empty = deselect.
+# The note under the mouse is outlined; with none there a ghost shows where a click places.
+const NOTE_K = 0.62                  # note square / cell
+const DRAG_PX = 4.0                  # a press becomes a drag only past this: a click never moves a note
+
 func _build_field():
 	field = Control.new()
 	field.anchor_right = 1
 	field.anchor_bottom = 1
-	field.margin_left = 340
-	field.margin_top = 52
-	field.margin_bottom = -270
 	field.mouse_filter = Control.MOUSE_FILTER_STOP
 	field.connect("draw", self, "_draw_field")
 	field.connect("gui_input", self, "_field_input")
@@ -705,21 +1033,40 @@ func _build_field():
 	root.add_child(field)
 
 func _field_geom() -> Rect2:
-	var s = min(field.rect_size.x, field.rect_size.y) - 90.0
+	var s = min(field.rect_size.x, field.rect_size.y) - 70.0
 	s = max(s, 120.0)
-	return Rect2((field.rect_size - Vector2(s, s)) / 2, Vector2(s, s))
+	return Rect2(((field.rect_size - Vector2(s, s)) / 2).floor(), Vector2(s, s))
 
-# grid coordinate (note x / y units) of a screen point inside the field control
+# grid coordinate (note x / y units) of a point inside the field control, and back
 func _to_grid(p:Vector2) -> Vector2:
 	var g = _field_geom()
 	var cell = g.size.x / 3.0
 	return Vector2((p.x - g.position.x) / cell - 0.5, (p.y - g.position.y) / cell - 0.5)
+
+func _to_field(gx:float, gy:float, g:Rect2) -> Vector2:
+	var cell = g.size.x / 3.0
+	return Vector2(g.position.x + (gx + 0.5) * cell, g.position.y + (gy + 0.5) * cell)
 
 func _snap_pos(v:Vector2) -> Vector2:
 	match pos_snap:
 		"cell": return Vector2(clamp(round(v.x), 0, 2), clamp(round(v.y), 0, 2))
 		"half": return Vector2(clamp(round(v.x * 2.0) / 2.0, 0, 2), clamp(round(v.y * 2.0) / 2.0, 0, 2))
 	return Vector2(clamp(stepify(v.x, 0.01), -0.5, 2.5), clamp(stepify(v.y, 0.01), -0.5, 2.5))
+
+func _pos_bounds() -> Vector2:
+	return Vector2(-0.5, 2.5) if pos_snap == "free" else Vector2(0.0, 2.0)
+
+# a move of the whole selection, cut short so none of it leaves the grid (notes already outside it
+# can still move back in)
+func _clamp_group(d:Vector2, ns:Array) -> Vector2:
+	if ns.empty(): return d
+	var b = _pos_bounds()
+	var lo = Vector2(1e9, 1e9)
+	var hi = Vector2(-1e9, -1e9)
+	for n in ns:
+		lo = Vector2(min(lo.x, n[0]), min(lo.y, n[1]))
+		hi = Vector2(max(hi.x, n[0]), max(hi.y, n[1]))
+	return Vector2(clamp(d.x, min(b.x - lo.x, 0.0), max(b.y - hi.x, 0.0)), clamp(d.y, min(b.x - lo.y, 0.0), max(b.y - hi.y, 0.0)))
 
 func _place_ms() -> int:
 	return m.snap_t(pos) if _snapping() else int(round(pos))
@@ -733,77 +1080,86 @@ func _drop_focus(ev):
 		var fo = root.get_focus_owner()
 		if fo: fo.release_focus()
 
+# the earliest note time the grid shows: the playhead, or the grid line a click places on when that
+# is a little before it
+func _field_t0() -> float:
+	return min(pos, float(_place_ms())) - 0.5
+
+func _in_place_area(p:Vector2) -> bool:
+	var g = _field_geom()
+	return g.grow(g.size.x / 6.0 if pos_snap == "free" else 0.0).has_point(p)
+
+# the note under a point of the field: the earliest shown one whose square holds the point
+func _note_at(p):
+	if p == null or !m: return null
+	var g = _field_geom()
+	var half = g.size.x / 3.0 * NOTE_K / 2.0
+	var i = m.lower_bound(_field_t0())
+	while i < m.notes.size() and m.notes[i][2] <= pos + APPROACH:
+		var n = m.notes[i]
+		var c = _to_field(n[0], n[1], g)
+		if abs(p.x - c.x) <= half and abs(p.y - c.y) <= half: return n
+		i += 1
+	return null
+
 func _field_input(ev):
 	_drop_focus(ev)
 	if !m: return
 	if ev is InputEventMouseMotion:
-		hover_cell = _to_grid(ev.position)
+		field_mouse = ev.position
 		if field_drag != null:
-			var d = _snap_pos(hover_cell) - _snap_pos(field_drag.start) if pos_snap != "free" else hover_cell - field_drag.start
-			if drag_delta != d:
-				drag_delta = d
+			if !field_drag.live and ev.position.distance_to(field_drag.p0) >= DRAG_PX: field_drag.live = true
+			if field_drag.live:
+				var want = field_drag.grab + _to_grid(ev.position) - field_drag.start
+				drag_delta = _clamp_group(_snap_pos(want) - field_drag.grab, field_drag.notes)
+		_hint("field")
 		field.update()
-	elif ev is InputEventMouseButton:
-		var gp = _to_grid(ev.position)
-		if ev.button_index == BUTTON_LEFT and ev.pressed:
-			var hit = _note_at(gp)
+		return
+	if !(ev is InputEventMouseButton): return
+	if _wheel(ev): return
+	if ev.button_index == BUTTON_LEFT:
+		if ev.pressed:
+			if field_drag != null: return
+			var hit = _note_at(ev.position)
 			if hit != null:
-				if ev.shift or ev.control:
-					if sel.has(Model.key_of(hit)): sel.erase(Model.key_of(hit))
-					else: sel[Model.key_of(hit)] = hit
-				elif !sel.has(Model.key_of(hit)):
-					sel = {Model.key_of(hit): hit}
-				field_drag = {"start": gp}
-				drag_delta = Vector2.ZERO
-			else:
-				_place_note(_snap_pos(gp))
-			_sel_changed()
-		elif ev.button_index == BUTTON_LEFT and !ev.pressed:
-			if field_drag != null and drag_delta != Vector2.ZERO: _move_selection(drag_delta, 0)
+				_click_select(hit, ev.shift, ev.control)
+				if sel.has(Model.key_of(hit)):
+					field_drag = {"grab": Vector2(hit[0], hit[1]), "start": _to_grid(ev.position), "p0": ev.position, "notes": _sel_notes(), "live": false}
+					drag_delta = Vector2.ZERO
+			elif _in_place_area(ev.position):
+				_place_note(_snap_pos(_to_grid(ev.position)))
+		elif field_drag != null:
+			var d = drag_delta
 			field_drag = null
 			drag_delta = Vector2.ZERO
+			if d != Vector2.ZERO: _move_selection(d, 0)
 			field.update()
-		elif ev.button_index == BUTTON_RIGHT and ev.pressed:
-			var hit2 = _note_at(gp)
-			if hit2 != null:
-				m.begin("delete note")
-				m.run(["del", [hit2]])
-				m.end()
-				sel.erase(Model.key_of(hit2))
-				_sel_changed()
-		elif ev.button_index in [BUTTON_WHEEL_UP, BUTTON_WHEEL_DOWN] and ev.pressed:
-			_seek(_step_from(pos, 1 if ev.button_index == BUTTON_WHEEL_UP else -1))
+	elif ev.button_index == BUTTON_RIGHT and ev.pressed and field_drag == null:
+		var h = _note_at(ev.position)
+		if h != null: _delete_notes([h], "delete note")
+		elif !sel.empty():
+			sel = {}
+			_sel_changed()
 
 func _field_exit():
-	hover_cell = Vector2(-9, -9)
+	field_mouse = null
 	field.update()
-
-# the note near a grid point among the ones the field shows now
-func _note_at(gp:Vector2):
-	var best = null
-	var bd = 0.36
-	var i = m.lower_bound(pos - 120.0)
-	while i < m.notes.size() and m.notes[i][2] <= pos + APPROACH:
-		var n = m.notes[i]
-		var d = Vector2(n[0], n[1]).distance_to(gp)
-		var near_t = abs(n[2] - pos) < 120.0 or n[2] > pos
-		if near_t and d < bd:
-			bd = d
-			best = n
-		i += 1
-	return best
+	_hint("")
 
 func _place_note(g:Vector2):
-	var ms = _place_ms()
-	if ms < 0: ms = 0
+	var ms = max(_place_ms(), 0)
 	var n = [g.x, g.y, ms]
-	if m.has_note(n):
+	if m.has_note(n): # (a click on a note's own cell at its own time: that note gets selected)
+		sel = {Model.key_of(n): n}
+		sel_anchor = n
 		msg("a note is already there")
+		_sel_changed()
 		return
 	m.begin("place note")
 	m.run(["add", [n]])
 	m.end()
 	sel = {Model.key_of(n): n}
+	sel_anchor = n
 	if advance: _seek(m.grid_next(ms, 1))
 	_sel_changed()
 
@@ -825,6 +1181,7 @@ func _cursor_at(t:float):
 
 func _toggle_cursor():
 	show_cursor = !show_cursor
+	if ck_cursor and ck_cursor.pressed != show_cursor: ck_cursor.pressed = show_cursor
 	field.update()
 
 func _draw_cursor(c:Control, g:Rect2, cell:float):
@@ -849,191 +1206,198 @@ func _draw_field():
 		c.draw_line(Vector2(g.position.x + i * cell, g.position.y), Vector2(g.position.x + i * cell, g.end.y), Look.LINE, 1.0)
 		c.draw_line(Vector2(g.position.x, g.position.y + i * cell), Vector2(g.end.x, g.position.y + i * cell), Look.LINE, 1.0)
 	c.draw_rect(g, Look.LINE_HI, false, 1.0)
-	Look.brackets(c, g.grow(10), 22.0, Look.LINE_HI, 2.0)
+	Look.brackets(c, g.grow(10), 22.0, _bracket_col(), 2.0)
 	if !m:
 		return
 	var lf = _font(12)
 	for k in 9: # (grid key of each cell)
 		c.draw_string(lf, Vector2(g.position.x + (k % 3) * cell + 6, g.position.y + (k / 3) * cell + 16), GRID_LETTERS[k], Color(1, 1, 1, 0.16))
-	# ghost under the mouse
-	if hover_cell.x > -5:
-		var sp = _snap_pos(hover_cell)
-		var h = Vector2(g.position.x + (sp.x + 0.5) * cell, g.position.y + (sp.y + 0.5) * cell)
-		var hs = cell * 0.5
-		c.draw_rect(Rect2(h - Vector2(hs, hs) / 2, Vector2(hs, hs)), Color(1, 1, 1, 0.12))
-		c.draw_rect(Rect2(h - Vector2(hs, hs) / 2, Vector2(hs, hs)), Look.LINE_HI, false, 1.0)
-	var ns = cell * 0.5
-	var i = m.lower_bound(pos - 220.0)
-	while i < m.notes.size() and m.notes[i][2] <= pos + APPROACH:
+	var ns = cell * NOTE_K
+	var t_lo = _field_t0()
+	var pm = _place_ms()
+	var hov = _note_at(field_mouse) if field_drag == null else null
+	var nf = _font(int(clamp(round(ns * 0.3), 10, 22))) if show_numbers else null
+	var i0 = m.lower_bound(t_lo - (160.0 if playing else 0.0))
+	var i1 = m.lower_bound(pos + APPROACH + 0.5)
+	for i in range(i1 - 1, i0 - 1, -1): # (far ones first: the next notes draw on top)
 		var n = m.notes[i]
-		var dt = n[2] - pos
+		var is_sel = !sel.empty() and sel.has(Model.key_of(n))
 		var gx = n[0]
 		var gy = n[1]
-		var is_sel = sel.has(Model.key_of(n))
 		if is_sel and field_drag != null:
 			gx += drag_delta.x
 			gy += drag_delta.y
-		var ctr = Vector2(g.position.x + (gx + 0.5) * cell, g.position.y + (gy + 0.5) * cell)
+		var ctr = _to_field(gx, gy, g)
+		var dt = n[2] - pos
+		var k = 1.0
 		var a = 1.0
-		var sc = 1.0
-		if dt > 0:
-			sc = 1.0 + (dt / APPROACH) * 1.4
-			a = 1.0 - dt / APPROACH * 0.75
+		if n[2] < t_lo: # just passed (only while playing): fades out
+			a = clamp(1.0 + (n[2] - t_lo) / 160.0, 0.0, 1.0) * 0.7
 		else:
-			a = clamp(1.0 + dt / 220.0, 0.0, 1.0)
-		var col = Color(1, 1, 1, a)
-		if is_sel: col = Color(1, 0.35, 0.4, a)
-		var sz = ns * sc
-		var r = Rect2(ctr - Vector2(sz, sz) / 2, Vector2(sz, sz))
-		if dt <= 0 or dt < 40:
-			var core = Rect2(ctr - Vector2(ns, ns) / 2, Vector2(ns, ns))
-			c.draw_rect(core, Color(col.r, col.g, col.b, a * 0.55))
-			c.draw_rect(core, col, false, 2.0)
-		else:
-			c.draw_rect(r, col, false, 1.5)
-		i += 1
+			k = 1.0 - clamp(dt / APPROACH, 0.0, 1.0)
+			a = 0.3 + 0.7 * k * k
+		var col = _hot(max(a, 0.75)) if is_sel else Color(1, 1, 1, a)
+		var r = Rect2(ctr - Vector2(ns, ns) / 2.0, Vector2(ns, ns))
+		var now = int(n[2]) == pm or abs(dt) < 1.0
+		c.draw_rect(r, Color(col.r, col.g, col.b, (0.5 if now else 0.16) * col.a))
+		c.draw_rect(r, col, false, 3.0 if is_sel else (2.0 if now else 1.0))
+		if dt > 1.0 and n[2] >= t_lo: # approach outline closing in on it
+			var asz = ns * (1.0 + 1.6 * (1.0 - k))
+			c.draw_rect(Rect2(ctr - Vector2(asz, asz) / 2.0, Vector2(asz, asz)), Color(col.r, col.g, col.b, 0.45 * a), false, 1.0)
+		if nf:
+			var s = str(i + 1)
+			c.draw_string(nf, ctr + Vector2(-nf.get_string_size(s).x / 2.0, nf.get_ascent() * 0.4), s, Color(1, 1, 1, a))
+	if hov != null: # what a click selects
+		var hc = _to_field(hov[0], hov[1], g)
+		c.draw_rect(Rect2(hc - Vector2(ns, ns) / 2.0, Vector2(ns, ns)).grow(4), Color(1, 1, 1, 0.95), false, 2.0)
+	elif field_mouse != null and field_drag == null and _in_place_area(field_mouse): # where a click places
+		var sp = _snap_pos(_to_grid(field_mouse))
+		var gr = Rect2(_to_field(sp.x, sp.y, g) - Vector2(ns, ns) / 2.0, Vector2(ns, ns))
+		c.draw_rect(gr, Color(1, 1, 1, 0.1))
+		c.draw_rect(gr, Look.LINE_HI, false, 1.0)
 	_draw_cursor(c, g, cell) # on top of the notes
-	c.draw_string(_font(13), Vector2(g.position.x, g.end.y + 34), "%d selected / %d notes   playhead %s" % [sel.size(), m.notes.size(), Model.fmt_time(int(pos))], Look.TEXT_3)
+	var info = "%d selected / %d notes" % [sel.size(), m.notes.size()]
+	if field_drag != null and field_drag.live:
+		info = "moving %d note(s) by x %s, y %s (one undo step; Esc cancels)" % [field_drag.notes.size(), _num_txt(drag_delta.x), _num_txt(drag_delta.y)]
+	c.draw_string(_font(13), Vector2(g.position.x, g.end.y + 30), info, Look.TEXT_3)
 
-# ------------------------------------------------------------------ timeline
-func _build_timeline():
-	var p = Panel.new()
-	p.add_stylebox_override("panel", _panel_style(Look.SURFACE))
-	p.anchor_top = 1
-	p.anchor_right = 1
-	p.anchor_bottom = 1
-	p.margin_top = -270
-	root.add_child(p)
-	var bar = HBoxContainer.new()
-	bar.anchor_right = 1
-	bar.margin_left = 12
-	bar.margin_right = -12
-	bar.margin_top = 8
-	bar.margin_bottom = 40
-	bar.add_constant_override("separation", 6)
-	p.add_child(bar)
-	bar.add_child(_btn("|<", "_seek_start", [], false, 40))
-	bar.add_child(_btn("PLAY / PAUSE (SPACE)", "_toggle_play", [], false, 200))
-	var sb = OptionButton.new()
-	for s in [[0.5, "0.5x"], [0.75, "0.75x"], [1.0, "1.0x"]]: sb.add_item(s[1])
-	sb.select(2)
-	sb.connect("item_selected", self, "_speed_changed")
-	_style_input(sb)
-	sb.rect_min_size.x = 84
-	bar.add_child(sb)
-	bar.add_child(_btn("LOOP (L)", "_set_loop", [], true, 90))
-	bar.add_child(_btn("A [", "_loop_mark", [true], false, 50))
-	bar.add_child(_btn("B ]", "_loop_mark", [false], false, 50))
-	bar.add_child(_btn("-", "_zoom_btn", [0.8], false, 36))
-	bar.add_child(_btn("+", "_zoom_btn", [1.25], false, 36))
-	bar.add_child(_btn("FIT", "_zoom_fit", [], false, 54))
-	time_lbl = _lbl("", 15, Look.TEXT)
-	time_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	time_lbl.valign = Label.VALIGN_CENTER
-	time_lbl.align = Label.ALIGN_RIGHT
-	bar.add_child(time_lbl)
+# ------------------------------------------------------------------ track (timeline strip)
+# The Quantum Editor's track: the playhead stays at cursor_frac of the width and the map scrolls under
+# it. A note is a square whose left edge is its time, its grid cell drawn inside. Drag empty track =
+# scrub (snapped; the song pauses while dragging), click a note = select (Ctrl toggles, Shift range),
+# drag a selected note = move the selection in time (snapped, Alt = free), right-drag = box select
+# (Ctrl / Shift add to the selection), right-click a note = delete it, right-click empty = deselect,
+# the ruler on top = seek there. Wheel = one grid step, Ctrl + wheel = zoom, Shift + wheel = divisor.
+const RULER = 18.0
+var _sel_rev:int = 0
+
+func _build_track():
+	track_panel = Panel.new()
+	track_panel.add_stylebox_override("panel", _panel_style(Look.BG))
+	track_panel.anchor_right = 1
+	root.add_child(track_panel)
 	tl = Control.new()
 	tl.anchor_right = 1
 	tl.anchor_bottom = 1
-	tl.margin_top = 46
-	tl.margin_left = 12
-	tl.margin_right = -12
-	tl.margin_bottom = -8
 	tl.mouse_filter = Control.MOUSE_FILTER_STOP
+	tl.rect_clip_content = true
 	tl.connect("draw", self, "_draw_tl")
 	tl.connect("gui_input", self, "_tl_input")
 	tl.connect("resized", self, "_tl_resized")
-	p.add_child(tl)
-
-const RULER = 22.0
-const MINIMAP = 30.0
+	tl.connect("mouse_exited", self, "_tl_exit")
+	track_panel.add_child(tl)
 
 func _tl_resized():
 	_tl_dirty = true
 	wave_lines = null
+	_zoom_lbl()
+
+func _cursor_x() -> float:
+	return round(tl.rect_size.x * cursor_frac)
 
 func _span() -> float:
 	return tl.rect_size.x / ppm
 
 func _x_of(t:float) -> float:
-	return (t - view0) * ppm
+	return _cursor_x() + (t - pos) * ppm
 
 func _t_of(x:float) -> float:
-	return view0 + x / ppm
+	return pos + (x - _cursor_x()) / ppm
 
 func _lane_rect() -> Rect2:
-	return Rect2(0, RULER, tl.rect_size.x, tl.rect_size.y - RULER - MINIMAP - 6)
+	return Rect2(0, RULER, tl.rect_size.x, tl.rect_size.y - RULER)
+
+# note square size on the track, and the square of a note at time t
+func _tsq() -> float:
+	return floor(clamp((tl.rect_size.y - RULER - 18.0) * 0.82, 14.0, 60.0))
+
+func _sq_rect(t:float, lane:Rect2) -> Rect2:
+	var s = _tsq()
+	return Rect2(floor(_x_of(t)), lane.position.y + 15.0 + floor((lane.size.y - 15.0 - s) / 2.0), s, s)
 
 func _total_ms() -> float:
 	var last = m.notes[m.notes.size() - 1][2] if m and !m.notes.empty() else 0.0
 	return max(audio_len, last + 2000.0)
 
-func _clamp_view():
-	view0 = clamp(view0, -1000.0, max(_total_ms() - _span() + 1000.0, -1000.0))
+# zoomed out so far that squares would pile up: the track shows note density instead
+func _tl_dense() -> bool:
+	var w = tl.rect_size.x
+	return m.lower_bound(_t_of(w)) - m.lower_bound(_t_of(-_tsq())) > w / 3.0
+
+# the note under a point of the track: the latest one whose square holds it (the one drawn on top)
+func _tl_note_at(p):
+	if p == null or !m or p.y < RULER or _tl_dense(): return null
+	var lane = _lane_rect()
+	var t = _t_of(p.x)
+	var reach = _tsq() / ppm
+	var i = m.lower_bound(t + 1.0 / ppm + 0.5) - 1
+	while i >= 0 and m.notes[i][2] >= t - reach - 1.0 / ppm:
+		if _sq_rect(m.notes[i][2], lane).has_point(p): return m.notes[i]
+		i -= 1
+	return null
 
 func _draw_tl():
 	var c = tl
 	var sz = c.rect_size
 	var lane = _lane_rect()
-	c.draw_rect(Rect2(0, 0, sz.x, sz.y), Look.BG)
+	c.draw_rect(Rect2(Vector2.ZERO, sz), Look.BG)
 	if !m: return
-	var span = _span()
-	var t0 = view0
-	var t1 = view0 + span
-	# loop region / waveform backdrop
+	var t0 = _t_of(-_tsq())
+	var t1 = _t_of(sz.x)
+	var font = _font(11)
+	var x0 = _x_of(0.0) # (outside the song: darker)
+	var xe = _x_of(_total_ms())
+	if x0 > 0: c.draw_rect(Rect2(0, 0, x0, sz.y), Color(0, 0, 0, 0.5))
+	if xe < sz.x: c.draw_rect(Rect2(xe, 0, sz.x - xe, sz.y), Color(0, 0, 0, 0.5))
 	if loop_a >= 0 and loop_b > loop_a:
 		c.draw_rect(Rect2(_x_of(loop_a), lane.position.y, (loop_b - loop_a) * ppm, lane.size.y), Color(1, 1, 1, 0.06))
-	# ruler + beat grid
 	c.draw_rect(Rect2(0, 0, sz.x, RULER), Look.SURFACE)
+	_draw_wave(c, lane)
+	# beat grid: measures, beats, and the divisor's lines once they are 6 px apart
 	var beat_px = 60000.0 / m.bpm * ppm
 	for pt in m.points: beat_px = min(beat_px, 60000.0 / pt[1] * ppm) # (the densest section decides the stride)
 	var bstep = 1
 	while beat_px * bstep < 7.0: bstep *= 2
-	var font = _font(11)
 	for gl in m.grid_lines(t0, t1, beat_px / m.div >= 6.0, bstep):
 		var x = _x_of(gl[0])
 		if gl[1] == 2:
-			c.draw_line(Vector2(x, lane.position.y), Vector2(x, lane.end.y), Color(1, 1, 1, 0.03), 1.0)
+			c.draw_line(Vector2(x, lane.position.y), Vector2(x, lane.end.y), Color(1, 1, 1, 0.05), 1.0)
 			continue
 		var measure = gl[1] == 0
-		c.draw_line(Vector2(x, RULER - (10 if measure else 5)), Vector2(x, RULER), Look.TEXT_2 if measure else Look.TEXT_3, 1.0)
-		c.draw_line(Vector2(x, lane.position.y), Vector2(x, lane.end.y), Color(1, 1, 1, 0.13 if measure else 0.06), 1.0)
+		c.draw_line(Vector2(x, RULER - (8 if measure else 4)), Vector2(x, RULER), Look.TEXT_2 if measure else Look.TEXT_3, 1.0)
+		c.draw_line(Vector2(x, lane.position.y), Vector2(x, lane.end.y), Color(1, 1, 1, 0.2 if measure else 0.1), 1.0)
 	# timing points (BPM changes): a line through the lane + the new BPM on the ruler
 	for pt in m.points:
 		if pt[0] < t0 or pt[0] > t1: continue
 		var px = _x_of(pt[0])
 		c.draw_line(Vector2(px, 0), Vector2(px, lane.end.y), Color(0.3, 0.9, 1.0, 0.7), 2.0)
-		c.draw_string(font, Vector2(px + 4, RULER - 2), "%s BPM" % _num_txt(pt[1]), Color(0.3, 0.9, 1.0))
-	# time labels (every ~120 px)
-	var tstep = _nice_step(120.0 / ppm)
-	var tt = ceil(t0 / tstep) * tstep
+		c.draw_string(font, Vector2(px + 4, RULER - 4), "%s BPM" % _num_txt(pt[1]), Color(0.3, 0.9, 1.0))
+	var tstep = _nice_step(110.0 / ppm) # (time labels every ~110 px)
+	var tt = ceil(max(t0, 0.0) / tstep) * tstep
 	while tt <= t1:
-		c.draw_string(font, Vector2(_x_of(tt) + 4, 11), Model.fmt_time(int(tt)), Look.TEXT_2)
+		c.draw_string(font, Vector2(_x_of(tt) + 3, 12), Model.fmt_time(int(tt)), Look.TEXT_3)
 		tt += tstep
-	# waveform
-	_draw_wave(c, lane)
 	_draw_auto(c, lane, t0, t1)
-	# note ticks
-	_draw_ticks(c, lane)
-	# bookmarks
 	for bm in m.bookmarks:
 		var bx = _x_of(bm)
-		if bx >= 0 and bx <= sz.x:
-			c.draw_line(Vector2(bx, 0), Vector2(bx, lane.end.y), Color(1, 1, 1, 0.5), 1.0)
-			c.draw_rect(Rect2(bx, 0, 7, 7), Color(1, 1, 1, 0.9))
-	# selection box
+		if bx >= -8 and bx <= sz.x:
+			c.draw_line(Vector2(bx, 0), Vector2(bx, lane.end.y), _mark_col(0.5), 1.0)
+			c.draw_rect(Rect2(bx, 0, 7, 7), _mark_col(0.9))
+	if _tl_dense(): _draw_density(c, lane)
+	else: _draw_tl_notes(c, lane, t0, t1)
 	if box_sel != null:
 		var xa = _x_of(min(box_sel.a, box_sel.b))
 		var xb = _x_of(max(box_sel.a, box_sel.b))
 		c.draw_rect(Rect2(xa, lane.position.y, xb - xa, lane.size.y), Color(1, 1, 1, 0.1))
 		c.draw_rect(Rect2(xa, lane.position.y, xb - xa, lane.size.y), Look.LINE_HI, false, 1.0)
-	# playhead
-	var px = _x_of(pos)
-	if px >= -4 and px <= sz.x + 4:
-		var col = Color(1, 1, 1, 0.95)
-		c.draw_line(Vector2(px, 0), Vector2(px, lane.end.y), col, 2.0)
-		c.draw_colored_polygon(PoolVector2Array([Vector2(px - 6, 0), Vector2(px + 6, 0), Vector2(px, 9)]), col)
-	_draw_minimap(c, sz)
+	var cx = _cursor_x() # playhead: stays put, the map moves
+	var pc = _play_col()
+	c.draw_line(Vector2(cx, 0), Vector2(cx, sz.y), pc, 2.0)
+	c.draw_colored_polygon(PoolVector2Array([Vector2(cx - 6, 0), Vector2(cx + 6, 0), Vector2(cx, 9)]), pc)
+	if tl_drag != null and tl_drag.mode == "move" and drag_dt != 0:
+		var g0 = int(tl_drag.grab) + drag_dt
+		var txt = "%s ms  %s  %s" % [_signed(drag_dt), Model.fmt_time(g0), ("on the 1/%d grid" % m.div) if _snapping() else "free (Alt)"]
+		c.draw_string(font, Vector2(_x_of(g0) + 3, lane.end.y - 4), txt, Look.TEXT)
 
 func _nice_step(ms:float) -> float:
 	var steps = [100.0, 250.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 30000.0, 60000.0, 120000.0]
@@ -1041,86 +1405,87 @@ func _nice_step(ms:float) -> float:
 		if s >= ms: return s
 	return 300000.0
 
-func _lane_y(y:float, lane:Rect2) -> float:
-	var row = lane.size.y / 3.0
-	return lane.position.y + (clamp(y, 0.0, 2.0) + 0.5) * row
-
-# note ticks: rebuilt only when the notes, the view, the selection or a drag change (not while the
-# playhead alone moves), and drawn as a few multilines instead of one rect per note
-var _tk_key:String = ""
-var _tk_groups:Array = []
-var _sel_rev:int = 0
-func _draw_ticks(c:Control, lane:Rect2):
-	var row = lane.size.y / 3.0
-	for r in range(1, 3):
-		c.draw_line(Vector2(0, lane.position.y + row * r), Vector2(lane.end.x, lane.position.y + row * r), Color(1, 1, 1, 0.07), 1.0)
-	var key = "%d|%f|%f|%d|%d|%d|%d" % [m.rev, view0, ppm, int(tl.rect_size.x), _sel_rev, drag_dt if tl_drag != null else 0, int(lane.size.y)]
-	if key != _tk_key:
-		_tk_key = key
-		_tk_build(lane, row)
-	for g in _tk_groups:
-		if g[0].size() > 1: c.draw_multiline(g[0], g[1], g[2])
-
-func _tk_build(lane:Rect2, row:float):
-	var t0 = view0 - 10.0
-	var t1 = view0 + _span() + 10.0
-	var i0 = m.lower_bound(t0)
-	var i1 = m.lower_bound(t1)
-	var count = i1 - i0
-	_tk_groups = []
-	if count > tl.rect_size.x * 2.5:
-		# zoomed far out: density per pixel column (one bar per column, not one object per note)
-		var cols = int(tl.rect_size.x)
-		var dens = PoolIntArray()
-		dens.resize(cols + 1)
-		for i in range(i0, i1):
-			var x = int(_x_of(m.notes[i][2]))
-			if x >= 0 and x <= cols: dens[x] += 1
-		var mx = 1
-		for v in dens: mx = max(mx, v)
-		var pts = PoolVector2Array()
-		for x in range(cols):
-			if dens[x] > 0:
-				pts.append(Vector2(x, lane.end.y))
-				pts.append(Vector2(x, lane.end.y - lane.size.y * min(1.0, float(dens[x]) / mx)))
-		_tk_groups.append([pts, Color(1, 1, 1, 0.5), 1.0])
-		return
-	var tw = clamp(ppm * 14.0, 2.0, 6.0)
-	var hh = min(row * 0.62, 22.0) / 2.0
-	var hot = Color(1, 0.35, 0.4)
-	var buckets = [[], [], [], []] # x columns dim..bright, selected (plain arrays: a PoolVector2Array inside an Array is copied on every access)
-	var moving = tl_drag != null and drag_dt != 0
-	for i in range(i0, i1):
+func _draw_tl_notes(c:Control, lane:Rect2, t0:float, t1:float):
+	var s = _tsq()
+	var font = _font(11)
+	var hov = _tl_note_at(tl_mouse) if tl_drag == null else null
+	var moving = tl_drag != null and tl_drag.mode == "move" and drag_dt != 0
+	var d = max(2.0, floor(s * 0.2))
+	var last_lbl = -1e9
+	for i in range(m.lower_bound(t0), m.lower_bound(t1 + 1.0)):
 		var n = m.notes[i]
-		var k = 3 if (!sel.empty() and sel.has(Model.key_of(n))) else (0 if n[0] < 0.67 else (1 if n[0] < 1.33 else 2))
-		var t = n[2] + (drag_dt if (k == 3 and moving) else 0)
-		var x = _x_of(t)
-		var y = _lane_y(n[1], lane)
-		buckets[k].append(Vector2(x, y - hh))
-		buckets[k].append(Vector2(x, y + hh))
-	_tk_groups.append([PoolVector2Array(buckets[0]), Color(0.55, 0.55, 0.55, 0.95), tw])
-	_tk_groups.append([PoolVector2Array(buckets[1]), Color(0.78, 0.78, 0.78, 0.95), tw])
-	_tk_groups.append([PoolVector2Array(buckets[2]), Color(1, 1, 1, 0.95), tw])
-	_tk_groups.append([PoolVector2Array(buckets[3]), hot, tw + 1.0])
+		var is_sel = !sel.empty() and sel.has(Model.key_of(n))
+		var is_hov = hov != null and n == hov
+		var t = n[2] + (drag_dt if (moving and is_sel) else 0)
+		var r = _sq_rect(t, lane)
+		if moving and is_sel: # where it came from
+			var ox = floor(_x_of(n[2]))
+			c.draw_line(Vector2(ox, lane.position.y + 14), Vector2(ox, lane.end.y), Color(1, 1, 1, 0.3), 1.0)
+		var a = 0.4 if (t < pos - 0.5 and !is_sel) else 1.0
+		var col = _hot(1.0) if is_sel else Color(1, 1, 1, a)
+		c.draw_rect(r, Color(0.02, 0.02, 0.024, 0.85)) # (overlapping squares stay readable)
+		c.draw_rect(r, Color(col.r, col.g, col.b, (0.3 if is_sel else 0.1) * a + (0.18 if is_hov else 0.0)))
+		c.draw_rect(r, Color(1, 1, 1) if is_hov else col, false, 2.0 if (is_sel or is_hov) else 1.0)
+		# its cell, as on the grid
+		c.draw_rect(Rect2(r.position.x + s * 0.1 + clamp(n[0], -0.33, 2.33) * s * 0.3, r.position.y + s * 0.1 + clamp(n[1], -0.33, 2.33) * s * 0.3, d, d), col)
+		if r.position.x - last_lbl >= 24.0 or is_hov:
+			c.draw_string(font, Vector2(r.position.x + 1, lane.position.y + 11), str(i + 1), Color(1, 1, 1, 0.6 * a))
+			last_lbl = r.position.x
 
+# note count per pixel column of the whole song (time x ppm), rebuilt only when the notes or the
+# zoom change; drawn shifted, so playback costs one pass over the visible columns
+var _dn_key:String = ""
+var _dn:PoolIntArray = PoolIntArray()
+var _dn_max:int = 1
+func _draw_density(c:Control, lane:Rect2):
+	var key = "%d|%f" % [m.rev, ppm]
+	if key != _dn_key:
+		_dn_key = key
+		var cols = int(_total_ms() * ppm) + 2
+		var a = []
+		a.resize(cols)
+		for k in cols: a[k] = 0
+		for n in m.notes:
+			var x = int(n[2] * ppm)
+			if x >= 0 and x < cols: a[x] += 1
+		_dn_max = 1
+		for v in a:
+			if v > _dn_max: _dn_max = v
+		_dn = PoolIntArray(a)
+	var off = int(floor(pos * ppm - _cursor_x()))
+	var pts = PoolVector2Array()
+	for x in int(tl.rect_size.x):
+		var k = off + x
+		if k >= 0 and k < _dn.size() and _dn[k] > 0:
+			pts.append(Vector2(x, lane.end.y))
+			pts.append(Vector2(x, lane.end.y - (lane.size.y - 4.0) * min(1.0, float(_dn[k]) / _dn_max)))
+	if pts.size() > 1: c.draw_multiline(pts, Color(1, 1, 1, 0.5), 1.0)
+	c.draw_string(_font(11), Vector2(6, lane.position.y + 12), "note density (Ctrl + wheel up to see the notes)", Look.TEXT_3)
+
+# waveform: built in song pixels (time x ppm) for three track widths around the view and drawn
+# shifted, so it is only rebuilt every track width of scrolling or when the zoom changes
+var wave_c0:float = 0.0
+var wave_built:int = -1
 func _draw_wave(c:Control, lane:Rect2):
-	var mid = lane.position.y + lane.size.y / 2.0
 	if wave_state == "none" or wave_state == "failed":
 		var s = "no waveform" if wave_state == "none" else "waveform unavailable for this audio"
-		c.draw_string(_font(12), Vector2(10, lane.end.y - 8), s, Look.TEXT_3)
+		c.draw_string(_font(11), Vector2(6, lane.end.y - 6), s, Look.TEXT_3)
 		return
-	var key = "%f|%f|%d|%d" % [view0, ppm, wave_n, int(tl.rect_size.x)]
-	if key != wave_key or wave_lines == null:
+	var w = tl.rect_size.x
+	var a0 = pos * ppm - _cursor_x() # (song pixel at the left edge)
+	var key = "%f|%d|%d" % [ppm, int(lane.size.y), int(w)]
+	var grown = wave_n != wave_built and (wave_state != "loading" or wave_n - wave_built > 40)
+	if key != wave_key or wave_lines == null or a0 < wave_c0 or a0 + w > wave_c0 + 3.0 * w or grown:
 		wave_key = key
+		wave_built = wave_n
+		wave_c0 = floor(a0 - w)
 		var pts = PoolVector2Array()
+		var mid = lane.position.y + lane.size.y / 2.0
 		var half = lane.size.y * 0.46
-		var w = int(tl.rect_size.x)
-		var x = 0
-		while x < w:
-			var ta = view0 + x / ppm
-			var tb = view0 + (x + 2) / ppm
-			var ia = int(floor(ta / BIN))
-			var ib = int(floor(tb / BIN))
+		var x = wave_c0
+		while x < wave_c0 + 3.0 * w:
+			var ia = int(floor(x / ppm / BIN))
+			var ib = int(floor((x + 2.0) / ppm / BIN))
 			if ib >= 0 and ia < wave_n:
 				var v = 0.0
 				for k in range(max(ia, 0), min(ib, wave_n - 1) + 1):
@@ -1128,28 +1493,157 @@ func _draw_wave(c:Control, lane:Rect2):
 				if v > 0.003:
 					pts.append(Vector2(x, mid - v * half))
 					pts.append(Vector2(x, mid + v * half))
-			x += 2
+			x += 2.0
 		wave_lines = pts
-	if wave_lines.size() > 1: c.draw_multiline(wave_lines, Color(1, 1, 1, 0.16), 2.0)
+	c.draw_set_transform(Vector2(-a0, 0), 0.0, Vector2.ONE)
+	if wave_lines.size() > 1: c.draw_multiline(wave_lines, Color(1, 1, 1, 0.13), 2.0)
+	c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if wave_state == "loading":
-		c.draw_string(_font(12), Vector2(10, lane.position.y + 14), "WAVEFORM %d%%" % int(100.0 * wave_n * BIN / max(audio_len, 1.0)), Look.TEXT_3)
+		c.draw_string(_font(11), Vector2(6, lane.end.y - 6), "WAVEFORM %d%%" % int(100.0 * wave_n * BIN / max(audio_len, 1.0)), Look.TEXT_3)
 
+func _tl_input(ev):
+	_drop_focus(ev)
+	if !m: return
+	if ev is InputEventMouseMotion:
+		tl_mouse = ev.position
+		if tl_drag != null: _tl_drag_to(ev.position)
+		_hint("track")
+		tl.update()
+		return
+	if !(ev is InputEventMouseButton): return
+	if _wheel(ev): return
+	if ev.pressed:
+		if tl_drag != null: return
+		tl_mouse = ev.position
+		match ev.button_index:
+			BUTTON_LEFT:
+				if ev.position.y < RULER: # ruler: the clicked time comes under the playhead, then it scrubs
+					_drag_pause()
+					_seek(_snap_time(_t_of(ev.position.x)))
+					tl_drag = {"mode": "scrub", "btn": BUTTON_LEFT, "x0": ev.position.x, "t0": pos}
+					return
+				var hit = _tl_note_at(ev.position)
+				if hit != null:
+					_click_select(hit, ev.shift, ev.control)
+					if sel.has(Model.key_of(hit)):
+						tl_drag = {"mode": "move", "btn": BUTTON_LEFT, "grab": hit[2], "x0": ev.position.x, "tp": _t_of(ev.position.x), "live": false, "first": _sel_notes()[0][2]}
+						drag_dt = 0
+				else:
+					_drag_pause()
+					tl_drag = {"mode": "scrub", "btn": BUTTON_LEFT, "x0": ev.position.x, "t0": pos}
+			BUTTON_MIDDLE: # (pans like a scrub)
+				_drag_pause()
+				tl_drag = {"mode": "scrub", "btn": BUTTON_MIDDLE, "x0": ev.position.x, "t0": pos}
+			BUTTON_RIGHT:
+				var add = ev.control or ev.shift
+				tl_drag = {"mode": "box", "btn": BUTTON_RIGHT, "x0": ev.position.x, "hit": _tl_note_at(ev.position), "add": add, "orig": sel.duplicate(), "base": sel.duplicate() if add else {}}
+				box_sel = {"a": _t_of(ev.position.x), "b": _t_of(ev.position.x)}
+	elif tl_drag != null and tl_drag.btn == ev.button_index:
+		_tl_release(ev.position)
+
+func _tl_drag_to(p:Vector2):
+	match tl_drag.mode:
+		"scrub": _seek(_snap_time(tl_drag.t0 - (p.x - tl_drag.x0) / ppm))
+		"move": # (by the time under the mouse: while playing, the note keeps up with the moving track)
+			if !tl_drag.live and abs(p.x - tl_drag.x0) < DRAG_PX: return
+			tl_drag.live = true
+			var target = tl_drag.grab + _t_of(p.x) - tl_drag.tp
+			drag_dt = max(_snap_time(target) - int(tl_drag.grab), -int(tl_drag.first)) # (nothing before 0:00)
+		"box":
+			if abs(p.x - tl_drag.x0) < DRAG_PX: return
+			box_sel.b = _t_of(p.x)
+			_box_live()
+
+# the selection while a box is dragged (the Quantum Editor's: a square reaching into the box counts)
+func _box_live():
+	var a = min(box_sel.a, box_sel.b)
+	var b = max(box_sel.a, box_sel.b)
+	sel = tl_drag.base.duplicate()
+	var i = m.lower_bound(a - _tsq() / ppm)
+	while i < m.notes.size() and m.notes[i][2] <= b:
+		sel[Model.key_of(m.notes[i])] = m.notes[i]
+		i += 1
+	tl.update()
+	field.update()
+
+func _tl_release(p:Vector2):
+	var d = tl_drag
+	tl_drag = null
+	match d.mode:
+		"move":
+			var dt = drag_dt
+			drag_dt = 0
+			if dt != 0: _move_selection(Vector2.ZERO, dt)
+		"box":
+			box_sel = null
+			if abs(p.x - d.x0) < DRAG_PX: # a right click, not a drag
+				sel = d.orig
+				if d.hit != null: _delete_notes([d.hit], "delete note")
+				elif !d.add: sel = {}
+			_sel_changed()
+		_: _drag_resume()
+	tl.update()
+
+func _tl_exit():
+	tl_mouse = null
+	tl.update()
+	_hint("")
+
+func _snap_time(t:float) -> int:
+	if _snapping(): return m.snap_t(max(t, 0.0))
+	return int(round(max(t, 0.0)))
+
+# a scrub / seek drag pauses the song and plays it on afterwards (the Quantum Editor's)
+func _drag_pause():
+	resume_after_drag = playing
+	if playing: _pause()
+
+func _drag_resume():
+	if resume_after_drag and !playing: _toggle_play()
+	resume_after_drag = false
+
+# the wheel over the grid, the track or the seek bar: one grid step (playback pauses: stepping is for
+# placing), Ctrl = zoom the track, Shift = beat divisor (the Quantum Editor's)
+func _wheel(ev) -> bool:
+	var b = ev.button_index
+	if !(b in [BUTTON_WHEEL_UP, BUTTON_WHEEL_DOWN, BUTTON_WHEEL_LEFT, BUTTON_WHEEL_RIGHT]): return false
+	if !ev.pressed or !m: return true
+	var dir = 1 if b in [BUTTON_WHEEL_UP, BUTTON_WHEEL_RIGHT] else -1
+	if ev.control: _zoom(dir)
+	elif ev.shift: _div_step(dir)
+	elif b in [BUTTON_WHEEL_UP, BUTTON_WHEEL_DOWN]: _step_key(dir)
+	return true
+
+func _div_step(dir:int):
+	_set_div(int(clamp(m.div + dir, 1, 16)))
+	msg("beat divisor 1/%d" % m.div)
+
+func _step_key(dir:int):
+	if playing: _pause()
+	_seek(_step_from(pos, dir))
+
+# ------------------------------------------------------------------ seek bar (the whole song)
 var _mm_key:String = ""
 var _mm_pts:PoolVector2Array = PoolVector2Array()
-func _draw_minimap(c:Control, sz:Vector2):
-	var r = Rect2(0, sz.y - MINIMAP, sz.x, MINIMAP)
-	c.draw_rect(r, Look.SURFACE)
+func _draw_seek():
+	var c = seekbar
+	var sz = c.rect_size
+	var r = Rect2(0, 3, sz.x, sz.y - 6)
+	c.draw_rect(r, Look.BG)
+	if !m:
+		c.draw_rect(r, Look.LINE, false, 1.0)
+		return
 	var total = _total_ms()
-	if total <= 0: return
-	var k = sz.x / total
+	var k = sz.x / max(total, 1.0)
 	var key = "%d|%d|%d" % [m.rev, int(sz.x), int(total)]
 	if key != _mm_key: # density per column, rebuilt only when the notes change
 		_mm_key = key
 		_mm_pts = PoolVector2Array()
 		if !m.notes.empty():
 			var cols = int(sz.x)
-			var dens = PoolIntArray()
+			var dens = []
 			dens.resize(cols + 1)
+			for x in cols + 1: dens[x] = 0
 			for n in m.notes:
 				var x = int(n[2] * k)
 				if x >= 0 and x <= cols: dens[x] += 1
@@ -1159,130 +1653,79 @@ func _draw_minimap(c:Control, sz:Vector2):
 				if dens[x] > 0:
 					_mm_pts.append(Vector2(x, r.end.y))
 					_mm_pts.append(Vector2(x, r.end.y - r.size.y * min(1.0, float(dens[x]) / mx)))
+	if loop_a >= 0 and loop_b > loop_a:
+		c.draw_rect(Rect2(loop_a * k, r.position.y, (loop_b - loop_a) * k, r.size.y), Color(1, 1, 1, 0.08))
 	if _mm_pts.size() > 1: c.draw_multiline(_mm_pts, Color(1, 1, 1, 0.4), 1.0)
-	var vr = Rect2(view0 * k, r.position.y, _span() * k, r.size.y)
-	c.draw_rect(vr, Color(1, 1, 1, 0.1))
-	c.draw_rect(vr, Look.LINE_HI, false, 1.0)
-	c.draw_line(Vector2(pos * k, r.position.y), Vector2(pos * k, r.end.y), Color(1, 1, 1, 0.9), 2.0)
+	for pt in m.points: c.draw_line(Vector2(pt[0] * k, r.position.y), Vector2(pt[0] * k, r.end.y), Color(0.3, 0.9, 1.0, 0.7), 1.0)
+	for bm in m.bookmarks:
+		c.draw_line(Vector2(bm * k, r.position.y), Vector2(bm * k, r.end.y), _mark_col(0.8), 1.0)
+		c.draw_rect(Rect2(bm * k - 2, r.position.y, 5, 5), _mark_col(0.9))
+	var vx0 = max(_t_of(0.0), 0.0) * k # (the part the track shows)
+	var vx1 = min(_t_of(tl.rect_size.x), total) * k
+	c.draw_rect(Rect2(vx0, r.position.y, max(vx1 - vx0, 2.0), r.size.y), Color(1, 1, 1, 0.08))
+	c.draw_rect(r, Look.LINE, false, 1.0)
+	c.draw_line(Vector2(pos * k, 0), Vector2(pos * k, sz.y), _play_col(), 2.0)
 
-func _tl_input(ev):
+func _seek_t(x:float) -> float:
+	var t = clamp(x / max(seekbar.rect_size.x, 1.0), 0.0, 1.0) * _total_ms()
+	for bm in m.bookmarks: # (a click on a bookmark lands on it exactly)
+		if abs(bm * seekbar.rect_size.x / max(_total_ms(), 1.0) - x) <= 4.0: return float(bm)
+	return float(_snap_time(t))
+
+func _seek_input(ev):
 	_drop_focus(ev)
 	if !m: return
-	var lane = _lane_rect()
-	if ev is InputEventMouseButton:
-		if ev.button_index in [BUTTON_WHEEL_UP, BUTTON_WHEEL_DOWN] and ev.pressed:
-			var dir = 1.0 if ev.button_index == BUTTON_WHEEL_UP else -1.0
-			if ev.control:
-				var tm = _t_of(ev.position.x)
-				ppm = clamp(ppm * (1.25 if dir > 0 else 0.8), 0.004, 3.0)
-				view0 = tm - ev.position.x / ppm
-				follow = false
-			else:
-				view0 -= dir * _span() * (0.25 if !ev.shift else 0.75)
-				follow = false
-			_clamp_view()
-			_tl_dirty = true
-			return
-		var in_mm = ev.position.y > tl.rect_size.y - MINIMAP
-		if ev.button_index == BUTTON_LEFT:
-			if ev.pressed:
-				if in_mm:
-					var t = ev.position.x / tl.rect_size.x * _total_ms()
-					view0 = t - _span() / 2.0
-					_clamp_view()
-					follow = false
-					_seek(t)
-					return
-				if ev.position.y < RULER:
-					_seek(_snap_time(_t_of(ev.position.x)))
-					tl_drag = {"mode": "seek"}
-					return
-				var hit = _tick_at(ev.position, lane)
-				if hit != null:
-					var k = Model.key_of(hit)
-					if ev.shift or ev.control:
-						if sel.has(k): sel.erase(k)
-						else: sel[k] = hit
-					elif !sel.has(k):
-						sel = {k: hit}
-					tl_drag = {"mode": "move", "grab": hit[2], "x0": ev.position.x}
-					drag_dt = 0
-					_sel_changed()
-				else:
-					tl_drag = {"mode": "box", "a": _t_of(ev.position.x), "x0": ev.position.x, "add": ev.shift or ev.control}
-					box_sel = {"a": tl_drag.a, "b": tl_drag.a}
-			else:
-				if tl_drag != null:
-					match tl_drag.mode:
-						"box":
-							if abs(ev.position.x - tl_drag.x0) < 4:
-								if !tl_drag.add: sel = {}
-								_seek(_snap_time(_t_of(ev.position.x)))
-							else:
-								_box_select(min(box_sel.a, box_sel.b), max(box_sel.a, box_sel.b), tl_drag.add)
-							box_sel = null
-						"move":
-							if drag_dt != 0: _move_selection(Vector2.ZERO, drag_dt)
-							drag_dt = 0
-					tl_drag = null
-					_sel_changed()
-				tl.update()
-		elif ev.button_index == BUTTON_RIGHT and ev.pressed:
-			var h2 = _tick_at(ev.position, lane)
-			if h2 != null:
-				m.begin("delete note")
-				m.run(["del", [h2]])
-				m.end()
-				sel.erase(Model.key_of(h2))
-				_sel_changed()
-		elif ev.button_index == BUTTON_MIDDLE:
-			tl_drag = {"mode": "pan", "x0": ev.position.x, "v0": view0} if ev.pressed else null
-	elif ev is InputEventMouseMotion and tl_drag != null:
-		match tl_drag.mode:
-			"seek": _seek(_snap_time(_t_of(ev.position.x)))
-			"box":
-				box_sel.b = _t_of(ev.position.x)
-				tl.update()
-			"move":
-				var want = _t_of(ev.position.x) - _t_of(tl_drag.x0)
-				drag_dt = _snap_time(tl_drag.grab + want) - int(tl_drag.grab) if _snapping() else int(round(want))
-				tl.update()
-			"pan":
-				view0 = tl_drag.v0 - (ev.position.x - tl_drag.x0) / ppm
-				follow = false
-				_clamp_view()
-				_tl_dirty = true
+	if ev is InputEventMouseMotion:
+		_hint("seek")
+		if seek_drag: _seek(_seek_t(ev.position.x))
+		return
+	if !(ev is InputEventMouseButton): return
+	if _wheel(ev): return
+	if ev.button_index != BUTTON_LEFT: return
+	if ev.pressed and !seek_drag:
+		_drag_pause()
+		seek_drag = true
+		_seek(_seek_t(ev.position.x))
+	elif !ev.pressed and seek_drag:
+		seek_drag = false
+		_drag_resume()
 
-func _snap_time(t:float) -> int:
-	if _snapping(): return m.snap_t(max(t, 0.0))
-	return int(round(max(t, 0.0)))
-
-func _tick_at(p:Vector2, lane:Rect2):
-	var t = _t_of(p.x)
-	var tol = 5.0 / ppm
-	var i = m.lower_bound(t - tol)
-	var best = null
-	var bd = 1e9
-	while i < m.notes.size() and m.notes[i][2] <= t + tol:
-		var n = m.notes[i]
-		var dy = abs(_lane_y(n[1], lane) - p.y)
-		var d = abs(n[2] - t) * ppm + dy * 0.25
-		if dy < lane.size.y / 3.0 and d < bd:
-			bd = d
-			best = n
+# ------------------------------------------------------------------ status line hints
+func _note_index(n:Array) -> int:
+	var k = Model.key_of(n)
+	var i = m.lower_bound(n[2])
+	while i < m.notes.size() and m.notes[i][2] == n[2]:
+		if Model.key_of(m.notes[i]) == k: return i
 		i += 1
-	return best
+	return -1
 
-func _box_select(a:float, b:float, add:bool):
-	if !add: sel = {}
-	var i = m.lower_bound(a)
-	while i < m.notes.size() and m.notes[i][2] <= b:
-		sel[Model.key_of(m.notes[i])] = m.notes[i]
-		i += 1
+func _note_desc(n:Array) -> String:
+	return "note %d   %s   x %s  y %s%s" % [_note_index(n) + 1, Model.fmt_time(int(n[2])), _num_txt(n[0]), _num_txt(n[1]), "   (selected)" if sel.has(Model.key_of(n)) else ""]
+
+func _hint(ctx:String):
+	if !hint_lbl: return
+	var t = "Space: play   wheel / arrows: step   Ctrl + wheel: zoom   ?: every shortcut"
+	if m:
+		match ctx:
+			"field":
+				var n = _note_at(field_mouse)
+				if n != null: t = _note_desc(n) + "   drag: move   right-click: delete   Ctrl / Shift: toggle / range"
+				else: t = "click: note at %s %s   Q W E / A S D / Z X C   right-click: deselect" % [Model.fmt_time(_place_ms()), "(1/%d grid)" % m.div if _snapping() else "(free)"]
+			"track":
+				var n2 = _tl_note_at(tl_mouse)
+				if n2 != null: t = _note_desc(n2) + "   drag: move in time   right-click: delete"
+				else: t = "drag: scrub   right-drag: box select   ruler: seek   Ctrl + wheel: zoom   Shift + wheel: divisor"
+			"seek": t = "click / drag: seek (the song pauses while dragging)   bookmarks: jump onto them"
+	hint_lbl.text = t
 
 # ------------------------------------------------------------------ editing operations (all through the model)
 func _sel_notes() -> Array:
 	var out = []
+	if sel.empty() or !m: return out
+	if sel.size() * 8 > m.notes.size(): # (a big selection: walk the map in order, no sort)
+		for n in m.notes:
+			if sel.has(Model.key_of(n)): out.append(n)
+		return out
 	for k in sel:
 		if m.keys.has(k): out.append(sel[k])
 	out.sort_custom(m, "_cmp")
@@ -1294,39 +1737,78 @@ func _sel_changed():
 	var keep = {}
 	for n in ns: keep[Model.key_of(n)] = n
 	sel = keep
-	_refresh_insp()
+	if sel_anchor != null and !m.has_note(sel_anchor): sel_anchor = null
+	_refresh_insp(ns)
 	_field_dirty = true
-	field.update()
-	tl.update()
+	_redraw()
 
+# Quantum Editor selection: a click selects only that note (a note already in the selection keeps the
+# selection, so a group can be dragged), Ctrl adds / removes it, Shift selects every note in time
+# from the anchor to it. The anchor is the note the selection started from (the Quantum Editor's
+# first selected note); when Ctrl removes it, the earliest note left takes over.
+func _click_select(n:Array, shift:bool, ctrl:bool):
+	var k = Model.key_of(n)
+	var anchored = sel_anchor != null and sel.has(Model.key_of(sel_anchor))
+	if shift:
+		var a = sel_anchor if anchored else n
+		var t0 = min(a[2], n[2])
+		var t1 = max(a[2], n[2])
+		sel = {}
+		var i = m.lower_bound(t0)
+		while i < m.notes.size() and m.notes[i][2] <= t1:
+			sel[Model.key_of(m.notes[i])] = m.notes[i]
+			i += 1
+		sel_anchor = a
+	elif ctrl:
+		if sel.has(k):
+			sel.erase(k)
+			if !anchored or Model.key_of(sel_anchor) == k:
+				var left = _sel_notes()
+				sel_anchor = left[0] if !left.empty() else null
+		else:
+			sel[k] = n
+			if !anchored: sel_anchor = n
+	else:
+		if !sel.has(k):
+			sel = {k: n}
+			sel_anchor = n
+		elif !anchored: sel_anchor = n
+	_sel_changed()
+
+# moves the selection as one piece (out, then in, in one undo step): across its own old places and
+# other notes alike; a note landing exactly on an unselected one merges into it (a map cannot hold two
+# equal notes). Positions are cut to 4 decimals only when they change: repeated moves do not drift.
 func _move_selection(dg:Vector2, dms:int, name:String = "move notes"):
 	var ns = _sel_notes()
 	if ns.empty(): return
-	var pairs = []
+	if dg != Vector2.ZERO: dg = _clamp_group(dg, ns)
+	dms = max(dms, -int(ns[0][2])) # (nothing before 0:00)
+	if dg == Vector2.ZERO and dms == 0: return
+	var news = []
 	for n in ns:
-		var nn = [n[0] + dg.x, n[1] + dg.y, max(int(n[2]) + dms, 0)]
-		nn[0] = clamp(nn[0], Model.GRID_MIN, Model.GRID_MAX)
-		nn[1] = clamp(nn[1], Model.GRID_MIN, Model.GRID_MAX)
-		pairs.append([n, nn])
+		news.append([n[0] if dg.x == 0 else stepify(n[0] + dg.x, 0.0001), n[1] if dg.y == 0 else stepify(n[1] + dg.y, 0.0001), int(n[2]) + dms])
 	m.begin(name)
-	# apply in an order that never lands on a note that has not moved yet
-	if dms > 0 or (dms == 0 and dg.x + dg.y > 0): pairs.invert()
-	for pr in pairs: m.run(["mov", [pr]])
+	m.run(["del", ns])
+	var added = m.run(["add", news])
 	m.end()
-	var ns2 = {}
-	for pr in pairs:
-		if m.has_note(pr[1]): ns2[Model.key_of(pr[1])] = pr[1]
-		elif m.has_note(pr[0]): ns2[Model.key_of(pr[0])] = pr[0]
-	sel = ns2
+	sel = {}
+	for n in news:
+		var k = Model.key_of(n)
+		if m.keys.has(k): sel[k] = n
+	if sel_anchor != null and !m.has_note(sel_anchor): sel_anchor = news[0]
+	if added < news.size(): msg("%d note(s) landed on another note and merged into it" % (news.size() - added))
 	_sel_changed()
 
 func _delete_sel():
 	var ns = _sel_notes()
 	if ns.empty(): return
-	m.begin("delete %d note(s)" % ns.size())
+	_delete_notes(ns, "delete %d note(s)" % ns.size())
+
+func _delete_notes(ns:Array, name:String):
+	m.begin(name)
 	m.run(["del", ns])
 	m.end()
-	sel = {}
+	for n in ns: sel.erase(Model.key_of(n))
 	_sel_changed()
 
 func _op_mirror(horizontal:bool):
@@ -1421,10 +1903,11 @@ func _paste():
 	var group = []
 	for n in clip: group.append([n[0], n[1], base + int(n[2])])
 	m.begin("paste %d note(s)" % group.size())
-	m.run(["add", group])
+	var added = m.run(["add", group])
 	m.end()
 	sel = {}
 	for n in group: if m.has_note(n): sel[Model.key_of(n)] = n
+	if added < group.size(): msg("pasted %d note(s); %d were already there" % [added, group.size() - added])
 	_sel_changed()
 
 func _cut():
@@ -1490,30 +1973,56 @@ func _jump_note(dir:int):
 	sel = {Model.key_of(m.notes[i]): m.notes[i]}
 	_sel_changed()
 
-# inspector
-func _refresh_insp():
+# the selection's properties (right panel): one note = its time, x, y; more = TIME moves them all
+# (the first note goes to the typed time). Where the time sits on the beat grid is spelled out, so a
+# note off the grid is visible.
+func _refresh_insp(ns = null):
+	if !sel_lbl or !m: return
+	if ns == null: ns = _sel_notes()
 	_lock_ui = true
-	var ns = _sel_notes()
-	for k in ["t", "x", "y"]: insp[k].editable = ns.size() == 1
-	if ns.size() == 1:
+	insp.t.editable = !ns.empty()
+	insp.x.editable = ns.size() == 1
+	insp.y.editable = ns.size() == 1
+	for b in sel_btns: b.disabled = ns.empty()
+	if !ns.empty():
 		insp.t.value = ns[0][2]
 		insp.x.value = ns[0][0]
 		insp.y.value = ns[0][1]
-		insp.info.text = "1 note at %s" % Model.fmt_time(int(ns[0][2]))
+	if ns.empty():
+		sel_lbl.text = "nothing selected"
+		beat_lbl.text = "Click a note on the grid or the track. Right-drag on the track selects a time range."
+	elif ns.size() == 1:
+		sel_lbl.text = "note %d of %d" % [_note_index(ns[0]) + 1, m.notes.size()]
+		beat_lbl.text = _grid_desc(int(ns[0][2]))
 	else:
-		insp.info.text = "nothing selected" if ns.empty() else "%d notes  %s - %s" % [ns.size(), Model.fmt_time(int(ns[0][2])), Model.fmt_time(int(ns[ns.size() - 1][2]))]
+		sel_lbl.text = "%d notes  %s - %s" % [ns.size(), Model.fmt_time(int(ns[0][2])), Model.fmt_time(int(ns[ns.size() - 1][2]))]
+		beat_lbl.text = "first: " + _grid_desc(int(ns[0][2])) + ". TIME moves the whole selection."
 	_lock_ui = false
+
+static func _signed(v:int) -> String:
+	return ("+" if v > 0 else "") + str(v)
+
+# "beat 24.75, on the 1/4 grid" / "beat 24.73, 3 ms before the 1/4 grid"
+func _grid_desc(t:int) -> String:
+	var off = t - m.snap_t(t)
+	var s = "beat %s" % _num_txt(stepify(m.beat_at(t), 0.001))
+	if off == 0: return s + ", on the 1/%d grid" % m.div
+	return s + ", %d ms %s the 1/%d grid" % [abs(off), "after" if off > 0 else "before", m.div]
 
 func _insp_changed(v:float, which:String):
 	if _lock_ui: return
 	var ns = _sel_notes()
+	if ns.empty(): return
+	if which == "t":
+		var d = int(round(v)) - int(ns[0][2])
+		if d != 0: _move_selection(Vector2.ZERO, d, "set time")
+		else: _refresh_insp(ns)
+		return
 	if ns.size() != 1: return
 	var o = ns[0]
 	var nn = [o[0], o[1], o[2]]
-	match which:
-		"t": nn[2] = int(v)
-		"x": nn[0] = v
-		"y": nn[1] = v
+	if which == "x": nn[0] = v
+	else: nn[1] = v
 	if m.has_note(nn):
 		msg("a note is already there", true)
 		_refresh_insp()
@@ -1522,6 +2031,7 @@ func _insp_changed(v:float, which:String):
 	m.run(["mov", [[o, nn]]])
 	m.end()
 	sel = {Model.key_of(nn): nn}
+	sel_anchor = nn
 	_sel_changed()
 
 func _refresh_note_list():
@@ -1571,11 +2081,14 @@ func _div_changed(i:int):
 	if !m or _lock_ui: return
 	m.div = ob_div.get_item_id(i)
 	m.rev += 1
+	_refresh_insp()
 
 func _set_div(d:int):
+	if !m: return
 	m.div = d
 	_sync_timing_ui()
 	m.rev += 1
+	_refresh_insp()
 
 func _set_time_snap(on:bool):
 	time_snap = on
@@ -1715,42 +2228,50 @@ func _sync_timing_ui():
 
 # ------------------------------------------------------------------ playback
 func _seek(ms:float):
-	pos = clamp(ms, 0.0, max(audio_len, 1.0) if audio_len > 0 else 36000000.0)
+	pos = clamp(ms, 0.0, audio_len if audio_len > 0 else float(Model.MAX_MS))
 	if playing and stream: ap.seek(pos / 1000.0)
 	_prev_pos = pos
-	tl.update()
-	field.update()
+	_redraw()
+
+func _redraw():
+	if tl: tl.update()
+	if field: field.update()
+	if seekbar: seekbar.update()
 
 func _seek_start():
 	_seek(0.0)
-	_center_view()
 
+# (the track always keeps the playhead in view now; kept for the callers that brought it into view)
 func _center_view():
-	view0 = pos - _span() * 0.35
-	_clamp_view()
-	tl.update()
+	_redraw()
+
+func _pause():
+	if !playing: return
+	ap.stop()
+	playing = false
+	_redraw()
 
 func _toggle_play():
 	if !m or !stream:
 		msg("no audio loaded", true)
 		return
 	if playing:
-		ap.stop()
-		playing = false
-	else:
-		if pos >= audio_len - 20.0: pos = 0.0
-		ap.stream = stream
-		_apply_speed()
-		ap.play(pos / 1000.0)
-		playing = true
-		_prev_pos = pos
-	tl.update()
+		_pause()
+		return
+	if pos >= audio_len - 20.0: pos = 0.0
+	ap.stream = stream
+	_apply_speed()
+	ap.play(pos / 1000.0)
+	playing = true
+	_prev_pos = pos
+	_redraw()
 
 func _speed_changed(i:int):
-	speed = [0.5, 0.75, 1.0][i]
+	speed = SPEEDS[i]
 	_apply_speed()
 
 func _set_loop(on:bool):
+	if _lock_ui: return
 	loop_on = on
 	if on and !(loop_a >= 0 and loop_b > loop_a):
 		var ns = _sel_notes()
@@ -1760,26 +2281,37 @@ func _set_loop(on:bool):
 		else:
 			loop_a = pos
 			loop_b = pos + 4000.0
-	tl.update()
+	_sync_loop_btn()
+	_redraw()
 
 func _loop_mark(is_a:bool):
 	if is_a: loop_a = pos
 	else: loop_b = pos
 	if loop_a >= 0 and loop_b > loop_a: loop_on = true
-	tl.update()
+	_sync_loop_btn()
+	_redraw()
+
+func _sync_loop_btn():
+	if loop_btn and loop_btn.pressed != loop_on:
+		_lock_ui = true
+		loop_btn.pressed = loop_on
+		_lock_ui = false
+
+# zoom in fixed 1.25x steps around the playhead (it stays where it is)
+func _zoom(dir:int):
+	zoom_i = int(clamp(zoom_i + dir, -12, 13))
+	ppm = 0.15 * pow(1.25, zoom_i)
+	wave_lines = null
+	_zoom_lbl()
+	_redraw()
 
 func _zoom_btn(f:float):
-	var tm = pos if (pos > view0 and pos < view0 + _span()) else view0 + _span() / 2.0
-	var xr = (tm - view0) * ppm
-	ppm = clamp(ppm * f, 0.004, 3.0)
-	view0 = tm - xr / ppm
-	_clamp_view()
-	tl.update()
+	_zoom(1 if f > 1.0 else -1)
 
-func _zoom_fit():
-	ppm = clamp(tl.rect_size.x / max(_total_ms(), 1000.0), 0.004, 3.0)
-	view0 = 0.0
-	tl.update()
+func _zoom_lbl():
+	if zoom_lbl and tl and tl.rect_size.x > 0:
+		var s = _span() / 1000.0
+		zoom_lbl.text = ("%.1f s" % s) if s < 100.0 else ("%d s" % int(round(s)))
 
 func _process(delta):
 	if !m:
@@ -1802,19 +2334,11 @@ func _process(delta):
 			playing = true
 		_play_sounds(_prev_pos, pos)
 		_prev_pos = pos
-		if follow:
-			var target = pos - _span() * 0.3
-			if pos < view0 or pos > view0 + _span() * 0.9: view0 = target
-			_clamp_view()
-		tl.update()
-		field.update()
-	elif _last_rev != m.rev:
-		pass
+		_redraw()
 	if _last_rev != m.rev:
 		_last_rev = m.rev
 		_refresh_state()
-		tl.update()
-		field.update()
+		_redraw()
 	if wave_state == "loading": _wave_step()
 	_star_tick(delta)
 	_hush_t += delta
@@ -1825,7 +2349,9 @@ func _process(delta):
 	if _auto_t > 15.0:
 		_auto_t = 0.0
 		if m.dirty and _auto_rev != m.rev: _autosave()
-	time_lbl.text = "%s / %s     beat %.2f%s     %d notes" % [Model.fmt_time(int(pos)), Model.fmt_time(int(audio_len)), m.beat_at(pos), (" @ %s BPM" % _num_txt(m.bpm_at(pos))) if !m.points.empty() else "", m.notes.size()]
+	pos_lbl.text = Model.fmt_time(int(pos))
+	play_btn.text = "PAUSE" if playing else "PLAY"
+	time_lbl.text = "%s / %s   beat %.2f%s   %d notes" % [Model.fmt_time(int(pos)), Model.fmt_time(int(audio_len)), m.beat_at(pos), (" @ %s BPM" % _num_txt(m.bpm_at(pos))) if !m.points.empty() else "", m.notes.size()]
 
 func _play_sounds(a:float, b:float):
 	if b <= a: return
@@ -2033,8 +2559,8 @@ func _adopt(model, at:float = 0.0, from_song = null):
 	_refresh_insp()
 	pos = at
 	_prev_pos = at
-	view0 = -200.0
-	ppm = 0.15
+	sel_anchor = null
+	_zoom_lbl()
 	_center_view()
 	_last_rev = -1
 	_auto_rev = m.rev
@@ -2123,7 +2649,7 @@ func _build_start():
 	start_panel = Control.new()
 	start_panel.anchor_right = 1
 	start_panel.anchor_bottom = 1
-	start_panel.margin_top = 52
+	start_panel.margin_top = TOP_H
 	root.add_child(start_panel)
 	var bg = ColorRect.new()
 	bg.color = Look.BG
@@ -2555,22 +3081,32 @@ func _exit():
 	t.connect("finished", self, "queue_free")
 
 # ------------------------------------------------------------------ keys
+# While a text or number box has the keyboard, its keys are its own (Backspace, arrows, Space, Ctrl+Z,
+# letters): only Enter / Esc (leave the box; a number box takes the typed value) and Ctrl+S reach the
+# editor. Held arrows repeat (stepping / nudging); other shortcuts fire once per press.
 func _input(ev):
 	if _closing: return
-	if !(ev is InputEventKey) or !ev.pressed or ev.echo: return
-	var fo = root.get_focus_owner()
-	var typing = fo is LineEdit and !(fo.get_parent() is SpinBox) # (a number box never needs a space / letter shortcut)
+	if !(ev is InputEventKey) or !ev.pressed: return
 	if confirm.visible: return
-	if ev.scancode == KEY_ESCAPE:
-		if typing:
+	var fo = root.get_focus_owner()
+	if fo is LineEdit or fo is TextEdit:
+		if ev.echo: return
+		if ev.scancode in [KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER]:
 			fo.release_focus()
-		elif start_panel.visible and m:
-			start_panel.visible = false
-		else:
-			_exit()
+			get_tree().set_input_as_handled()
+		elif ev.control and ev.scancode == KEY_S and m:
+			_save_pressed()
+			get_tree().set_input_as_handled()
+		return
+	if ev.echo and !(ev.scancode in [KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN]): return
+	if ev.scancode == KEY_ESCAPE:
+		_escape()
 		get_tree().set_input_as_handled()
 		return
-	if typing: return
+	if (ev.unicode == 63 or ev.scancode == KEY_SLASH) and !ev.control and !ev.alt: # ?
+		_toggle_keys()
+		get_tree().set_input_as_handled()
+		return
 	var handled = true
 	if ev.shift and m and ev.scancode >= KEY_1 and ev.scancode <= KEY_9: # pattern slots (AUTO tab)
 		if ev.control: _slot_store(ev.scancode - KEY_0)
@@ -2589,8 +3125,9 @@ func _input(ev):
 			get_tree().set_input_as_handled()
 			return
 	if ev.control:
+		if !m and !(ev.scancode in [KEY_Z, KEY_Y]): return
 		match ev.scancode:
-			KEY_S: if m: _save_pressed()
+			KEY_S: _save_pressed()
 			KEY_Z:
 				if ev.shift: _redo()
 				else: _undo()
@@ -2602,27 +3139,32 @@ func _input(ev):
 			KEY_A: _select_all()
 			KEY_T: _page("timing")
 			KEY_B:
-				if ev.shift: _point_add()
+				if ev.shift: _point_add_key()
 				else:
 					_page("timing")
 					book_list.grab_focus()
+			KEY_E:
+				if ev.alt: _export()
+				else: handled = false
 			KEY_Q: _toggle_quantum()
-			KEY_LEFT: if m: _seek(m.grid_next(pos, -1, 0.25)) # (one measure)
-			KEY_RIGHT: if m: _seek(m.grid_next(pos, 1, 0.25))
+			KEY_LEFT: _seek(m.grid_next(pos, -1, 0.25)) # (one measure)
+			KEY_RIGHT: _seek(m.grid_next(pos, 1, 0.25))
+			KEY_EQUAL, KEY_KP_ADD: _zoom(1)
+			KEY_MINUS, KEY_KP_SUBTRACT: _zoom(-1)
 			_: handled = false
 	else:
 		if !m:
 			return
 		var gk = GRID_KEYS.find(ev.scancode)
 		if gk < 0: gk = PAD_KEYS.find(ev.scancode)
-		if gk >= 0 and !ev.shift: # a note on that cell at the (snapped) playhead
+		if gk >= 0 and !ev.shift and !ev.alt: # a note on that cell at the (snapped) playhead
 			_place_note(Vector2(gk % 3, gk / 3))
 			get_tree().set_input_as_handled()
 			return
 		match ev.scancode:
 			KEY_SPACE: _toggle_play()
-			KEY_LEFT: _seek(_step_from(pos, -1))
-			KEY_RIGHT: _seek(_step_from(pos, 1))
+			KEY_LEFT: _step_key(-1)
+			KEY_RIGHT: _step_key(1)
 			KEY_HOME: _seek(0.0)
 			KEY_END: _seek(audio_len)
 			KEY_DELETE, KEY_BACKSPACE: _delete_sel()
@@ -2637,6 +3179,59 @@ func _input(ev):
 			KEY_DOWN: _op_nudge(-1) if ev.alt else _move_selection(Vector2(0, 1 if pos_snap == "cell" else 0.5), 0, "move down")
 			_: handled = false
 	if handled: get_tree().set_input_as_handled()
+
+# Esc, one thing at a time: the shortcut list, the start page, a drag in progress, the selection
+# (as in the Quantum Editor); with nothing of that, it leaves the editor (the session is kept)
+func _escape():
+	if keys_panel.visible:
+		keys_panel.visible = false
+	elif start_panel.visible and m:
+		start_panel.visible = false
+	elif tl_drag != null or field_drag != null or seek_drag:
+		_cancel_drag()
+	elif m and !sel.empty():
+		sel = {}
+		_sel_changed()
+		msg("selection cleared (Esc again leaves the editor)")
+	else:
+		_exit()
+
+func _cancel_drag():
+	if tl_drag != null and tl_drag.mode == "box": sel = tl_drag.orig.duplicate()
+	tl_drag = null
+	field_drag = null
+	box_sel = null
+	drag_dt = 0
+	drag_delta = Vector2.ZERO
+	seek_drag = false
+	_drag_resume()
+	_sel_changed()
+	msg("drag cancelled")
+
+# Ctrl+Shift+B: with two notes selected, a timing point on the first whose BPM makes their gap one beat
+# (the Quantum Editor's "create BPM", to a quarter BPM; before the offset it sets the base BPM /
+# offset instead); otherwise a point at the snapped playhead
+func _point_add_key():
+	var ns = _sel_notes()
+	if ns.size() != 2 or ns[1][2] <= ns[0][2]:
+		_point_add()
+		return
+	var bpm = stepify(60000.0 / (ns[1][2] - ns[0][2]), 0.25)
+	if bpm < 20.0 or bpm > 400.0:
+		msg("those two notes give %s BPM: outside 20..400" % _num_txt(bpm), true)
+		return
+	var t = int(ns[0][2])
+	if t <= m.offset:
+		sp_bpm.value = bpm
+		sp_off.value = t
+		msg("BPM %s from the two notes, offset at the first" % _num_txt(bpm))
+	elif m.add_point(t, bpm):
+		m.dirty = true
+		_refresh_points()
+		msg("timing point at %s: %s BPM from the two notes" % [Model.fmt_time(t), _num_txt(bpm)])
+	else:
+		msg("there is a timing point there already", true)
+	_redraw()
 
 # grid keys (the Quantum Editor's layout): Q W E / A S D / Z X C, or the numpad, = the 3x3 cells
 const GRID_KEYS = [KEY_Q, KEY_W, KEY_E, KEY_A, KEY_S, KEY_D, KEY_Z, KEY_X, KEY_C]
@@ -2687,7 +3282,7 @@ func _build_auto(p:Control):
 	p.add_child(r)
 	auto_lbl = _lbl("Estimates the tempo and the first beat from the song. Check it by ear: it can come out at half / double speed.", 12, Look.TEXT_2)
 	auto_lbl.autowrap = true
-	auto_lbl.rect_min_size.x = 290
+	auto_lbl.rect_min_size.x = 250
 	p.add_child(auto_lbl)
 	auto_cands = VBoxContainer.new()
 	auto_cands.add_constant_override("separation", 4)
@@ -2757,7 +3352,7 @@ func _build_auto(p:Control):
 	p.add_child(g)
 	var help = _lbl("Slots: Ctrl+Shift+1..9 store the selection, Shift+1..9 put it at the playhead. Curve (Shift+D): the selected notes are its control points, notes on every grid step from the first to the last. Hold Alt to place / drag without time snap.", 12, Look.TEXT_3)
 	help.autowrap = true
-	help.rect_min_size.x = 290
+	help.rect_min_size.x = 250
 	p.add_child(help)
 
 func _auto_onsets(on:bool):
