@@ -194,8 +194,9 @@ static func from_txt(txt:String) -> Dictionary:
 	return {"notes": out, "invalid": invalid}
 
 # ------------------------------------------------------------------ storage
+# (-0.0 and 0.0 are one position: + 0.0 turns -0.0 into 0.0, and "%.4f" of -0.00001 would read "-0.0000")
 static func key_of(n:Array) -> String:
-	return "%.4f|%.4f|%d" % [n[0], n[1], int(n[2])]
+	return "%.4f|%.4f|%d" % [stepify(n[0], 0.0001) + 0.0, stepify(n[1], 0.0001) + 0.0, int(n[2])]
 
 static func less(a:Array, b:Array) -> bool:
 	if a[2] != b[2]: return a[2] < b[2]
@@ -285,7 +286,7 @@ func _apply(op:Array) -> Array:
 	match op[0]:
 		"add":
 			for n in op[1]:
-				var c = [float(n[0]), float(n[1]), int(round(n[2]))]
+				var c = [float(n[0]) + 0.0, float(n[1]) + 0.0, int(round(n[2]))]
 				if _insert(c): done.append(c)
 		"del":
 			for n in op[1]:
@@ -293,7 +294,7 @@ func _apply(op:Array) -> Array:
 		"mov":
 			for pr in op[1]:
 				var o = pr[0]
-				var nw = [float(pr[1][0]), float(pr[1][1]), int(round(pr[1][2]))]
+				var nw = [float(pr[1][0]) + 0.0, float(pr[1][1]) + 0.0, int(round(pr[1][2]))]
 				if key_of(o) == key_of(nw): continue
 				if !keys.has(key_of(o)) or keys.has(key_of(nw)): continue # (a move onto another note is refused)
 				_erase(o)

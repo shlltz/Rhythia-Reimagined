@@ -39,6 +39,7 @@ Every feature test should pass on both `own` and `share`. The newer drivers:
 
 | Driver | What it checks |
 |---|---|
+| `EditorInteractionTest.gd` | real mouse / key input: placing, hover, selection (click, Ctrl, Shift, box), grid and track drags, scrub, seek bar, wheel, clipboard, undo / redo chains, moves across notes, Esc and text-box focus, save / reload, missing audio, audio sync, a 20k-note map, five window sizes, a test play |
 | `EditorToolsTest.gd` | audio capture + BPM / offset (click tracks through the real capture, a real song against its notes), patterns, slots, undo selection |
 | `EditorParityTest.gd` | grid keys, flips, Ctrl+Q / T / B, timing points, Bezier curves |
 | `EditorStarTest.gd` | live star rating in the editor |

@@ -49,6 +49,19 @@ func _model():
 	m.end()
 	m.undo()
 	ok("model: undoing a move gives the old position", m.touched.size() == 1 and m.touched[0][0] == 0.0)
+	ok("model: -0 is the same position as 0", M.key_of([-0.0, 1.0, 5]) == M.key_of([0.0, 1.0, 5]) and M.key_of([-0.00001, 1.0, 5]) == M.key_of([0.0, 1.0, 5]))
+	m.begin("twin")
+	ok("model: a note at -0 is refused as a twin of the one at 0", m.run(["add", [[0.0, 0.0, 700], [-0.0, 0.0, 700]]]) == 1)
+	m.end()
+	# a group move as the editor does it (all out, then all in): along itself it stays whole
+	m.set_notes([[0.0, 0.0, 100], [0.0, 0.0, 200], [0.0, 0.0, 300]])
+	m.begin("shift")
+	m.run(["del", [[0.0, 0.0, 100], [0.0, 0.0, 200], [0.0, 0.0, 300]]])
+	m.run(["add", [[0.0, 0.0, 200], [0.0, 0.0, 300], [0.0, 0.0, 400]]])
+	m.end()
+	var shifted = to_json(m.notes)
+	m.undo()
+	ok("model: a group shifted along itself stays whole, one undo restores it", shifted == to_json([[0.0, 0.0, 200], [0.0, 0.0, 300], [0.0, 0.0, 400]]) and to_json(m.notes) == to_json([[0.0, 0.0, 100], [0.0, 0.0, 200], [0.0, 0.0, 300]]))
 
 # ------------------------------------------------------------------ patterns
 func _patterns():
