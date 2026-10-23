@@ -1033,7 +1033,7 @@ func _build_field():
 	root.add_child(field)
 
 func _field_geom() -> Rect2:
-	var s = min(field.rect_size.x, field.rect_size.y) - 70.0
+	var s = min(field.rect_size.x, field.rect_size.y) * 0.8 - 40.0 # (room around it for the approach outlines)
 	s = max(s, 120.0)
 	return Rect2(((field.rect_size - Vector2(s, s)) / 2).floor(), Vector2(s, s))
 
