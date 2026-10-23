@@ -61,6 +61,12 @@ func move(c:Control, p:Vector2, mask:int = 0):
 	ev.button_mask = mask
 	Input.parse_input_event(ev)
 
+func hover(c:Control, p:Vector2): # (straight to the control's input handler, local position)
+	var ev = InputEventMouseMotion.new()
+	ev.position = p
+	ev.global_position = gp(c, p)
+	c.emit_signal("gui_input", ev)
+
 func click(c:Control, p:Vector2, b:int = BUTTON_LEFT, shift = false, ctrl = false):
 	move(c, p)
 	btn(c, p, b, true, shift, ctrl)
@@ -165,9 +171,13 @@ func run():
 	ok("click an empty cell: a note there at the playhead, selected", has([0, 0, 10000]) and selected([[0, 0, 10000]]), sig())
 	click(F, cell(0, 0) + Vector2(-8, -8))
 	ok("a click left of the cell middle is the same cell (no -0 twin)", e.m.notes.size() == 1 and to_json(e.m.notes[0]) == to_json([0.0, 0.0, 10000]), sig())
-	move(F, cell(0, 0) + Vector2(3, 3))
+	# hover (no button held) goes to the grid's handler directly: which control the engine sends a
+	# plain move to also depends on where the real cursor is (outside the test window the grid can
+	# get a "mouse left" instead, seen 2026-10-23 with sources that had passed before); presses and
+	# drags below still go through the engine's own routing
+	hover(F, cell(0, 0) + Vector2(3, 3))
 	ok("hovering it: the grid reports that note (outlined, not a ghost)", e._note_at(e.field_mouse) != null and e.hint_lbl.text.begins_with("note 1"), e.hint_lbl.text)
-	move(F, cell(1, 2))
+	hover(F, cell(1, 2))
 	ok("hovering an empty cell: placement hint with the snapped time", e._note_at(e.field_mouse) == null and "0:10.000" in e.hint_lbl.text, e.hint_lbl.text)
 	click(F, cell(2, 2))
 	ok("a second click: another note at the same time, only it selected", has([2, 2, 10000]) and selected([[2, 2, 10000]]))
