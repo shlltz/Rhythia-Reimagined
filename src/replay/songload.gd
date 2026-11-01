@@ -110,6 +110,7 @@ func finish():
 		screen.show_song(Rhythia.selected_song, true)
 	
 	screen.set_status("Ready")
+	if ResourceLoader.exists("res://mods/hype/PassFx.gd"): load("res://mods/hype/PassFx.gd").warm(self) # (its end-of-map shader, compiled now)
 	if result is PackedScene and OS.can_use_threads():
 		build_thread = Thread.new()
 		if build_thread.start(self, "_build", result) != OK: build_thread = null

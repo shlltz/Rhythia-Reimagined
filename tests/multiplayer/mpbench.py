@@ -5,7 +5,10 @@
 #  - a driver script (res://mods/bench/Driver.gd) added to the root by menu2.gd,
 # then starts all instances at once and waits until they exit (driver kills itself) or time out.
 # usage: mpbench.py own|share "A=DriverA.gd,B=DriverB.gd" [limit_s] [maps_for_A,...]
-# env: RR_KEEP=1 keeps each instance's user data (warm start), RR_NONET=1 turns the game's networking off,
+# env: RR_USER_SETTINGS=1 starts from copies of the player's settings.json / reimagined.json (=<folder>: from that folder),
+#      RR_SWAPS=file.py applies test-only text patches to the built scripts (see the file's SWAPS list),
+#      RR_PROJSET="key=int:8;..." overrides project settings in the test build (types int / bool / float),
+#      RR_KEEP=1 keeps each instance's user data (warm start), RR_NONET=1 turns the game's networking off,
 #      RR_THREADMODEL=0|1|2 overrides rendering/threads/thread_model (the game ships 2, multi-threaded),
 #      RR_INITPROBE=1 logs init stage texts + long frames (release builds only flush the log on errors)
 import sys, os, subprocess, time, shutil, struct, io, contextlib
@@ -68,6 +71,14 @@ def s_payload(s):
     e = s.encode(); e2 = e + bytes(-len(e) % 4)
     return struct.pack('<II', 4, len(e)) + e2
 
+if os.environ.get('RR_SWAPS'): # test-only source patches: a .py file with SWAPS = [(res path, old text, new text), ...] (old "" = append)
+    g = {}; exec(open(os.environ['RR_SWAPS'], encoding='utf-8').read(), g)
+    for path, old, new in g['SWAPS']:
+        d = pk.new[path].decode('utf-8')
+        if old == '': d += new
+        else:
+            assert d.count(old) == 1, (path, old[:60]); d = d.replace(old, new)
+        pk.new[path] = d.encode('utf-8')
 base_pb = pk.read('res://project.binary')
 procs = []
 for name, script in insts:
@@ -83,11 +94,26 @@ for name, script in insts:
         open(os.path.join(ud, 'settings.json'), 'w').write('{"record_replays": false, "record_limit": 0}')
         if not os.environ.get('RR_ASK_NAME'): # (the first-start username panel would sit over every test)
             open(os.path.join(ud, 'reimagined.json'), 'w').write('{"player_name": "Tester"}')
+        if os.environ.get('RR_USER_SETTINGS'): # copies of the player's own settings (read only; windowed, no replay recording, no update check)
+            import json
+            src_ud = os.environ['RR_USER_SETTINGS'] if os.path.isdir(os.environ['RR_USER_SETTINGS']) else os.path.join(appdata, 'SoundSpacePlus') # (a folder: a saved snapshot)
+            sj = json.load(open(os.path.join(src_ud, 'settings.json'), encoding='utf-8'))
+            sj.update(window_fullscreen=False, record_replays=False, record_limit=0)
+            open(os.path.join(ud, 'settings.json'), 'w').write(json.dumps(sj))
+            rp = os.path.join(src_ud, 'reimagined.json')
+            rj = json.load(open(rp, encoding='utf-8')) if os.path.exists(rp) else {}
+            rj.update(update_check=False, player_name=rj.get('player_name') or 'Tester')
+            open(os.path.join(ud, 'reimagined.json'), 'w').write(json.dumps(rj))
+            for extra in ('recent_plays.json', 'collections.json'): # (play history: the map page reads it)
+                if os.path.exists(os.path.join(src_ud, extra)): shutil.copyfile(os.path.join(src_ud, extra), os.path.join(ud, extra))
     for mp in extra_maps.get(name, []):
         dst = os.path.join(ud, 'maps', os.path.basename(mp))
         if not os.path.exists(dst): shutil.copyfile(mp, dst)
     b = set_setting(base_pb, 'logging/file_logging/log_path', s_payload(root.replace(chr(92), '/') + '/godot.log'))
     if os.environ.get('RR_NONET'): b = set_setting(b, 'application/networking/enabled', struct.pack('<II', 1, 0)) # (bool false)
+    for kv in [x for x in os.environ.get('RR_PROJSET', '').split(';') if x]: # "key=int:8;key2=bool:1;key3=float:0.5" (project settings, test builds only)
+        k, v = kv.split('='); typ, val = v.split(':')
+        b = set_setting(b, k, struct.pack('<If', 3, float(val)) if typ == 'float' else struct.pack('<II', 1 if typ == 'bool' else 2, int(val)))
     if os.environ.get('RR_THREADMODEL'): b = set_setting(b, 'rendering/threads/thread_model', struct.pack('<II', 2, int(os.environ['RR_THREADMODEL']))) # (int: 0 single-unsafe, 1 single-safe, 2 multi-threaded)
     pk.new['res://project.binary'] = b
     src = open(os.path.join(S, script), encoding='utf-8').read()

@@ -46,6 +46,11 @@ const DEFAULTS = {
 	"gyro_inv_y": false,
 	"touch_big": "auto",        # bigger buttons for fingers: auto (touch screens) | on | off
 	"perf_saved": {},           # low-end profile on: the settings it replaced (Device.gd restores them)
+	"show_fps": true,           # FPS counter in the top-right corner (FpsCounter.gd)
+	"trail_color2": "",         # cursor trail fades to this colour toward its tail ("" = one colour)
+	"cursor_glow": 0.0,         # soft halo behind the cursor, 0 = off .. 1 (CursorGlow.gd)
+	"hud_font": "",             # run HUD typeface: "" = the theme's | bold | mono | pixel | own (HudFont.gd)
+	"track_plays": true,        # settings generator: keep a summary of each run (PlayTrack.gd)
 	"update_check": true,       # look for a new release when the game starts, at most once a day (Updater.gd; public builds)
 }
 # side panels the layout editor moves: sprite, label, default centre (world x, y), size (w, h)
@@ -122,6 +127,11 @@ static func hud_entry(sprite:String) -> Array: # [dx, dy, scale, shown]
 static func trail_color(fallback:Color) -> Color:
 	var s = str(cfg().trail_color)
 	return Color(s) if s != "" else fallback
+
+# the trail's tail colour when it fades to a second one, else null (read once per run, not per dot)
+static func trail_end():
+	var s = str(cfg().get("trail_color2", ""))
+	return Color(s) if s != "" else null
 
 static func _read(path:String) -> Dictionary:
 	var f = File.new()

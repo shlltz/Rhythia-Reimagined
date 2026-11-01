@@ -33,6 +33,8 @@ func _process(_d):
 		viewer.set_speed(1) # (0.5x)
 		viewer.flash("")
 		sp.replay_paused = false
+		var fc = get_tree().root.get_node_or_null("FpsCounter")
+		if fc: fc.hold(true)
 		ex = EX.new()
 		ex.clip = clip
 		get_tree().root.add_child(ex)
@@ -67,6 +69,8 @@ func _post_draw():
 func _end(cancelled:bool, why:String):
 	if state != "rec": return
 	state = "done"
+	var fc = get_tree().root.get_node_or_null("FpsCounter")
+	if fc: fc.hold(false)
 	ex.finish(cancelled)
 	if cancelled: Globals.notify(Globals.NOTIFY_WARN, "Clip cancelled: " + why, "Replay Studio")
 	viewer.leave()
@@ -74,4 +78,6 @@ func _end(cancelled:bool, why:String):
 func _exit_tree(): # (the replay was left by hand while recording)
 	if state == "rec":
 		state = "done"
+		var fc = get_tree().root.get_node_or_null("FpsCounter")
+		if fc: fc.hold(false)
 		ex.finish(true)

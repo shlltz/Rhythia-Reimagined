@@ -143,6 +143,7 @@ func end(end_type:int):
 		if CK: CK.restore_offset() # (back to the player's own Start From)
 		if ResourceLoader.exists("res://mods/stars/RecentPlays.gd") and !mp_run: # (session runs aren't personal plays)
 			load("res://mods/stars/RecentPlays.gd").record(Rhythia.get_meta("last_run"))
+		if $Spawn.rr_track and !Rhythia.replaying: $Spawn.rr_track.finish(Rhythia.selected_song, end_type, speed_multi) # (settings generator)
 		var fx = get_node_or_null("PassFx")
 		if fx and end_type == Globals.END_PASS: yield(fx.zoom_in(), "completed") # personal pass effect (hype mod)
 		else:
@@ -151,22 +152,9 @@ func end(end_type:int):
 		get_tree().change_scene("res://scenes/loaders/menuload.tscn")
 
 func update_timer(ms:float,canSkip:bool=false):
-	var qms = ms + $Spawn.ms_offset
-	var lms = last_ms
-	
-	if Rhythia.queue_active:
-		lms = Rhythia.queue_end_length + (3000 * (Rhythia.song_queue.size() - 1))
-	
-	var s = clamp(floor(qms/1000),0,lms/1000)
-	var m = floor(s / 60)
-	var rs = fmod(s,60)
-	
-	var ls = floor(lms/1000)
-	var lm = floor(ls / 60)
-	var lrs = fmod(ls,60)
-	
+	# (perf: the minutes / seconds worked out here were never used; the HUD formats its own)
 	$HUD.update_timer(ms,canSkip)
-	
+
 	if Rhythia.queue_active:
 		if ms >= last_ms + $Spawn.hit_window:
 			get_node("Spawn/Music").volume_db -= (17 * get_process_delta_time())
@@ -191,9 +179,9 @@ var passed:bool = false
 
 func _process(delta):
 	
-	if !Rhythia.queue_active and $Spawn.ms > last_ms:
+	if !passed and !Rhythia.queue_active and $Spawn.ms > last_ms: # (perf: once, not on every frame after the last note)
 		passed = true
-			
+
 		head.get_node("EyeL").visible = false
 		head.get_node("HappyL").visible = true
 			
@@ -226,7 +214,7 @@ func _process(delta):
 	elif !black_fade_target && black_fade != 0:
 		black_fade = max(black_fade - (delta/0.75),0)
 		$BlackFade.color = Color(0,0,0,black_fade)
-	$BlackFade.visible = (black_fade != 0)
+	if $BlackFade.visible != (black_fade != 0): $BlackFade.visible = (black_fade != 0)
 	
 
 func linstep(a:float,b:float,x:float):

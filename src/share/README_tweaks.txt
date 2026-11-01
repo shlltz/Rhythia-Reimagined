@@ -39,9 +39,14 @@ WHAT YOU GET
   Title menu  osu!-style main menu (beating logo + spectrum ring, rain / snow / wavey background (Customize > Interface),
               Play / Settings / Browse / Exit); ESC on map selection opens it
   Customize   F1, the sliders sidebar button or Customize on the settings page:
-              - cursor trail: game / osu!-style / off, colour, opacity, length, size (live preview)
+              - cursor trail: game / osu!-style / off, colour (or a fade to a second colour),
+                opacity, length, size, cursor glow (live preview)
               - HUD layout editor: drag / scroll / right-click the side panels (accuracy, score,
-                timer, health) to move, scale or hide them
+                timer, health) to move, scale or hide them; HUD font: theme, bold, mono, pixel
+                or your own .ttf / .otf
+              - settings generator: learns from your runs (late hits, misses short of / past /
+                beside the note; stored on this PC only) and suggests spawn distance /
+                sensitivity changes with the reason for each; Apply / Undo
               - skin: replace the play-area border, grid, trail dot, title logo and sidebar
                 icons with your own images (Choose... / Reset)
               - collections (map packs): "Add to collection..." in a map's ... menu, filter by
@@ -52,6 +57,9 @@ WHAT YOU GET
               - storage (Windows): move your user folder (maps, replays, scores, settings) to
                 another drive; the game closes, copies, checks the copy, links the old place
                 to the new one and starts again
+  Drop files  drag onto the game: colorsets (.txt), note meshes (.obj + .mtl), settings files
+              (.json; your old settings are backed up first, display settings stay) and fonts
+              (.ttf / .otf: the HUD font)
   Settings    redesigned settings page (tab column + big card, like Customize); ESC = title screen;
               "Half Ghost Fade" (25-300%) right under Fade Length in the Notes tab
               "Rewrite Feel" in the Gameplay tab: maps play with the Rhythia rewrite's default look
@@ -113,7 +121,9 @@ WHAT YOU GET
               bigger settings page
   Language    Vietnamese (pick "Tieng Viet" in the language menu, in place of Polish)
   Discord     status shows "Playing Glitchia"
-  FPS         small performance tweaks (visuals unchanged); Customize > Device has a low-end
+  FPS         FPS counter in the top-right corner (off: Customize > Interface); faster runs (HUD
+              redrawn only when it changes, no render-thread stalls on hits) and quicker map picks
+              with a long play history (visuals unchanged); Customize > Device has a low-end
               profile (with RESTORE)
   Updates     portable version: Customize > Storage checks GitHub for a new release; updates are
               signed and checked before they're installed, and ROLL BACK undoes one

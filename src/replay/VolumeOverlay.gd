@@ -100,6 +100,7 @@ func _change(idx:int, delta:float):
 	active = idx
 	show_left = SHOW_TIME
 	save_left = SAVE_DELAY
+	set_process(true)
 	canvas.visible = true
 	canvas.update()
 
@@ -123,6 +124,7 @@ func _process(delta):
 	else:
 		if canvas.visible: canvas.visible = false
 		for i in shown.size(): shown[i] = -1.0
+		if save_left <= 0: set_process(false) # (perf: idle until the next change; _change turns it back on)
 		return
 	var hovered = _meter_at(canvas.get_local_mouse_position())
 	for i in meters.size():

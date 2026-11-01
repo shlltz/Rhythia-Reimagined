@@ -84,6 +84,15 @@ var c_spin_z:float = 0
 onready var notes_mm_node = $Notes
 onready var asq_node = $ASq
 onready var spawnfx_node = $SpawnEffect
+onready var cursor_node = $Cursor
+var c_uim:float = 0
+var c_grm:float = 0
+# perf: values note_reposition used to work out again for every note, set once per reposition_notes()
+var f_mm:MultiMesh
+var f_amm:MultiMesh
+var f_smm:MultiMesh
+var f_speed:float = 0
+var f_sign:int = 0
 
 func cache_settings():
 	$Label.text = ""
@@ -98,24 +107,27 @@ func cache_settings():
 	c_spin_x = Rhythia.note_spin_x
 	c_spin_y = Rhythia.note_spin_y
 	c_spin_z = Rhythia.note_spin_z
+	c_uim = Rhythia.get("ui_parallax") * 0.1
+	c_grm = Rhythia.get("grid_parallax") * 0.1
 
 func note_reposition(i:int):
-	var real_position:Vector2 = notes[i][0]
-	var notems:float = notes[i][1]
-	var state:int = notes[i][2]
-	var col:Color = notes[i][3]
-	var chaos_offset:Vector2 = notes[i][4]
-	var nt:Transform = notes[i][5]
-	
-	var approachSpeed:float = approach_rate / speed_multi
-	
+	var n:Array = notes[i]
+	var real_position:Vector2 = n[0]
+	var notems:float = n[1]
+	var state:int = n[2]
+	var col:Color = n[3]
+	var chaos_offset:Vector2 = n[4]
+	var nt:Transform = n[5]
+
+	var approachSpeed:float = f_speed
+
 	var current_offset_ms:float = notems - ms
 	var current_dist:float = approachSpeed*current_offset_ms/1000
-	
+
 	if (
-		(current_dist <= c_spawn_distance and current_dist >= (grid_pushback * -1) and sign(approachSpeed) == 1) or
-		(current_dist >= -50 and current_dist <= 0.1 and sign(approachSpeed) == -1) or
-		sign(approachSpeed) == 0
+		(current_dist <= c_spawn_distance and current_dist >= (grid_pushback * -1) and f_sign == 1) or
+		(current_dist >= -50 and current_dist <= 0.1 and f_sign == -1) or
+		f_sign == 0
 	) and state == Globals.NSTATE_ACTIVE: # state 2 = miss # and current_dist >= -0.5
 		
 #		if !was_visible:
@@ -129,15 +141,15 @@ func note_reposition(i:int):
 		
 		var spawn_effect_t = 1 - clamp(4*(c_spawn_distance - current_dist)/c_spawn_distance, 0, 1)
 		if c_spawn_effect:
-			spawnfx_node.multimesh.set_instance_color(i - current_note, Color(col.r, col.g, col.b, col.a))
+			f_smm.set_instance_color(i - current_note, Color(col.r, col.g, col.b, col.a))
 			if spawn_effect_t != 0:
 				var effect_transform = Transform.IDENTITY
 				effect_transform.origin = nt.origin
 				effect_transform.basis = effect_transform.basis.scaled(Vector3.ONE * 1 * c_note_size)
 				effect_transform.basis = effect_transform.basis.scaled(Vector3(1*spawn_effect_t, 0.9 + (0.1*spawn_effect_t), 1))
 				effect_transform.basis = effect_transform.basis.rotated(Vector3(1,0,0), deg2rad(90))
-				spawnfx_node.multimesh.set_instance_transform(i - current_note, effect_transform)
-			else: spawnfx_node.multimesh.set_instance_transform(i - current_note, Transform.IDENTITY.scaled(Vector3.ZERO))
+				f_smm.set_instance_transform(i - current_note, effect_transform)
+			else: f_smm.set_instance_transform(i - current_note, Transform.IDENTITY.scaled(Vector3.ZERO))
 		
 		if c_chaos:
 			var v = ease(max((current_offset_ms-250)/400,0),1.5)
@@ -168,16 +180,18 @@ func note_reposition(i:int):
 		
 		if fade_in_enabled or fade_out_enabled:
 			
-			if fade_in_enabled: 
-				fade_in = (pow(linstep(fade_in_start,fade_in_end,current_dist), 1.3)) * c_note_opacity
+			if fade_in_enabled: # (linstep written out: a function call per note per frame)
+				var li:float = float(current_dist >= fade_in_start) if fade_in_start == fade_in_end else clamp((current_dist - fade_in_start) / (fade_in_end - fade_in_start), 0, 1)
+				fade_in = (pow(li, 1.3)) * c_note_opacity
 			if fade_out_enabled:
-				fade_out = ((1 - fade_out_base) + (pow(linstep(fade_out_end,fade_out_start,current_dist), 1.3) * fade_out_base)) * c_note_opacity
+				var lo:float = float(current_dist >= fade_out_end) if fade_out_end == fade_out_start else clamp((current_dist - fade_out_end) / (fade_out_start - fade_out_end), 0, 1)
+				fade_out = ((1 - fade_out_base) + (pow(lo, 1.3) * fade_out_base)) * c_note_opacity
 			
 			alpha = min(fade_in,fade_out)
 		
 		
-		notes_mm_node.multimesh.set_instance_transform(i - current_note, nt)
-		notes_mm_node.multimesh.set_instance_color(i - current_note, Color(col.r, col.g, col.b, col.a * alpha))
+		f_mm.set_instance_transform(i - current_note, nt)
+		f_mm.set_instance_color(i - current_note, Color(col.r, col.g, col.b, col.a * alpha))
 		if asq:
 			var sc = (linstep(0,c_spawn_distance,current_dist) + 0.6) * 0.4
 			
@@ -187,24 +201,24 @@ func note_reposition(i:int):
 			if !c_approach_follow:
 				at.origin.z = 0
 			
-			asq_node.multimesh.set_instance_transform(i - current_note, at)
+			f_amm.set_instance_transform(i - current_note, at)
 			if c_ghost:
-				asq_node.multimesh.set_instance_color(i - current_note, Color(1,1,1,1 * alpha))
+				f_amm.set_instance_color(i - current_note, Color(1,1,1,1 * alpha))
 			else:
-				asq_node.multimesh.set_instance_color(i - current_note, Color(1,1,1,pow(linstep(c_spawn_distance,0,current_dist),1.7)))
+				f_amm.set_instance_color(i - current_note, Color(1,1,1,pow(linstep(c_spawn_distance,0,current_dist),1.7)))
 		
 #		$Label.text += "(%.02f: %s -> %s = %s) %s\n" % [current_dist,fade_in_start,fade_in_end,fade_in,alpha]
 		
 		return true
 	else:
-		notes_mm_node.multimesh.set_instance_transform(i - current_note, Transform(Basis(), Vector3(0, 0, 10)))
-		notes_mm_node.multimesh.set_instance_color(i - current_note, Color(0,0,0,0))
+		f_mm.set_instance_transform(i - current_note, Transform(Basis(), Vector3(0, 0, 10)))
+		f_mm.set_instance_color(i - current_note, Color(0,0,0,0))
 		if asq:
-			asq_node.multimesh.set_instance_transform(i - current_note, Transform(Basis(), Vector3(0, 0, 10)))
-			asq_node.multimesh.set_instance_color(i - current_note, Color(0,0,0,0))
+			f_amm.set_instance_transform(i - current_note, Transform(Basis(), Vector3(0, 0, 10)))
+			f_amm.set_instance_color(i - current_note, Color(0,0,0,0))
 		if c_spawn_effect:
-			spawnfx_node.multimesh.set_instance_transform(i - current_note, Transform(Basis(), Vector3(0, 0, 10)))
-			spawnfx_node.multimesh.set_instance_color(i - current_note, Color(0,0,0,0))
+			f_smm.set_instance_transform(i - current_note, Transform(Basis(), Vector3(0, 0, 10)))
+			f_smm.set_instance_color(i - current_note, Color(0,0,0,0))
 #		if Rhythia.play_hit_snd and Rhythia.ensure_hitsync: 
 #			if Rhythia.sfx_2d:
 #				$"../Hit2D".play()
@@ -215,7 +229,7 @@ func note_reposition(i:int):
 		return false#!(state == Globals.NSTATE_ACTIVE and sign(approachSpeed) == 1 and current_dist > 100)
 
 func note_check_collision(i:int):
-	var cpos:Vector3 = $Cursor.transform.origin
+	var cpos:Vector3 = cursor_node.transform.origin
 	
 	if Rhythia.replaying and Rhythia.replay.sv != 1:
 		return Rhythia.replay.should_hit(i)
@@ -240,7 +254,7 @@ var sweep_to:Vector2 = Vector2()
 var sweep_to_ms:float = -1e9
 
 func _sweep_frame():
-	var cp:Vector3 = $Cursor.transform.origin
+	var cp:Vector3 = cursor_node.transform.origin
 	if ms < sweep_to_ms: # rewind / restart: no path to sweep
 		sweep_to_ms = -1e9
 	if ms > sweep_to_ms:
@@ -313,6 +327,11 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 	
 	last_reposition_ms = ms
 	_sweep_frame()
+	f_mm = notes_mm_node.multimesh
+	f_amm = asq_node.multimesh if asq else null
+	f_smm = spawnfx_node.multimesh if c_spawn_effect else null
+	f_speed = approach_rate / speed_multi
+	f_sign = int(sign(f_speed))
 	
 	for i in range(max(current_note,rerun_start), notes.size()):
 		var notems:float = notes[i][1]
@@ -323,7 +342,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 		else:
 			if note_reposition(i) == false:
 #				$Label.text += "(%s) reposition == false\n" % [ i ]
-				notes_mm_node.multimesh.visible_instance_count = i - current_note + 1
+				f_mm.visible_instance_count = i - current_note + 1
 				if asq: asq_node.multimesh.visible_instance_count = i - current_note + 1
 				if c_spawn_effect: spawnfx_node.multimesh.visible_instance_count = i - current_note
 				if ms < notems:
@@ -331,7 +350,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 					if notes[i][2] == Globals.NSTATE_ACTIVE:
 						return note_passed
 		
-		if (i - current_note + 2) > notes_mm_node.multimesh.instance_count:
+		if (i - current_note + 2) > f_mm.instance_count:
 			rerun_required = true
 			notes_mm_node.multimesh.instance_count = min(notes_mm_node.multimesh.instance_count + 10, notes.size())
 			if asq: asq_node.multimesh.instance_count = notes_mm_node.multimesh.instance_count
@@ -343,6 +362,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 #			$Label.text += "next_ms: %s\n" % [ notems ]
 #			next_ms = notems
 		elif ms >= notems and notes[i][2] == Globals.NSTATE_ACTIVE:
+			if rr_track: rr_track.came_due(i, Vector2(cursor_node.transform.origin.x, cursor_node.transform.origin.y))
 			var result = Rhythia.visual_mode or note_check_collision(i)
 
 			if !result and (ms > notems + hit_window or pause_state == -1):
@@ -352,6 +372,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 				if !Rhythia.replaying and Rhythia.record_replays:
 					Rhythia.replay.note_miss(i)
 				notes[i][2] = Globals.NSTATE_MISS
+				if rr_track: rr_track.miss(i, notes, Vector2(cursor_node.transform.origin.x, cursor_node.transform.origin.y))
 				if Rhythia.play_miss_snd: 
 					if Rhythia.sfx_2d:
 						$Miss2D.play()
@@ -374,6 +395,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 				if !Rhythia.replaying and Rhythia.record_replays:
 					Rhythia.replay.note_hit(i)
 				notes[i][2] = Globals.NSTATE_HIT
+				if rr_track: rr_track.hit(ms - notems, rr_frame_ms)
 #				if Rhythia.play_hit_snd and !Rhythia.ensure_hitsync:
 #					var sfx
 #					if Rhythia.sfx_2d:
@@ -557,6 +579,9 @@ func _ready():
 		add_child(load("res://mods/replay/QuickRetry.gd").new()) # hold ` to restart the map
 	if ResourceLoader.exists("res://mods/replay/RunFx.gd") and load("res://mods/replay/Look.gd").fx_on() and load("res://mods/replay/Reimagined.gd").val("fx_game"):
 		add_child(load("res://mods/replay/RunFx.gd").new()) # red edge flash when a combo of 20+ breaks
+	# settings generator: a summary of this run (live runs only, not a retry from the fail point)
+	if !Rhythia.replaying and !_mp_on and !Engine.has_meta("rr_resume") and Rhythia.selected_song and Rhythia.selected_song.id != "rr_editor_test" 			and ResourceLoader.exists("res://mods/replay/PlayTrack.gd") and load("res://mods/replay/PlayTrack.gd").on():
+		rr_track = load("res://mods/replay/PlayTrack.gd").new()
 
 	chaos_rng.seed = hash(Rhythia.selected_song.id)
 	earthquake_rng.seed = hash(Rhythia.selected_song.id)
@@ -676,13 +701,13 @@ var hlpower = (0.1 * Rhythia.get("parallax"))
 onready var Grid = get_node("../HUD")
 
 func do_half_lock():
-	var cursorpos = $Cursor.transform.origin
+	var cursorpos = cursor_node.transform.origin
 	if Rhythia.follow_drift_cursor:
 		cursorpos += $Cursor/Mesh2.transform.origin
 	var centeroff = cursorpos - cursor_offset
 	var hlm = 0.25
-	var uim = Rhythia.get("ui_parallax") * 0.1
-	var grm = Rhythia.get("grid_parallax") * 0.1
+	var uim = c_uim # (perf: read once in cache_settings)
+	var grm = c_grm
 	cam.transform.origin = Vector3(
 		centeroff.x*hlpower*hlm, centeroff.y*hlpower*hlm, 3.75
 	)
@@ -846,6 +871,7 @@ func _process(delta:float):
 	var u = OS.get_ticks_usec()
 	delta = float(u - last_usec) / 1_000_000.0
 	last_usec = u
+	rr_frame_ms = delta * 1000.0 * speed_multi
 	
 	if replay_viewer:
 		if replay_paused:
@@ -1232,6 +1258,8 @@ func _mobile_pause_just() -> bool:
 
 # a multiplayer match is running (MPClient): no skipping, no quick retry, no Retry
 var _mp_on:bool = false
+var rr_track = null           # PlayTrack.gd on live runs (settings generator)
+var rr_frame_ms:float = 0.0
 func _mp_lock() -> bool:
 	var mp = get_tree().root.get_node_or_null("RRMultiplayer")
 	_mp_on = mp != null and mp.in_match()

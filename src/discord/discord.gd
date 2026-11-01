@@ -269,6 +269,12 @@ func _ready():
 			lobby_manager = LobbyManager_.new(discore_core_.get_lobby_manager())
 			overlay_manager = OverlayManager_.new(discore_core_.get_overlay_manager())
 	
+# perf (Rhythia-reimagined): the SDK's callbacks are pumped 60 times a second instead of on every
+# frame (~10 us a call; at 1000+ fps that was 1% of the frame for presence updates)
+var rr_cb_t:float = 0.0
 func _process(delta:float) -> void:
 	if discore_core_:
+		rr_cb_t += delta
+		if rr_cb_t < 1.0 / 60.0: return
+		rr_cb_t = 0.0
 		discore_core_.run_callbacks()

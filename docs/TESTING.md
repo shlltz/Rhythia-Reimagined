@@ -33,7 +33,9 @@ py -3 tests/multiplayer/mpbench.py own|share "NAME=Driver.gd" [seconds] ["NAME=m
 instance into `t/<NAME>/`, sets `APPDATA` to `t/<NAME>/appdata`, and starts your game exe on that
 pck. It copies the maps into the instance's library and replaces `@@MAP1@@`, `@@OUT@@` and `@@S@@`
 in the driver. Results land in `t/<NAME>/*.txt`, plus screenshots and `godot.log`.
-`RR_KEEP=1` keeps an instance's data for the next run.
+`RR_KEEP=1` keeps an instance's data for the next run. `RR_USER_SETTINGS=<folder>` starts from copies of
+`settings.json`, `reimagined.json` and `recent_plays.json` in that folder (a saved snapshot of a player's
+own; `=1` copies the live ones, read only), so before / after measurements use the same settings.
 
 Every feature test should pass on both `own` and `share`. The newer drivers:
 
@@ -56,7 +58,14 @@ Every feature test should pass on both `own` and `share`. The newer drivers:
 | `MapScreensTest.gd` | title cards, map page backdrop, start zoom, loading screen (muffle, logo, no black), results card, no-cover look |
 | `CheckpointTest.gd` | retry from the fail point |
 | `LibraryTest.gd`, `PhxmTest.gd`, `SkinTest.gd` | library tools, `.phxm`, skins |
-| `PerfBench.gd` | performance (`docs/PERF.md`) |
+| `PerfBench.gd` | performance (`docs/PERF.md`): title, menu, map switching, a full dense run (average fps, 1% low, p99), memory over play / quit cycles |
+| `ProfProbe.gd` | script time per gameplay frame, per script and per NoteManager section; needs `RR_SWAPS=tests/multiplayer/swaps/prof.py` (test-only timing patches) |
+| `AblateProbe.gd` | frame time saved by switching one part of a run off at a time (HUD, HUD viewports, notes, trail, cursor, grid, FPS counter, NoteManager) |
+| `MenuAblate.gd` | the same for menu items (`RR_MENU_ROOT=Menu/Main/Maps`, `RR_MENU_DEPTH=n`) |
+| `HudVpTest.gd` | HUD panels render only on change: no panel ever shows stale content (`RR_HUD_STYLE=classic\|rewrite`, `RR_HUD_HITS=n` to start in the dense part) |
+| `PassZoomTest.gd` | the slowest frame from a map's last notes through the pass zoom (`RR_SHOTS=1`: pictures instead) |
+| `FeaturesTest.gd` | dropped colorsets / meshes / settings files / fonts, HUD font + trail fade + cursor glow in a run, settings generator (live run tracked, advice, Apply / Undo stick with the settings page open) |
+| `FpsCounterTest.gd` | FPS counter: text, top-right placement, clicks pass through, same node in runs, switch, hidden while a clip records |
 
 The older multiplayer drivers are listed in `tests/multiplayer/README.md`.
 

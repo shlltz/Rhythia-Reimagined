@@ -58,8 +58,18 @@ func _exit_tree():
 			break
 
 var fit_t:float = 0.0
+# perf (Rhythia-reimagined): the spectrum is read and the bars redrawn at most RATE times a second.
+# Every frame was ~160 analyzer reads + ~160 rects from script (a third of a menu frame at 1000+ fps)
+# for audio data that only changes once per mix block; displays show at most their refresh rate.
+const RATE = 240.0
+var rate_t:float = 0.0
+
 func _process(delta):
 	if !analyzer or !is_visible_in_tree(): return
+	rate_t += delta
+	if rate_t < 1.0 / RATE: return
+	delta = rate_t
+	rate_t = 0.0
 	var ps = get_parent().get("page_scale") # (short windows: the strip shrinks with the pages, menu2)
 	if ps != null and !is_equal_approx(margin_top, -(HEIGHT * ps + BOTTOM_GAP)): margin_top = -(HEIGHT * ps + BOTTOM_GAP)
 	fit_t -= delta
