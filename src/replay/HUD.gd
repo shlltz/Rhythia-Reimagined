@@ -693,10 +693,19 @@ func _reimagined(cf:Dictionary):
 		var ot = load("res://mods/replay/OsuTrail.gd").new(Spawn.get_node("Cursor"))
 		ot.name = "OsuTrail"
 		get_parent().call_deferred("add_child", ot)
+	if float(cf.get("cursor_glow", 0.0)) > 0.0 and ResourceLoader.exists("res://mods/replay/CursorGlow.gd"):
+		var gl = load("res://mods/replay/CursorGlow.gd").new()
+		gl.name = "CursorGlow"
+		Spawn.get_node("Cursor").call_deferred("add_child", gl)
+	if str(cf.get("hud_font", "")) != "" and ResourceLoader.exists("res://mods/replay/HudFont.gd"):
+		call_deferred("_hud_font") # (after the panels below are built)
 	if ResourceLoader.exists("res://mods/replay/RewriteHud.gd") and load("res://mods/replay/RewriteHud.gd").on():
 		load("res://mods/replay/RewriteHud.gd").attach(self) # (panels drawn like the rewrite's)
 	elif ResourceLoader.exists("res://mods/replay/HudParts.gd"):
 		load("res://mods/replay/HudParts.gd").apply_legacy(self) # (parts moved / sized in Customize)
+
+func _hud_font():
+	load("res://mods/replay/HudFont.gd").apply(self)
 
 # Rhythia-reimagined HUD refinement: the classic side panels, ring and bars stay; captions become
 # small and faded over big values (the player's own HUD colours kept: only alpha / size change), the

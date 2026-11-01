@@ -16,7 +16,7 @@ var ui_k:float = 1.0 # text size factor on big screens
 const TABS = [["trail", "Cursor trail", "style, colour, opacity"], ["hud", "HUD layout", "panels & the parts inside"],
 	["skin", "Skin", "border, icons, logo"], ["collections", "Collections", "map packs"],
 	["interface", "Interface", "map list & clutter"], ["device", "Device", "touch, gyro, low-end"], ["storage", "Storage", "user folder, updates"],
-	["logs", "Logs", "for bug reports"]]
+	["gen", "Settings generator", "suggestions from your runs"], ["logs", "Logs", "for bug reports"]]
 const UserDir = preload("res://mods/replay/UserDir.gd")
 const Dev = preload("res://mods/replay/Device.gd")
 
@@ -130,6 +130,7 @@ func _ready():
 	_build_interface()
 	_build_device()
 	_build_storage()
+	_build_gen()
 	_build_logs()
 	show_tab(Engine.get_meta("rr_tab") if Engine.has_meta("rr_tab") else "trail", false)
 	Dev.touch_fit(root)
@@ -180,6 +181,7 @@ func show_tab(id:String, anim:bool = true):
 		tab_buttons[i].update()
 	for k in pages:
 		pages[k].visible = k == id
+	if id == "gen": _gen_refresh()
 	if anim:
 		sfx.play("click-short-confirm.ogg", -10.0)
 		UIAnim.play(pages[id], Vector2(18, 0), Vector2.ZERO, 0.0, 1.0, 0.22)
@@ -295,9 +297,28 @@ func _build_trail():
 	ch.add_child(cp)
 	trail_widgets.picker = cp
 	_row(p, "Colour", ch)
+	var gh = HBoxContainer.new()
+	gh.add_constant_override("separation", 14)
+	var one = CheckBox.new()
+	one.text = "one colour"
+	one.focus_mode = Control.FOCUS_NONE
+	one.pressed = str(cf.get("trail_color2", "")) == ""
+	one.connect("toggled", self, "_trail_one")
+	gh.add_child(one)
+	var ep = ColorPickerButton.new()
+	ep.rect_min_size = Vector2(120, 32)
+	ep.edit_alpha = false
+	ep.color = Color(str(cf.trail_color2)) if str(cf.get("trail_color2", "")) != "" else Color("#ff3d64")
+	ep.disabled = one.pressed
+	ep.focus_mode = Control.FOCUS_NONE
+	ep.connect("color_changed", self, "_trail_end")
+	gh.add_child(ep)
+	trail_widgets.end_picker = ep
+	_row(p, "Fades to", gh)
 	_row(p, "Opacity", _slider(0.0, 1.0, 0.05, float(cf.trail_alpha), "_trail_alpha", "%.2f"))
 	trail_widgets.length = _row(p, "Length (osu!)", _slider(0.3, 3.0, 0.1, float(cf.trail_length), "_trail_length", "%.1fx"))
 	trail_widgets.size = _row(p, "Size (osu!)", _slider(0.4, 2.0, 0.05, float(cf.trail_size), "_trail_size", "%.2fx"))
+	_row(p, "Cursor glow", _slider(0.0, 1.0, 0.05, float(cf.get("cursor_glow", 0.0)), "_cursor_glow", "%.2f"))
 	var pv = TrailPreview.new()
 	pv.rect_min_size = Vector2(0, 230)
 	pv.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -320,12 +341,22 @@ func _trail_same(on:bool):
 func _trail_color(c:Color):
 	R.set_val("trail_color", c.to_html(false))
 
+func _trail_one(on:bool):
+	trail_widgets.end_picker.disabled = on
+	R.set_val("trail_color2", "" if on else trail_widgets.end_picker.color.to_html(false))
+
+func _trail_end(c:Color):
+	R.set_val("trail_color2", c.to_html(false))
+
+func _cursor_glow(v:float): R.set_val("cursor_glow", v)
 func _trail_alpha(v:float): R.set_val("trail_alpha", v)
 func _trail_length(v:float): R.set_val("trail_length", v)
 func _trail_size(v:float): R.set_val("trail_size", v)
 
 # ------------------------------------------------------------------ HUD layout
 const HudParts = preload("res://mods/replay/HudParts.gd")
+const HudFont = preload("res://mods/replay/HudFont.gd")
+var font_dialog:FileDialog
 var hud_ed:Control
 var part_ed:Control
 var hud_w:Dictionary = {}
@@ -345,6 +376,22 @@ func _build_hud():
 	hud_w.alt.hint_tooltip = "Rewrite layout: the combo in the left panel instead of the big number behind the notes"
 	hud_w.alt.disabled = HudParts.style() != "rewrite"
 	p.add_child(top)
+	var fr = HBoxContainer.new()
+	fr.add_constant_override("separation", 14)
+	var lf = _label("Font", 15, Color(1, 1, 1, 0.8))
+	lf.valign = Label.VALIGN_CENTER
+	fr.add_child(lf)
+	hud_w.fonts = _seg(HudFont.CHOICES, str(R.val("hud_font")), "_hud_font")
+	fr.add_child(hud_w.fonts)
+	p.add_child(fr)
+	_hud_font_faces()
+	font_dialog = FileDialog.new()
+	font_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	font_dialog.mode = FileDialog.MODE_OPEN_FILE
+	font_dialog.filters = PoolStringArray(["*.ttf, *.otf ; Fonts"])
+	font_dialog.window_title = "Choose a font for the HUD"
+	font_dialog.connect("file_selected", self, "_hud_font_file")
+	root.add_child(font_dialog)
 	var body = HBoxContainer.new()
 	body.add_constant_override("separation", 14)
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -406,6 +453,35 @@ func _build_hud():
 		foot.add_child(bt)
 	p.add_child(foot)
 	_hud_sync()
+
+# each choice is written in its own face (the HUD keeps its sizes; this is only the look)
+func _hud_font_faces():
+	var i = 0
+	for b in hud_w.fonts.get_children():
+		var d = HudFont.data(HudFont.CHOICES[i][0]) if HudFont.CHOICES[i][0] != "" else null
+		b.add_font_override("font", HudFont.font_like(_font(15), d) if d else _font(15))
+		b.hint_tooltip = "Your own .ttf / .otf (you can also drop one onto the game)" if HudFont.CHOICES[i][0] == "own" else ""
+		i += 1
+
+func _hud_font(v:String):
+	if v == "own" and HudFont.own_path() == "":
+		call_deferred("_hud_font_sync") # (nothing of yours yet: the choice waits for a file)
+		font_dialog.popup_centered_ratio(0.7)
+		return
+	R.set_val("hud_font", v)
+
+func _hud_font_file(path:String):
+	var e = HudFont.set_own(path)
+	if e != "": Globals.notify(Globals.NOTIFY_ERROR, e[0].to_upper() + e.substr(1), "HUD font", 4)
+	_hud_font_faces()
+	_hud_font_sync()
+
+func _hud_font_sync():
+	var cur = str(R.val("hud_font"))
+	var i = 0
+	for b in hud_w.fonts.get_children():
+		b.pressed = HudFont.CHOICES[i][0] == cur
+		i += 1
 
 func _mini_row(parent:Control, text:String, ctl:Control):
 	var h = HBoxContainer.new()
@@ -926,6 +1002,120 @@ const LOG_LINES = 400
 var log_view:TextEdit
 var log_msg:Label
 
+# ------------------------------------------------------------------ settings generator
+const PlayTrack = preload("res://mods/replay/PlayTrack.gd")
+var gen_w:Dictionary = {}
+
+func _build_gen():
+	var p = _page("gen")
+	_heading(p, "Settings generator", "Learns from your own runs: how late your hits come and which way your misses fall (stored on this PC only, the last 60 runs). Each suggestion says why; Apply changes only those settings, Undo puts them back.")
+	_check(p, "Keep a short summary of each run", bool(R.val("track_plays")), "_gen_track")
+	gen_w.stats = _label("", 15, Color(1, 1, 1, 0.75))
+	gen_w.stats.autowrap = true
+	gen_w.stats.rect_min_size.x = content.rect_size.x
+	p.add_child(gen_w.stats)
+	var sc = ScrollContainer.new()
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.scroll_horizontal_enabled = false
+	p.add_child(sc)
+	gen_w.list = VBoxContainer.new()
+	gen_w.list.add_constant_override("separation", 10)
+	gen_w.list.rect_min_size.x = content.rect_size.x - 16
+	sc.add_child(gen_w.list)
+	var foot = HBoxContainer.new()
+	foot.add_constant_override("separation", 10)
+	for b in [["Look again", "_gen_refresh"], ["Forget my runs", "_gen_forget"]]:
+		var bt = Button.new()
+		bt.text = b[0]
+		bt.focus_mode = Control.FOCUS_NONE
+		bt.rect_min_size = Vector2(170, 36)
+		bt.connect("pressed", self, b[1])
+		foot.add_child(bt)
+	p.add_child(foot)
+
+func _gen_track(on:bool): R.set_val("track_plays", on)
+
+func _gen_refresh():
+	if !gen_w.has("list"): return
+	for c in gen_w.list.get_children(): c.queue_free()
+	var all = PlayTrack.load_all()
+	var recent = all.slice(max(0, all.size() - PlayTrack.RECENT), all.size() - 1) if all.size() > 0 else []
+	var s = PlayTrack.summary(recent)
+	if s.runs == 0:
+		gen_w.stats.text = "No runs yet. Play a few maps (whole runs of 20+ notes count) and come back."
+	else:
+		gen_w.stats.text = "%d run%s tracked (the last %d count)  ·  %d notes  ·  %.1f%% hit\nLate hits %d%% (%.0f ms on average)  ·  misses: %d short of the note, %d past it, %d beside it" % [
+			all.size(), "" if all.size() == 1 else "s", min(all.size(), PlayTrack.RECENT), s.notes, s.acc * 100.0,
+			int(round(s.late_share * 100.0)), s.late_ms, s.under, s.over, s.wide]
+	var tips = PlayTrack.advise(all)
+	if tips.empty():
+		var l = _label("Nothing to change yet." if s.runs >= 3 and s.notes >= 800 else "Suggestions start after 3 runs and 800 notes.", 15, Color(1, 1, 1, 0.45))
+		gen_w.list.add_child(l)
+	for t in tips: gen_w.list.add_child(_gen_card(t))
+
+func _gen_card(t:Dictionary) -> Control:
+	var card = PanelContainer.new()
+	var sb = StyleBoxFlat.new()
+	sb.bg_color = Color(1, 1, 1, 0.04)
+	sb.border_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.55)
+	sb.border_width_left = 3
+	for m in ["content_margin_left", "content_margin_right", "content_margin_top", "content_margin_bottom"]: sb.set(m, 14)
+	card.add_stylebox_override("panel", sb)
+	var v = VBoxContainer.new()
+	v.add_constant_override("separation", 6)
+	card.add_child(v)
+	v.add_child(_label(t.title, 18, Color(1, 1, 1)))
+	var why = _label(t.why, 14, Color(1, 1, 1, 0.6))
+	why.autowrap = true
+	why.rect_min_size.x = content.rect_size.x - 60
+	v.add_child(why)
+	var h = HBoxContainer.new()
+	h.add_constant_override("separation", 10)
+	var undo = Engine.get_meta("rr_gen_undo") if Engine.has_meta("rr_gen_undo") else {}
+	var ap = Button.new()
+	ap.text = "Apply"
+	ap.focus_mode = Control.FOCUS_NONE
+	ap.rect_min_size = Vector2(130, 34)
+	ap.connect("pressed", self, "_gen_apply", [t])
+	h.add_child(ap)
+	var un = Button.new()
+	un.text = "Undo"
+	un.focus_mode = Control.FOCUS_NONE
+	un.rect_min_size = Vector2(130, 34)
+	un.disabled = !undo.has(t.id)
+	un.connect("pressed", self, "_gen_undo", [t.id])
+	h.add_child(un)
+	v.add_child(h)
+	return card
+
+func _gen_apply(t:Dictionary):
+	var undo = Engine.get_meta("rr_gen_undo") if Engine.has_meta("rr_gen_undo") else {}
+	var old = {}
+	for k in t.set: old[k] = Rhythia.get(k)
+	undo[t.id] = old
+	Engine.set_meta("rr_gen_undo", undo)
+	for k in t.set: PlayTrack.apply_setting(get_tree(), k, t.set[k])
+	sfx.play("click-short-confirm.ogg", -8.0)
+	Globals.notify(Globals.NOTIFY_SUCCEED, t.title + ": applied (Undo puts it back)", "Settings generator", 3)
+	_gen_refresh()
+
+func _gen_undo(id:String):
+	var undo = Engine.get_meta("rr_gen_undo") if Engine.has_meta("rr_gen_undo") else {}
+	if !undo.has(id): return
+	for k in undo[id]: PlayTrack.apply_setting(get_tree(), k, undo[id][k])
+	undo.erase(id)
+	Engine.set_meta("rr_gen_undo", undo)
+	Globals.notify(Globals.NOTIFY_SUCCEED, "Put back", "Settings generator", 2)
+	_gen_refresh()
+
+func _gen_forget():
+	Globals.confirm_prompt.open("Forget every tracked run? (Your scores and replays stay.)", "Settings generator", [{text = "Forget"}, {text = "Cancel"}])
+	var pick = yield(Globals.confirm_prompt, "option_selected")
+	Globals.confirm_prompt.close()
+	if pick != 0: return
+	PlayTrack.forget()
+	_gen_refresh()
+
 func _build_logs():
 	var p = _page("logs")
 	_heading(p, "Game log", "What the game printed this session (errors included). Copy it and paste it when you report a bug.")
@@ -1279,6 +1469,7 @@ class TrailPreview extends Control:
 			draw_line(Vector2(g.position.x, g.position.y + s * k / 3), Vector2(g.end.x, g.position.y + s * k / 3), Color(1, 1, 1, 0.07))
 		var cc = _cursor_col()
 		var tc = R.trail_color(cc)
+		var te = R.trail_end()
 		var a = float(cf.trail_alpha)
 		var cr = 13.0
 		match cf.trail_style:
@@ -1289,13 +1480,19 @@ class TrailPreview extends Control:
 				for q in dots:
 					var k = clamp(1.0 - (t - q[1]) / life, 0.0, 1.0)
 					var rr = rr0 * (0.45 + 0.55 * k)
-					draw_texture_rect(tex, Rect2(q[0] - Vector2(rr, rr), Vector2(rr, rr) * 2), false, Color(tc.r, tc.g, tc.b, pow(k, 1.4) * a * 0.7))
+					var gc = tc if te == null else te.linear_interpolate(tc, k)
+					draw_texture_rect(tex, Rect2(q[0] - Vector2(rr, rr), Vector2(rr, rr) * 2), false, Color(gc.r, gc.g, gc.b, pow(k, 1.4) * a * 0.7))
 			"game":
 				for q in ghosts:
 					var k = clamp(1.0 - (t - q[1]) / 0.12, 0.0, 1.0)
-					draw_circle(q[0], cr * k, Color(tc.r, tc.g, tc.b, k * 0.6 * a))
+					var g2 = tc if te == null else te.linear_interpolate(tc, k)
+					draw_circle(q[0], cr * k, Color(g2.r, g2.g, g2.b, k * 0.6 * a))
 		if last != null:
 			var p = c + Vector2(sin(t * 1.9), sin(t * 3.8)) * min(rect_size.x, rect_size.y) * 0.36
+			var gl = float(cf.get("cursor_glow", 0.0))
+			if gl > 0.0:
+				var gr = cr * 2.6 # (CursorGlow.SIZE cursor widths across)
+				draw_texture_rect(load("res://mods/replay/CursorGlow.gd").texture(), Rect2(p - Vector2(gr, gr), Vector2(gr, gr) * 2), false, Color(cc.r, cc.g, cc.b, min(1.0, gl * 1.3))) # (brighter than in game: no additive blend here)
 			draw_circle(p, cr, cc)
 
 # schematic HUD editor: the 3x3 grid and the side panels at their in-game spots (world units)

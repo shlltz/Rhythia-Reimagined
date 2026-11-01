@@ -20,6 +20,7 @@ var alpha:float = 1.0
 var size:float = 1.0
 var spacing:float = 0.04
 var radius:float = 0.1
+var tail = null                # gradient: the colour the oldest dots fade to (null = one colour)
 
 func _init(c:Spatial = null):
 	cursor = c
@@ -29,6 +30,7 @@ func _ready():
 	life = LIFE * clamp(float(cf.trail_length), 0.2, 4.0)
 	alpha = clamp(float(cf.trail_alpha), 0.0, 1.0)
 	size = clamp(float(cf.trail_size), 0.2, 3.0)
+	tail = R.trail_end()
 	spacing = 0.263 * Rhythia.cursor_scale * size * GAP
 	radius = 0.1315 * Rhythia.cursor_scale * 0.8 * size
 	var tex = R.skin_tex("trail")
@@ -96,5 +98,6 @@ func _process(delta):
 		var k = clamp(1.0 - (now - q[1]) / life, 0.0, 1.0)
 		var rr = radius * (0.45 + 0.55 * k)
 		multimesh.set_instance_transform(i, Transform(Basis().scaled(Vector3(rr, rr, rr)), q[0] + off))
-		multimesh.set_instance_color(i, Color(c.r, c.g, c.b, pow(k, 1.4) * alpha * 0.7))
+		var g = c if tail == null else tail.linear_interpolate(c, k)
+		multimesh.set_instance_color(i, Color(g.r, g.g, g.b, pow(k, 1.4) * alpha * 0.7))
 	multimesh.visible_instance_count = dots.size()

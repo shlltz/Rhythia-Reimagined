@@ -362,6 +362,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 #			$Label.text += "next_ms: %s\n" % [ notems ]
 #			next_ms = notems
 		elif ms >= notems and notes[i][2] == Globals.NSTATE_ACTIVE:
+			if rr_track: rr_track.came_due(i, Vector2(cursor_node.transform.origin.x, cursor_node.transform.origin.y))
 			var result = Rhythia.visual_mode or note_check_collision(i)
 
 			if !result and (ms > notems + hit_window or pause_state == -1):
@@ -371,6 +372,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 				if !Rhythia.replaying and Rhythia.record_replays:
 					Rhythia.replay.note_miss(i)
 				notes[i][2] = Globals.NSTATE_MISS
+				if rr_track: rr_track.miss(i, notes, Vector2(cursor_node.transform.origin.x, cursor_node.transform.origin.y))
 				if Rhythia.play_miss_snd: 
 					if Rhythia.sfx_2d:
 						$Miss2D.play()
@@ -393,6 +395,7 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 				if !Rhythia.replaying and Rhythia.record_replays:
 					Rhythia.replay.note_hit(i)
 				notes[i][2] = Globals.NSTATE_HIT
+				if rr_track: rr_track.hit(ms - notems, rr_frame_ms)
 #				if Rhythia.play_hit_snd and !Rhythia.ensure_hitsync:
 #					var sfx
 #					if Rhythia.sfx_2d:
@@ -574,6 +577,9 @@ func _ready():
 		add_child(replay_viewer)
 	elif !Rhythia.replaying and !_mp_lock() and ResourceLoader.exists("res://mods/replay/QuickRetry.gd"):
 		add_child(load("res://mods/replay/QuickRetry.gd").new()) # hold ` to restart the map
+	# settings generator: a summary of this run (live runs only, not a retry from the fail point)
+	if !Rhythia.replaying and !_mp_on and !Engine.has_meta("rr_resume") and Rhythia.selected_song and Rhythia.selected_song.id != "rr_editor_test" 			and ResourceLoader.exists("res://mods/replay/PlayTrack.gd") and load("res://mods/replay/PlayTrack.gd").on():
+		rr_track = load("res://mods/replay/PlayTrack.gd").new()
 
 	chaos_rng.seed = hash(Rhythia.selected_song.id)
 	earthquake_rng.seed = hash(Rhythia.selected_song.id)
@@ -863,6 +869,7 @@ func _process(delta:float):
 	var u = OS.get_ticks_usec()
 	delta = float(u - last_usec) / 1_000_000.0
 	last_usec = u
+	rr_frame_ms = delta * 1000.0 * speed_multi
 	
 	if replay_viewer:
 		if replay_paused:
@@ -1249,6 +1256,8 @@ func _mobile_pause_just() -> bool:
 
 # a multiplayer match is running (MPClient): no skipping, no quick retry, no Retry
 var _mp_on:bool = false
+var rr_track = null           # PlayTrack.gd on live runs (settings generator)
+var rr_frame_ms:float = 0.0
 func _mp_lock() -> bool:
 	var mp = get_tree().root.get_node_or_null("RRMultiplayer")
 	_mp_on = mp != null and mp.in_match()

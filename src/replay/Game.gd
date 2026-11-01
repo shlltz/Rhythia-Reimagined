@@ -143,6 +143,7 @@ func end(end_type:int):
 		if CK: CK.restore_offset() # (back to the player's own Start From)
 		if ResourceLoader.exists("res://mods/stars/RecentPlays.gd") and !mp_run: # (session runs aren't personal plays)
 			load("res://mods/stars/RecentPlays.gd").record(Rhythia.get_meta("last_run"))
+		if $Spawn.rr_track and !Rhythia.replaying: $Spawn.rr_track.finish(Rhythia.selected_song, end_type, speed_multi) # (settings generator)
 		var fx = get_node_or_null("PassFx")
 		if fx and end_type == Globals.END_PASS: yield(fx.zoom_in(), "completed") # personal pass effect (hype mod)
 		else:
