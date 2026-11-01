@@ -104,7 +104,10 @@ func stats(tag:String) -> Dictionary:
 	for x in frames:
 		if x > med * 2.0 and x > 8.0: spikes2 += 1
 		if x > 33.3: spikes33 += 1
-	var d = {frames = n, avg_fps = stepify(1000.0 * n / tot, 0.1), p50 = stepify(med, 0.01),
+	var slow = 0.0 # 1% low = frame rate over the slowest 1% of frames
+	var ns = max(1, n / 100)
+	for i in ns: slow += f[n - 1 - i]
+	var d = {frames = n, avg_fps = stepify(1000.0 * n / tot, 0.1), low1_fps = stepify(1000.0 * ns / slow, 0.1), min_fps = stepify(1000.0 / f[n - 1], 0.1), p50 = stepify(med, 0.01),
 		p95 = stepify(f[int(n * 0.95)], 0.01), p99 = stepify(f[int(n * 0.99)], 0.01), max = stepify(f[n - 1], 0.01),
 		spikes_2x = spikes2, spikes_33ms = spikes33, minimized_frames = hidden_frames}
 	for k in [["phys", 1], ["hit", 2]]: # mean frame time with / without a physics tick or a hit in it
@@ -145,9 +148,13 @@ func menu_ready():
 		var sc = get_tree().current_scene
 		if !sc or sc.name != "Menu": continue
 		var tm = sc.get_node_or_null("TitleMenu")
-		if tm and tm.visible:
-			tm._close("")
-			yield(wait(1.0), "completed")
+		if !tm or !tm.visible: continue # (wait for the title screen: measuring before it opened mixed the two screens)
+		yield(wait(2.0), "completed")
+		begin()
+		yield(wait(4.0), "completed")
+		stats("title_idle")
+		tm._close("")
+		yield(wait(1.5), "completed")
 		return
 
 # start a map with the autoplayer; returns the Game node once notes move (or null)
@@ -198,6 +205,8 @@ func run():
 		else: Rhythia.set(w[1], v)
 		out("set %s = %s" % [kv, str(v)])
 	var quick = "@@NAME@@".begins_with("diag") # (gameplay only)
+	if song("@@MAP1@@"): Rhythia.select_song(song("@@MAP1@@")) # (the dense map's page: the same screen every run)
+	yield(wait(3.0), "completed")
 	begin()
 	yield(wait(5.0), "completed")
 	stats("menu_idle")
@@ -226,15 +235,20 @@ func run():
 		last_hits = int(g.get("hits"))
 		begin()
 		var dc = []
+		var pt = [] # process step (scripts + engine idle work), ms
 		var t = 0.0
 		var limit = dense.last_ms / 1000.0 + 3.0
 		while t < limit and is_instance_valid(g) and !g.ending:
 			yield(wait(1.0), "completed"); t += 1.0
 			dc.append(Performance.get_monitor(Performance.RENDER_DRAW_CALLS_IN_FRAME))
+			pt.append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
 		stats("play")
 		dc.sort()
 		res.play_draw_calls_p50 = dc[dc.size() / 2] if dc.size() > 0 else -1
 		out("draw calls p50 %s" % res.play_draw_calls_p50)
+		pt.sort()
+		res.play_process_ms_p50 = stepify(pt[pt.size() / 2], 0.001) if pt.size() > 0 else -1
+		out("process step p50 %s ms, nodes %s" % [res.play_process_ms_p50, Performance.get_monitor(Performance.OBJECT_NODE_COUNT)])
 		res.mem_play_end = mem()
 		out("mem play   " + JSON.print(res.mem_play_end))
 		if is_instance_valid(g):

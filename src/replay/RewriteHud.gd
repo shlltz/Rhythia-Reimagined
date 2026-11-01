@@ -282,7 +282,10 @@ func _update(delta:float):
 	if health:
 		hp = lerp(hp, _hp_target(), min(1.0, delta * hp_rate)) if delta > 0 else _hp_target()
 		health.set_value(hp)
-		health.modulate.a = 0.5 if Game.energy <= 0 and !Rhythia.replaying else 1.0
+		var ha = 0.5 if Game.energy <= 0 and !Rhythia.replaying else 1.0
+		if health.modulate.a != ha:
+			health.modulate.a = ha
+			if hud.has_method("vp_mark"): hud.vp_mark(health.get_viewport()) # (modulate: no redraw signal)
 
 # ------------------------------------------------------------------ pieces
 # the panel's backing: the skin's image, else the rewrite's (black, 38%, faded at the top and bottom)

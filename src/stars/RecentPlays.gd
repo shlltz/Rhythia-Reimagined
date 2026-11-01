@@ -37,12 +37,31 @@ func _process(delta):
 	body.modulate.a = k
 
 # ------------------------------------------------------------------ storage
+# perf: the file is parsed once and kept (Engine meta), parsed again only when it changed on disk
+# (another copy of the game can write it). Picking a map, the map list's "played" sort and every
+# finished run used to parse all of it again: ~20 ms at a time for a 360 KB file. Callers must not
+# reorder the arrays they get (copy first); record() changes it on purpose.
 static func _load() -> Dictionary:
+	var path = Globals.p(FILE)
 	var f = File.new()
-	if f.open(Globals.p(FILE), File.READ) != OK: return {}
-	var d = parse_json(f.get_as_text())
+	var key = _key(path)
+	if Engine.has_meta("rr_recent_cache") and Engine.get_meta("rr_recent_key") == key: return Engine.get_meta("rr_recent_cache")
+	var d = {}
+	if key != "" and f.open(path, File.READ) == OK:
+		var v = parse_json(f.get_as_text())
+		f.close()
+		if typeof(v) == TYPE_DICTIONARY: d = v
+	Engine.set_meta("rr_recent_cache", d)
+	Engine.set_meta("rr_recent_key", key)
+	return d
+
+# the file's modified time (whole seconds) and size: a write by anything else changes one of them
+static func _key(path:String) -> String:
+	var f = File.new()
+	if !f.file_exists(path) or f.open(path, File.READ) != OK: return ""
+	var k = "%d:%d" % [f.get_modified_time(path), f.get_len()]
 	f.close()
-	return d if typeof(d) == TYPE_DICTIONARY else {}
+	return k
 
 static func record(run:Dictionary):
 	var song = run.get("song")
@@ -60,6 +79,7 @@ static func record(run:Dictionary):
 	if f.open(Globals.p(FILE), File.WRITE) == OK:
 		f.store_string(to_json(all))
 		f.close()
+		Engine.set_meta("rr_recent_key", _key(Globals.p(FILE))) # (the kept copy is what was written)
 
 static func grade(p:Dictionary) -> Array: # [letter, colour] - EndInfo.gd thresholds
 	if !p.passed: return ["F", Color("#ff6b6b")]
@@ -130,7 +150,7 @@ func _ready():
 func refresh(_s = null):
 	for c in list.get_children(): c.queue_free()
 	var song = Rhythia.selected_song
-	var plays:Array = _load().get(song.id, []) if song else []
+	var plays:Array = _load().get(song.id, []).duplicate() if song else [] # (a copy: the kept file order stays)
 	plays.sort_custom(self, "_better")
 	# the best play is already the personal-best panel below: list the 2nd best to the worst
 	empty.text = "No plays on this map yet - finish a run and it shows up here." if plays.empty() else "Only one play so far - it's your best, shown below. Play again to compare runs."
@@ -220,7 +240,7 @@ func _open(p:Dictionary):
 		misses = int(p.misses), total = total, combo = int(p.combo),
 		end_type = int(p.get("end", Globals.END_PASS if p.passed else Globals.END_FAIL)), pauses = int(p.pauses),
 		position = float(p.get("position", 0)), length = float(p.get("length", song.last_ms if song else 1)),
-		speed = float(p.speed), replay = false, replay_path = str(p.get("replay", "")), mods = p.get("mods", []),
+		speed = float(p.speed), replay = false, replay_path = str(p.get("replay", "")), mods = p.get("mods", []).duplicate(),
 		when = ago(int(p.t)), stored = true})
 	r.name = "ResultsScreen"
 	menu.add_child(r)

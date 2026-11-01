@@ -853,6 +853,7 @@ func _build_interface():
 	_heading(p, "Interface", "Title screen background and less clutter on the map page and in game.")
 	_check(p, "Hide \"Default hitboxes, default hitwindow\" on the map page", cf.hide_hitbox_text, "_if_hitbox")
 	_check(p, "Hide the HIT WINDOW / HITBOX panel and HW / HB text in game", cf.hide_config_hud, "_if_config")
+	_check(p, "FPS counter in the top-right corner", R.val("show_fps"), "_if_fps")
 	var un = LineEdit.new()
 	un.text = str(R.val("player_name"))
 	un.placeholder_text = "Guest"
@@ -881,6 +882,11 @@ func _if_hitbox(on:bool):
 	get_tree().call_group("rr_mappage", "_rr_apply")
 
 func _if_config(on:bool): R.set_val("hide_config_hud", on)
+
+func _if_fps(on:bool):
+	R.set_val("show_fps", on)
+	var c = get_tree().root.get_node_or_null("FpsCounter")
+	if c: c.set_shown(on)
 
 func _if_glitch(on:bool): R.set_val("glitch_fx", on)
 

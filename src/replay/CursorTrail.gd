@@ -20,6 +20,13 @@ var transp_multi = 1
 # Rhythia-reimagined: trail colour / opacity, hidden when another trail style is chosen
 var rr_color = null
 var rr_alpha:float = 1.0
+# perf: the trail settings, read once (a trail piece runs every frame while it fades; the settings
+# can't change during a run)
+var c_smart:bool = false
+var c_time:float = 0.15
+var c_opacity:bool = true
+var c_scale:bool = true
+var c_cursor_scale:float = 1.0
 
 func _ready():
 	set_process(started)
@@ -40,24 +47,24 @@ func respawn(t_override=null,rot=0):
 	mesh.rotation = cursormesh.rotation
 
 func upd_dumb(delta):
-	if !Rhythia.smart_trail:
-		t += (delta/Rhythia.trail_time)
+	if !c_smart:
+		t += (delta/c_time)
 	var a = clamp((t - 0.2),0,1)
-	if Rhythia.trail_mode_opacity:
+	if c_opacity:
 		mat.albedo_color.a = a * 0.6 * transp_multi * rr_alpha
-	if Rhythia.trail_mode_scale:
-		mesh.scale = Vector3(a*Rhythia.cursor_scale,1,a*Rhythia.cursor_scale)
-	if !Rhythia.smart_trail and t >= 1:
+	if c_scale:
+		mesh.scale = Vector3(a*c_cursor_scale,1,a*c_cursor_scale)
+	if !c_smart and t >= 1:
 		t -= 1
 		respawn()
 
 func update(delta):
-	t -= (delta/Rhythia.trail_time)
+	t -= (delta/c_time)
 	var a = clamp((t),0,1)
-	if Rhythia.trail_mode_opacity:
+	if c_opacity:
 		mat.albedo_color.a = a * 0.6 * transp_multi * rr_alpha
-	if Rhythia.trail_mode_scale:
-		mesh.scale = Vector3(a*Rhythia.cursor_scale,1,a*Rhythia.cursor_scale)
+	if c_scale:
+		mesh.scale = Vector3(a*c_cursor_scale,1,a*c_cursor_scale)
 	if t <= 0:
 		started = false
 		visible = false
@@ -66,7 +73,7 @@ func update(delta):
 
 func _process(delta):
 	if started:
-		if Rhythia.smart_trail: update(delta)
+		if c_smart: update(delta)
 		else: upd_dumb(delta)
 
 var init_done:bool = false
@@ -74,6 +81,11 @@ func init():
 	if mesh == null: mesh = $Mesh
 	if init_done: return
 	init_done = true
+	c_smart = Rhythia.smart_trail
+	c_time = Rhythia.trail_time
+	c_opacity = Rhythia.trail_mode_opacity
+	c_scale = Rhythia.trail_mode_scale
+	c_cursor_scale = Rhythia.cursor_scale
 	mat = mesh.get("material/0").duplicate()
 	mesh.scale = Vector3(0,1,0)
 	if not Rhythia.trail_mode_scale:

@@ -136,14 +136,16 @@ func update_static_values():
 		last_combo = Game.combo
 	
 	pauselabel.text = Globals.comma_sep(Rhythia.song_end_pause_count)
-	
-	for n in get_tree().get_nodes_in_group("pause_text"):
-		paint(
-			n,
-			pause_text_color if (Rhythia.song_end_pause_count == 0)
-			else pause_used_color
-		)
-	
+
+	if Rhythia.song_end_pause_count != rr_pause_count: # perf: repainted when the count changes, not on every hit
+		rr_pause_count = Rhythia.song_end_pause_count
+		for n in get_tree().get_nodes_in_group("pause_text"):
+			paint(
+				n,
+				pause_text_color if (Rhythia.song_end_pause_count == 0)
+				else pause_used_color
+			)
+
 	scorelabel.text = Globals.comma_sep(Game.score)
 	
 	
@@ -179,13 +181,30 @@ func update_static_values():
 		gcol = grade_f_color
 	
 	lettergrade.text = grade
-	if shine != lettergrade.material.get_shader_param("amount"):
+	# perf: the last value set is kept here - reading it back with get_shader_param waits for the
+	# render thread (multi-threaded renderer), ~0.2 ms on every hit
+	if shine != rr_shine:
+		rr_shine = shine
 		lettergrade.material.set_shader_param("amount",shine)
-	
-	if !Rhythia.rainbow_hud:
+		vp_mark(left_vp)
+
+	if !Rhythia.rainbow_hud and (rr_gcol == null or gcol != rr_gcol): # (a colour override relayouts the label)
+		rr_gcol = gcol
 		lettergrade.set("custom_colors/font_color",gcol)
 
 var miss_flash:float = 0
+
+# perf: the timer used to recolour itself, rebuild its text and move the bar on every frame. Now the
+# colours change with the state (normal / can skip / done), the text once a second and the bar
+# when it moves by a visible step.
+var rr_shine:float = -1.0
+var rr_gcol = null
+var rr_pause_count:int = -1
+var rr_timer_state:int = -1
+var rr_timer_sec:int = -1
+var rr_timer_skip:int = -1
+var rr_timer_v:float = -1.0
+const RR_BAR_STEP = 1.0 / 2048.0 # (well under a pixel of the timer bar)
 
 func update_timer(ms:float,canSkip:bool=false):
 	var qms = ms + Spawn.ms_offset
@@ -195,38 +214,46 @@ func update_timer(ms:float,canSkip:bool=false):
 		lms = Rhythia.queue_end_length + (3000 * (Rhythia.song_queue.size() - 1))
 	
 	var s = clamp(floor(qms/1000),0,lms/1000)
-	var m = floor(s / 60)
-	var rs = fmod(s,60)
-	
-	var ls = floor(lms/1000)
-	var lm = floor(ls / 60) 
-	var lrs = fmod(ls,60) 
-	
+
 	if !Rhythia.rainbow_hud:
-		if canSkip:
-			timebar.get("custom_styles/fg").bg_color = timer_fg_canskip
-			timebar.get("custom_styles/bg").bg_color = timer_bg_canskip
-			for n in get_tree().get_nodes_in_group("timer_text"):
-				paint(n,timer_text_canskip)
-			
-		elif !Rhythia.queue_active and Spawn.ms > Game.last_ms:
-			timebar.get("custom_styles/fg").bg_color = timer_fg_done
-			timebar.get("custom_styles/bg").bg_color = timer_bg_done
-			for n in get_tree().get_nodes_in_group("timer_text"):
-				paint(n,timer_text_done)
-			
-		else:
-			timebar.get("custom_styles/fg").bg_color = timer_fg
-			timebar.get("custom_styles/bg").bg_color = timer_bg
-			for n in get_tree().get_nodes_in_group("timer_text"):
-				paint(n,timer_text)
-	
-	timebar.value = (clamp(qms/lms,0,1)) 
-	if canSkip: timelabel.text = "PRESS SPACE TO SKIP"
-	elif canSkip and OS.has_feature("Android"): timelabel.text = "TAP TO SKIP"
-	else: timelabel.text = "%d:%02d / %d:%02d" % [m,rs,lm,lrs]
-	Rhythia.song_end_time_str = "%d:%02d" % [m,rs]
-	
+		var st = 1 if canSkip else (2 if !Rhythia.queue_active and Spawn.ms > Game.last_ms else 0)
+		if st != rr_timer_state:
+			rr_timer_state = st
+			if st == 1:
+				timebar.get("custom_styles/fg").bg_color = timer_fg_canskip
+				timebar.get("custom_styles/bg").bg_color = timer_bg_canskip
+				for n in get_tree().get_nodes_in_group("timer_text"):
+					paint(n,timer_text_canskip)
+
+			elif st == 2:
+				timebar.get("custom_styles/fg").bg_color = timer_fg_done
+				timebar.get("custom_styles/bg").bg_color = timer_bg_done
+				for n in get_tree().get_nodes_in_group("timer_text"):
+					paint(n,timer_text_done)
+
+			else:
+				timebar.get("custom_styles/fg").bg_color = timer_fg
+				timebar.get("custom_styles/bg").bg_color = timer_bg
+				for n in get_tree().get_nodes_in_group("timer_text"):
+					paint(n,timer_text)
+
+	var v = clamp(qms/lms,0,1)
+	if abs(v - rr_timer_v) >= RR_BAR_STEP or (v != rr_timer_v and (v == 0 or v == 1)):
+		rr_timer_v = v
+		timebar.value = v
+	if int(s) != rr_timer_sec or int(canSkip) != rr_timer_skip:
+		rr_timer_sec = int(s)
+		rr_timer_skip = int(canSkip)
+		var m = floor(s / 60)
+		var rs = fmod(s,60)
+		var ls = floor(lms/1000)
+		var lm = floor(ls / 60)
+		var lrs = fmod(ls,60)
+		if canSkip: timelabel.text = "PRESS SPACE TO SKIP"
+		elif canSkip and OS.has_feature("Android"): timelabel.text = "TAP TO SKIP"
+		else: timelabel.text = "%d:%02d / %d:%02d" % [m,rs,lm,lrs]
+		Rhythia.song_end_time_str = "%d:%02d" % [m,rs]
+
 	if Rhythia.queue_active:
 		if ms >= Game.last_ms + Rhythia.hitwindow_ms:
 			songnametxt.text = "(Intermission)"
@@ -251,6 +278,8 @@ func paint(node:Control,color:Color):
 	
 	else:
 		node.modulate = color
+	var vp = node.get_viewport()
+	if vp_shown.has(vp): vp_mark(vp)
 
 var config_time:float = 2.5
 
@@ -287,8 +316,10 @@ func _process(delta:float):
 	
 	if comboring.percent != combo_ring_value:
 		comboring._set_percent(combo_ring_value)
+		vp_mark(left_vp) # (a shader parameter: no redraw signal)
 	
 	if Input.is_action_pressed("give_up"):
+		rr_giveup_shown = true
 		get_node("GiveUpHud").visible = true
 		get_node("GiveUpVP/Control/Label").visible = !$PauseHud.visible
 		if Spawn.ms > Game.last_ms:
@@ -297,7 +328,8 @@ func _process(delta:float):
 			
 		get_node("GiveUpVP/Control").percent = Game.giving_up
 		get_node("GiveUpHud").opacity = min(Game.giving_up*2,1)
-	else:
+	elif rr_giveup_shown: # perf: hidden once when the key is let go (was set on every frame)
+		rr_giveup_shown = false
 		get_node("GiveUpHud").visible = false
 		get_node("GiveUpHud").opacity = 0
 	
@@ -327,8 +359,8 @@ func _process(delta:float):
 			float(Spawn.pause_state != -1)
 		)
 		$PauseHud.modulate = Color(1,1,1,abs(Spawn.pause_state) * pause_ui_opacity)
-	else:
-		$PauseHud.visible = false
+	elif pause_hud.visible:
+		pause_hud.visible = false
 	
 	# stat mod
 	elapsed += delta
@@ -354,11 +386,23 @@ func _process(delta:float):
 			}
 		)
 	
-	# perf mod: HUD viewports only render while the sprite showing them is on screen
+	# perf mod: HUD viewports only render while the sprite showing them is on screen, and then only
+	# on frames where something in them changed (see vp_mark)
+	vp_t += delta
+	vp_refresh_t += delta
+	var refresh = vp_refresh_t >= VP_REFRESH
+	if refresh: vp_refresh_t = 0.0
 	for pair in vp_pairs:
-		var mode = Viewport.UPDATE_ALWAYS if pair[1].is_visible_in_tree() else Viewport.UPDATE_DISABLED
-		if pair[0].render_target_update_mode != mode:
-			pair[0].render_target_update_mode = mode
+		var vp:Viewport = pair[0]
+		var shown:bool = pair[1].is_visible_in_tree()
+		var was:bool = vp_shown[vp]
+		vp_shown[vp] = shown
+		if !shown:
+			if vp.render_target_update_mode != Viewport.UPDATE_DISABLED: vp.render_target_update_mode = Viewport.UPDATE_DISABLED
+		elif vp_t < VP_START or vp_always.has(vp) or (vp == left_vp and rr_shine > 0):
+			if vp.render_target_update_mode != Viewport.UPDATE_ALWAYS: vp.render_target_update_mode = Viewport.UPDATE_ALWAYS
+		elif !was or refresh or vp.render_target_update_mode == Viewport.UPDATE_ALWAYS:
+			vp.render_target_update_mode = Viewport.UPDATE_ONCE
 	
 	# warning
 #	if Rhythia.get("fov") < 70 and Rhythia.mod_flashlight and calculating:
@@ -372,11 +416,58 @@ func _process(delta:float):
 
 var vp_pairs:Array = []
 onready var stats_label = get_node("Stats/Label")
+onready var left_vp = $LeftVP
+
+# ---------------------------------------------------------------- perf: HUD viewports on change
+# (Rhythia-reimagined) The 2D viewports behind the HUD panels rendered on every frame (~0.12 ms of a
+# 0.8 ms frame), though most frames change nothing in them. A viewport now renders on a frame where
+# an item inside it redrew, moved, resized or was shown / hidden (signals hooked below), when code
+# changes something that sends no signal (shader parameters, modulate: vp_mark), once when its panel
+# comes into view, and at least twice a second. During the first second of a run (layout, skins) and
+# for the panels that animate by themselves (pause / give-up meters, the cursor-dance panel, the
+# shining SS grade) they render on every frame as before.
+const VP_START = 1.0
+const VP_REFRESH = 0.5
+var vp_t:float = 0.0
+var vp_refresh_t:float = 0.0
+var vp_shown:Dictionary = {}  # viewport -> its panel was on screen last frame
+var vp_always:Dictionary = {} # viewports that render on every frame while shown
+var vp_marked:Dictionary = {} # viewport -> idle frame it was last marked
+
+func _vp_hook(vp:Viewport, n:Node):
+	if n is CanvasItem and !n.is_connected("draw", self, "vp_mark"):
+		n.connect("draw", self, "vp_mark", [vp])
+		n.connect("visibility_changed", self, "vp_mark", [vp])
+		if n is Control: n.connect("item_rect_changed", self, "vp_mark", [vp])
+	for c in n.get_children(): _vp_hook(vp, c)
+
+func _vp_node_added(n:Node):
+	if !(n is CanvasItem): return
+	var vp = n.get_viewport()
+	if vp_shown.has(vp): _vp_hook(vp, n)
+
+# something in this HUD viewport changed: render it on this frame
+func vp_mark(vp:Viewport):
+	if !vp_shown.get(vp, false) or vp.render_target_update_mode == Viewport.UPDATE_ALWAYS: return
+	var f = Engine.get_idle_frames()
+	if vp_marked.get(vp, -1) == f: return
+	vp_marked[vp] = f
+	vp.render_target_update_mode = Viewport.UPDATE_ONCE
+
+func _exit_tree():
+	if get_tree().is_connected("node_added", self, "_vp_node_added"): get_tree().disconnect("node_added", self, "_vp_node_added")
+onready var pause_hud = $PauseHud
+var rr_giveup_shown:bool = true # (true: the first frame hides it, as before)
 
 func _ready():
 	for n in ["Timer", "Left", "GiveUp", "Pause", "Right", "Energy", "Config", "Combo", "Approach"]:
 		if has_node(n + "VP") and has_node(n + "Hud"):
 			vp_pairs.append([get_node(n + "VP"), get_node(n + "Hud")])
+	for pair in vp_pairs:
+		vp_shown[pair[0]] = false
+		if pair[0].name in ["PauseVP", "GiveUpVP", "ApproachVP"]: vp_always[pair[0]] = true
+		_vp_hook(pair[0], pair[0])
+	get_tree().connect("node_added", self, "_vp_node_added")
 	Game.connect("miss",self,"on_miss")
 	
 	$Stats/Label.visible = Rhythia.show_stats

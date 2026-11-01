@@ -25,6 +25,7 @@ func _ready():
 	add_child(draw)
 
 func _process(delta):
+	if zooming: return
 	t += delta
 	var on = game.get("passed") and !Rhythia.queue_active
 	glow = move_toward(glow, 1.0 if on else 0.0, delta / 0.8)
@@ -45,39 +46,61 @@ func _draw_glow():
 	for q in quads:
 		draw.draw_polygon(PoolVector2Array(q), PoolColorArray([edge, edge, clear, clear]))
 
-# freeze the last frame, pull back from it while fading to black; Game.end() yields on this
+# freeze the last frame, pull back from it while fading to black; Game.end() yields on this.
+# The tree is paused by then, so the picture on screen doesn't change: it is drawn again each
+# frame through a screen-reading shader (zoom + fade) instead of being read back from the GPU
+# (perf: get_data() on the screen stalled for 35-50 ms the moment a map was passed).
+const ZOOM_SHADER = """shader_type canvas_item;
+uniform float zoom = 1.0; // 1 = full size; smaller pulls the picture back toward the centre
+uniform float fade = 0.0; // 0..1 to black
+void fragment() {
+	vec2 uv = (SCREEN_UV - vec2(0.5)) / zoom + vec2(0.5);
+	vec3 c = vec3(0.0);
+	if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) c = textureLod(SCREEN_TEXTURE, uv, 0.0).rgb;
+	COLOR = vec4(mix(c, vec3(0.0), fade), 1.0);
+}"""
+var zooming:bool = false
+
+# One material for the whole session, its shader compiled while a map loads (warm): this engine
+# build compiles a shader on the frame it is first drawn (~0.1 s), which would land on the pass.
+static func zoom_material() -> ShaderMaterial:
+	if Engine.has_meta("rr_pass_zoom"): return Engine.get_meta("rr_pass_zoom")
+	var m = ShaderMaterial.new()
+	m.shader = Shader.new()
+	m.shader.code = ZOOM_SHADER
+	Engine.set_meta("rr_pass_zoom", m)
+	return m
+
+# draws the zoom shader once, in a 2 px square that shows the screen unchanged (songload calls this
+# while the loading card is up; once per session)
+static func warm(parent:Node):
+	if Engine.has_meta("rr_pass_zoom_warm"): return
+	Engine.set_meta("rr_pass_zoom_warm", true)
+	var r = ColorRect.new()
+	r.rect_size = Vector2(2, 2)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	r.material = zoom_material()
+	r.material.set_shader_param("zoom", 1.0)
+	r.material.set_shader_param("fade", 0.0)
+	parent.add_child(r)
+	parent.get_tree().create_timer(0.5).connect("timeout", r, "queue_free")
+
 func zoom_in():
-	var img = get_viewport().get_texture().get_data()
-	img.flip_y()
-	var tex = ImageTexture.new()
-	tex.create_from_image(img, 0)
-	var shot = TextureRect.new()
-	shot.texture = tex
-	shot.expand = true
+	zooming = true # (the edge glow holds still: it is part of the frozen picture)
+	var shot = ColorRect.new()
 	shot.anchor_right = 1
 	shot.anchor_bottom = 1
 	shot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var black = ColorRect.new()
-	black.color = Color(0, 0, 0, 0)
-	black.anchor_right = 1
-	black.anchor_bottom = 1
-	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var under = ColorRect.new() # (black around the shrinking frame)
-	under.color = Color(0, 0, 0)
-	under.anchor_right = 1
-	under.anchor_bottom = 1
-	under.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(under)
+	shot.material = zoom_material()
+	shot.material.set_shader_param("zoom", 1.0)
+	shot.material.set_shader_param("fade", 0.0)
 	add_child(shot)
-	add_child(black)
 	yield(get_tree(), "idle_frame") # sizes settle
-	shot.rect_pivot_offset = shot.rect_size / 2
 	var k = 0.0
 	while k < 1.0:
 		yield(get_tree(), "idle_frame")
 		k = min(1.0, k + get_process_delta_time() / ZOOM_TIME)
 		var e = 1.0 - pow(1.0 - k, 3) # (eases out: a smooth pull back from the grid)
-		var z = 1.0 - 0.18 * e
-		shot.rect_scale = Vector2(z, z)
 		var f = clamp((k - 0.3) / 0.7, 0.0, 1.0)
-		black.color.a = f * f * (3.0 - 2.0 * f)
+		shot.material.set_shader_param("zoom", 1.0 - 0.18 * e)
+		shot.material.set_shader_param("fade", f * f * (3.0 - 2.0 * f))

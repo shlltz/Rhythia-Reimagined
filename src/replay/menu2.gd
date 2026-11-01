@@ -84,6 +84,9 @@ func _ready():
 	# Alt + wheel volume overlay: one instance on the root, survives scene changes
 	if !get_tree().root.has_node("VolumeOverlay"):
 		get_tree().root.call_deferred("add_child", load("res://mods/replay/VolumeOverlay.gd").new())
+	# FPS counter (top-right, every screen): one instance on the root too
+	if !get_tree().root.has_node("FpsCounter"):
+		get_tree().root.call_deferred("add_child", load("res://mods/replay/FpsCounter.gd").new())
 	# touch screens: drag-to-scroll for the settings page, replay list and other scroll areas
 	if OS.has_touchscreen_ui_hint() and !get_tree().root.has_node("TouchScroll"):
 		get_tree().root.call_deferred("add_child", load("res://mods/replay/TouchScroll.gd").new())

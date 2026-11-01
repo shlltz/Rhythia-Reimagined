@@ -113,7 +113,9 @@ WHAT YOU GET
               bigger settings page
   Language    Vietnamese (pick "Tieng Viet" in the language menu, in place of Polish)
   Discord     status shows "Playing Glitchia"
-  FPS         small performance tweaks (visuals unchanged); Customize > Device has a low-end
+  FPS         FPS counter in the top-right corner (off: Customize > Interface); faster runs (HUD
+              redrawn only when it changes, no render-thread stalls on hits) and quicker map picks
+              with a long play history (visuals unchanged); Customize > Device has a low-end
               profile (with RESTORE)
   Updates     portable version: Customize > Storage checks GitHub for a new release; updates are
               signed and checked before they're installed, and ROLL BACK undoes one
