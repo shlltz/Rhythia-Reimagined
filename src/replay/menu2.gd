@@ -517,19 +517,28 @@ func _update_parallax(delta):
 	var main = $Main
 	if main_margins.empty():
 		main_margins = [main.margin_left, main.margin_top, main.margin_right, main.margin_bottom]
-	# perf: the page moves in whole pixels and only when that changes. Moving it is a relayout of the
-	# whole map list (every frame while the mouse moved: 1,260 -> 136 fps on the map list)
-	var ui = (-parallax * PARALLAX_UI).round()
-	var key = [ui, size]
-	if key == ui_applied: return _parallax_bg(size)
-	ui_applied = key
+	# perf: the page is laid out only when the screen size changes; the parallax then only moves it
+	# (rect_position keeps its size, so the containers inside don't sort again). Setting the margins
+	# every frame relaid out the whole map list (1,260 -> 136 fps on the map list while the mouse moved).
+	var ui = -parallax * PARALLAX_UI
+	if ui_applied != size:
+		ui_applied = size
+		_layout_main(main, size)
+	var pos = main_base + ui
+	if main.rect_position.distance_squared_to(pos) > 0.0004: main.rect_position = pos # (settled: no move, ~0.7 ms a frame)
+	_parallax_bg(size)
+
+# where Main sits without parallax, and its size / scale
+var main_base:Vector2 = Vector2.ZERO
+func _layout_main(main:Control, size:Vector2):
 	var full = main.anchor_left == 0 and main.anchor_top == 0 and main.anchor_right == 1 and main.anchor_bottom == 1
 	if !full: # (not the layout the scaling below assumes)
-		main.margin_left = main_margins[0] + ui.x
-		main.margin_right = main_margins[2] + ui.x
-		main.margin_top = main_margins[1] + ui.y
-		main.margin_bottom = main_margins[3] + ui.y
-		return _parallax_bg(size)
+		main.margin_left = main_margins[0]
+		main.margin_right = main_margins[2]
+		main.margin_top = main_margins[1]
+		main.margin_bottom = main_margins[3]
+		main_base = main.rect_position
+		return
 	# short windows: the pages shrink (the map page was laid out for ~900 px and ran under the
 	# visualizer at 720p); the page starts right of the sidebar (it sat under it)
 	var k = clamp(size.y / PAGE_H, 0.7, 1.0)
@@ -540,15 +549,15 @@ func _update_parallax(delta):
 	var h = size.y - main_margins[1] + main_margins[3]
 	main.rect_pivot_offset = Vector2.ZERO
 	main.rect_scale = Vector2(k, k)
-	main.margin_left = left + ui.x
-	main.margin_top = main_margins[1] + ui.y
+	main.margin_left = left
+	main.margin_top = main_margins[1]
 	main.margin_right = main.margin_left + w / k - size.x
 	main.margin_bottom = main.margin_top + h / k - size.y
-	_parallax_bg(size)
+	main_base = main.rect_position
 
 const PAGE_H = 900.0
 var page_scale:float = 1.0
-var ui_applied = null # (page offset + screen size last laid out)
+var ui_applied = null # (the screen size Main was last laid out for)
 
 func _parallax_bg(size:Vector2):
 	var bg = -parallax * PARALLAX_BG
