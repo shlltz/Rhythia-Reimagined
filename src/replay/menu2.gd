@@ -517,7 +517,12 @@ func _update_parallax(delta):
 	var main = $Main
 	if main_margins.empty():
 		main_margins = [main.margin_left, main.margin_top, main.margin_right, main.margin_bottom]
-	var ui = -parallax * PARALLAX_UI
+	# perf: the page moves in whole pixels and only when that changes. Moving it is a relayout of the
+	# whole map list (every frame while the mouse moved: 1,260 -> 136 fps on the map list)
+	var ui = (-parallax * PARALLAX_UI).round()
+	var key = [ui, size]
+	if key == ui_applied: return _parallax_bg(size)
+	ui_applied = key
 	var full = main.anchor_left == 0 and main.anchor_top == 0 and main.anchor_right == 1 and main.anchor_bottom == 1
 	if !full: # (not the layout the scaling below assumes)
 		main.margin_left = main_margins[0] + ui.x
@@ -543,6 +548,7 @@ func _update_parallax(delta):
 
 const PAGE_H = 900.0
 var page_scale:float = 1.0
+var ui_applied = null # (page offset + screen size last laid out)
 
 func _parallax_bg(size:Vector2):
 	var bg = -parallax * PARALLAX_BG

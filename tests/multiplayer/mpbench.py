@@ -25,7 +25,8 @@ if len(sys.argv) > 4:
         if not part: continue
         if '=' in part and not os.path.exists(part): k, v = part.split('=', 1)
         else: k, v = insts[0][0], part
-        extra_maps.setdefault(k, []).extend([x for x in v.split('|') if x])
+        for x in [x for x in v.split('|') if x]: # (a folder = every map in it, e.g. a player's maps folder: copied, read only)
+            extra_maps.setdefault(k, []).extend(sorted(os.path.join(x, f) for f in os.listdir(x) if os.path.isfile(os.path.join(x, f))) if os.path.isdir(x) else [x])
 prof = m.load_profile()
 if kind != 'own':
     prof = {k: v for k, v in prof.items() if k not in m.TWEAKS_EXCLUDE}; prof['sharelook'] = {}
@@ -104,7 +105,12 @@ for name, script in insts:
             rj = json.load(open(rp, encoding='utf-8')) if os.path.exists(rp) else {}
             rj.update(update_check=False, player_name=rj.get('player_name') or 'Tester')
             open(os.path.join(ud, 'reimagined.json'), 'w').write(json.dumps(rj))
-            for extra in ('recent_plays.json', 'collections.json'): # (play history: the map page reads it)
+            if os.environ.get('RR_USER_ALL'): # (also every other small file / folder of the player's: custom background, menu music, cursor ...; not maps, replays, editor, logs)
+                for fn in os.listdir(src_ud):
+                    sp_, dp_ = os.path.join(src_ud, fn), os.path.join(ud, fn)
+                    if fn in ('maps', 'replays', 'editor', 'logs', 'settings.json', 'reimagined.json') or os.path.exists(dp_): continue
+                    (shutil.copytree if os.path.isdir(sp_) else shutil.copyfile)(sp_, dp_)
+            for extra in ('recent_plays.json', 'collections.json', 'star_ratings.json', 'map_bpm.json', 'map_cache.json'): # (play history: the map page reads it; star / BPM caches, so the menu isn't rating every map)
                 if os.path.exists(os.path.join(src_ud, extra)): shutil.copyfile(os.path.join(src_ud, extra), os.path.join(ud, extra))
     for mp in extra_maps.get(name, []):
         dst = os.path.join(ud, 'maps', os.path.basename(mp))

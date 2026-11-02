@@ -19,8 +19,9 @@ func wait(s):
 
 func _ready():
 	pause_mode = PAUSE_MODE_PROCESS
-	OS.window_fullscreen = false
-	OS.window_size = Vector2(1280, 720)
+	OS.window_fullscreen = OS.get_environment("RR_FULL") == "1" # (RR_FULL=1: fullscreen like a player)
+	var res = OS.get_environment("RR_RES").split("x") # (RR_RES=1920x1080: a player's screen size)
+	if !OS.window_fullscreen: OS.window_size = Vector2(int(res[0]), int(res[1])) if res.size() == 2 else Vector2(1280, 720)
 	OS.vsync_enabled = false
 	Engine.target_fps = 0
 	call_deferred("run")
