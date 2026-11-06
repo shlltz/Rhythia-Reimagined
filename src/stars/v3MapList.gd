@@ -984,8 +984,20 @@ func firstload():
 	ready = true
 	Rhythia.connect("favorite_songs_changed",self,"reload_to_current_page")
 	Rhythia.connect("download_done",self,"update_clouds")
+	if Online.has_signal("rr_online_maps_added"): Online.connect("rr_online_maps_added", self, "_rr_online_added")
 	get_viewport().connect("size_changed",self,"handle_window_resize")
 	Rhythia.emit_signal("map_list_ready")
+
+# the online maps came in after the menu was up (fixes/Online.gd loads them in the background): sort
+# them into the difficulty lists and rebuild the page, staying on the selected map
+func _rr_online_added():
+	prepare_songs()
+	build_list()
+	if Rhythia.selected_song:
+		var i = disp.find(Rhythia.selected_song)
+		if i >= 0: cur_map = i
+	load_pg()
+	emit_signal("search_updated")
 
 func update_clouds():
 	for btn in btns:
