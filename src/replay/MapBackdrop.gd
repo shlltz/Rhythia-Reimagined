@@ -124,15 +124,46 @@ func _process(delta):
 	front.modulate.a = e
 	back.modulate.a = 1.0 - e if back.texture else 0.0
 	vis = move_toward(vis, 1.0 if on and front.texture != null else 0.0, delta / 0.3)
-	modulate.a = vis
+	_beat(menu, delta)
+	var lit = 1.0 + 0.55 * punch
+	modulate = Color(lit, lit, lit, vis)
 	# a slow drift with the menu's mouse parallax, slightly zoomed so the edges never show
 	var size = rect_size
 	var px = menu.get("parallax") if "parallax" in menu else Vector2.ZERO
-	var s = 1.0 * zoom # (zoomed out: the whole cover)
+	var s = zoom * (1.0 + 0.012 * energy + 0.035 * punch) # (zoomed out: the whole cover; bumps on the beat)
 	for r in [front, back]:
 		r.rect_pivot_offset = size / 2
 		r.rect_scale = Vector2(s, s)
 		r.rect_position = -px * 12.0
+
+# Beat (personal build, like the title screen's): the music's low end from the menu's visualizer;
+# energy = a smooth level, punch = a kick (low end rising past its recent average), decays fast.
+# The cover zooms a little and brightens with them. Off in other looks and while it's hidden.
+var energy:float = 0.0
+var punch:float = 0.0
+var bass_avg:float = 0.0
+var bass_prev:float = 0.0
+var beat_cd:float = 0.0
+var beat_on = null
+
+func _beat(menu:Node, delta:float):
+	if beat_on == null:
+		beat_on = mono()
+	punch *= exp(-delta * 7.0)
+	energy = max(0.0, energy - delta * 2.0)
+	var v = menu.get_node_or_null("AudioVisualizer")
+	if !beat_on or vis <= 0.0 or !v or v.mags.size() < 8 or v.ceiling <= 0: return
+	var raw = 0.0
+	for i in 4: raw += v.mags[i]
+	raw = raw / 4.0 / v.ceiling
+	energy = max(energy, clamp(raw, 0.0, 1.0))
+	var rising = raw - bass_prev
+	bass_prev = raw
+	bass_avg = lerp(bass_avg, raw, 1.0 - exp(-delta * 3.0))
+	beat_cd -= delta
+	if raw > bass_avg * 1.12 and rising > 0.0 and raw > 0.15 and beat_cd <= 0.0:
+		punch = 1.0
+		beat_cd = 0.14
 
 # a map start from the map page (RunMapButton): the loading screen carries on the cover, the zoom
 # (menu2 keeps rr_launch.scale / offset current while it zooms) and the preview that was playing

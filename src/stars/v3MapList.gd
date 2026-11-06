@@ -199,6 +199,9 @@ func load_pg(select_cur:bool=false):
 			if btn.song != Rhythia.selected_song:
 				Rhythia.select_song(btn.song)
 				btn.get_node("Select").pressed = true
+	glide_y = 0.0
+	if slide_t < 0.0: _rr_retarget(true)
+	_rr_place()
 
 func append_filtering_favorites(to:Array,from:Array):
 	for s in from:
@@ -770,36 +773,91 @@ func pg_up():
 
 	$Press.play()
 	var out:Panel = btns.pop_back()
-	tween_out(out) # freed in tween
+	_rr_drop(out)
 
 	var btn:Panel = make_song_button(prev_index())
 	btns.insert(0,btn) # BEFORE
-	add_child(btn) 
+	add_child(btn)
 	move_child(btn, 0) # to top
 	btn.visible = true
-	tween_in(btn)
-	
+	_rr_step(-1)
+
 func pg_down():
 	if cur_map >= disp.size() - 1: return
 	cur_map += 1
-	
+
 	$Press.play()
 	var out:Panel = btns.pop_front()
-	tween_out(out) # freed in tween
+	_rr_drop(out)
 	var btn:Panel = make_song_button(next_index())
 	btns.append(btn) # AFTER
 	add_child(btn) # at end
 	btn.visible = true
-	tween_in(btn)
+	_rr_step(1)
 
-func tween_out(p:Panel):
-	var tween = get_tree().create_tween()
-	tween.tween_property(p, "rect_min_size", Vector2(size_x - (page_size/2) * 10, 0), 0.2)
-	tween.tween_callback(p, "queue_free")
+# Scrolling (Rhythia-reimagined perf): stock grew the new card and shrank the old one over 0.2 s and
+# eased every card's width - a min-size change on every frame, so the whole list laid itself out
+# again each frame it moved (1,285 -> 227 fps while scrolling). Now a step swaps the cards at their
+# final sizes (one layout) and the motion is drawn by moving things instead: the list slides by
+# rect_position (glide_y, one card's height per step) and each card's left edge eases to its new
+# width by an x offset (meta rr_dx) put back after every layout (sort_children).
+var glide_y:float = 0.0
+var glide_base = null              # the list's own y (without the glide)
+var glide_set:float = 0.0          # y last written (anything else = moved by the game: new base)
+const GLIDE_RATE = 20.0
+const GLIDE_MAX = 2.5              # cards: further behind than this when steps come fast, it catches up
 
-func tween_in(p:Panel):
-	var tween = get_tree().create_tween()
-	tween.tween_property(p, "rect_min_size", Vector2(size_x - (next_index() - prev_index())/2 * 10, 90), 0.2)
+func _rr_drop(p:Control):
+	if !is_instance_valid(p): return
+	remove_child(p)
+	p.queue_free()
+
+func _rr_step(dir:int):
+	var h = 90.0 + get_constant("separation")
+	glide_y = clamp(glide_y + dir * h, -h * GLIDE_MAX, h * GLIDE_MAX)
+	_rr_retarget(false)
+	_rr_place()
+
+# card widths for the current page (the curve of the list); keep = cards still look as wide as before
+func _rr_retarget(snap:bool):
+	if !is_connected("sort_children", self, "_rr_sorted"): connect("sort_children", self, "_rr_sorted")
+	var mid = (next_index() - prev_index()) / 2
+	for i in btns.size():
+		var b = btns[i]
+		if !is_instance_valid(b): continue
+		var w = size_x - 15 * abs(mid - i)
+		var dx = 0.0 if snap else float(b.get_meta("rr_dx")) if b.has_meta("rr_dx") else 0.0
+		dx += w - b.rect_min_size.x if !snap else 0.0
+		b.set_meta("rr_dx", dx)
+		b.rect_min_size = Vector2(w, 90)
+
+func _rr_sorted():
+	for b in btns:
+		if is_instance_valid(b) and b.get_parent() == self: b.set_meta("rr_nx", b.rect_position.x)
+	_rr_place()
+
+func _rr_place():
+	if glide_base == null or abs(rect_position.y - glide_set) > 0.01: glide_base = rect_position.y
+	glide_set = glide_base + glide_y
+	if abs(rect_position.y - glide_set) > 0.001: rect_position.y = glide_set
+	for b in btns:
+		if !is_instance_valid(b) or !b.has_meta("rr_nx"): continue
+		var x = b.get_meta("rr_nx") + (b.get_meta("rr_dx") if b.has_meta("rr_dx") else 0.0)
+		if abs(b.rect_position.x - x) > 0.01: b.rect_position.x = x
+
+func _rr_glide(delta:float):
+	var a = 1.0 - exp(-delta * GLIDE_RATE)
+	var moving = abs(glide_y) > 0.0
+	glide_y = lerp(glide_y, 0.0, a)
+	if abs(glide_y) < 0.25: glide_y = 0.0
+	for b in btns:
+		if !is_instance_valid(b) or !b.has_meta("rr_dx"): continue
+		var dx = b.get_meta("rr_dx")
+		if dx == 0.0: continue
+		moving = true
+		dx = lerp(dx, 0.0, a)
+		b.set_meta("rr_dx", 0.0 if abs(dx) < 0.2 else dx)
+	if moving: _rr_place()
 
 # Card widths (the curve of the list). Stock started a new tween for every card on every physics
 # frame (~1000 tweens a second); now each width just eases toward its target every frame - same
@@ -849,7 +907,7 @@ func tween_length(delta:float = 0.016):
 			_slide_prep(b)
 			b.modulate.a = clamp(k * 1.6, 0.0, 1.0)
 		else:
-			nw = lerp(b.rect_min_size.x, w, a)
+			continue # (widths: _rr_retarget / _rr_glide)
 		if abs(nw - b.rect_min_size.x) > 0.2: b.rect_min_size.x = nw
 	if sliding and done:
 		slide_t = -1.0
@@ -860,7 +918,9 @@ func tween_length(delta:float = 0.016):
 				b.modulate.a = 1.0
 				var n = b.get_node_or_null("Name")
 				if n is Label and b.has_meta("rr_wrap"): n.autowrap = b.get_meta("rr_wrap")
-	
+		_rr_retarget(true)
+	if !sliding: _rr_glide(delta)
+
 
 func _input(ev:InputEvent):
 	if is_visible_in_tree() and ev is InputEventMouseButton and ev.is_pressed():

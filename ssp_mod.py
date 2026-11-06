@@ -499,7 +499,7 @@ def boot_fixes(pk):
     pk.write(CUTSCENE, b'[gd_scene load_steps=2 format=2]\n\n[ext_resource path="res://mods/fixes/NoCutscene.gd" type="Script" id=1]\n\n[node name="NoCutscene" type="Node"]\nscript = ExtResource( 1 )\n')
     init_add_node(pk, 'res://mods/fixes/Boot.gd', 'RRBoot', 91)
 def intro(pk):
-    for f in ('Intro.gd', 'intro.mp3'):
+    for f in ('Intro.gd',): # (personal build: line-drawn intro, its thump is made in code - no intro.mp3 voice)
         if f in OPTIONAL_ASSETS and not os.path.exists(os.path.join(SRC, 'intro', f)):
             print('  (no intro/%s - not in the public repo: the intro plays without sound)' % f); continue
         pk.add('res://mods/intro/' + f, src('intro', f))

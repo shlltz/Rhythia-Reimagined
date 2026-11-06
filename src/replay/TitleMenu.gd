@@ -311,6 +311,30 @@ static func _measure_tilt(tex:Texture) -> float:
 			best_deg = k
 	return best_deg
 
+# half the icon's square side (turned upright by deg), as a fraction of half the texture: the size
+# of the personal build's square spectrum frame
+var logo_side:float = 0.62
+static func _measure_side(tex:Texture, deg:float) -> float:
+	if !tex: return 0.62
+	var img:Image = tex.get_data()
+	if !img: return 0.62
+	img = img.duplicate()
+	if img.is_compressed(): img.decompress()
+	img.resize(48, 48, Image.INTERPOLATE_BILINEAR)
+	img.lock()
+	var lo = Vector2(1e9, 1e9)
+	var hi = Vector2(-1e9, -1e9)
+	var a = deg2rad(deg)
+	for y in 48:
+		for x in 48:
+			if img.get_pixel(x, y).a > 0.5:
+				var q = Vector2(x - 23.5, y - 23.5).rotated(a)
+				lo = Vector2(min(lo.x, q.x), min(lo.y, q.y))
+				hi = Vector2(max(hi.x, q.x), max(hi.y, q.y))
+	img.unlock()
+	if hi.x < lo.x: return 0.62
+	return clamp(max(hi.x - lo.x, hi.y - lo.y) / 48.0, 0.3, 1.0)
+
 # ------------------------------------------------------------------ open / close
 func show_menu():
 	closing = false
@@ -370,6 +394,7 @@ func apply_skin():
 	var t = R.skin_tex("logo")
 	logo.texture = t if t else load("res://assets/images/branding/icon.png")
 	tilt = _measure_tilt(logo.texture)
+	logo_side = _measure_side(logo.texture, tilt)
 	# personal build: the stock (pink) logo turns white; a custom logo keeps its own colours
 	logo.material = Look.grey_material() if Look.mono() and !t else null
 
@@ -509,6 +534,9 @@ func _process(delta):
 func _draw_ring():
 	var vis = menu.get_node_or_null("AudioVisualizer")
 	if !vis or vis.mags.size() < 8 or vis.ceiling <= 0: return
+	if mono:
+		_draw_square(vis)
+		return
 	var r = LOGO / 2 * logo.rect_scale.x * 0.92
 	var n = 90
 	var col = Color(1, 1, 1, 0.22 + 0.3 * punch)
@@ -522,6 +550,43 @@ func _draw_ring():
 		c.a *= 1.0 - open_amt * clamp((d.x - 0.15) * 2.5, 0.0, 1.0)
 		if c.a > 0.005: segs.append([d * r, d * (r + 6 + v * 70 * (1.0 + 0.35 * punch)), 4.0, c])
 	R.bars(ring, segs) # (one draw call for all the bars)
+
+# personal build: the spectrum as a square frame around the logo, turned with the logo's square
+# (upright once the cards are open): bars out of all four edges, and corner brackets that kick
+# outward on each beat and spring back
+const SQ_BARS = 18                 # bars per edge
+func _draw_square(vis):
+	var half = LOGO / 2 * logo.rect_scale.x * logo_side * 1.08
+	var rot = deg2rad(logo.rect_rotation - tilt)
+	var x_axis = Vector2(cos(rot), sin(rot))
+	var y_axis = Vector2(-x_axis.y, x_axis.x)
+	var bands = min(vis.mags.size(), 64)
+	var segs = []
+	var base = Color(1, 1, 1, 0.24 + 0.3 * punch)
+	var j = 0
+	for e in 4:
+		var out = [x_axis, y_axis, -x_axis, -y_axis][e] # (edge normal)
+		var along = [y_axis, -x_axis, -y_axis, x_axis][e]
+		var c = base # bars facing the (see-through) cards fade out while they're open
+		c.a *= 1.0 - open_amt * clamp((out.x - 0.15) * 2.5, 0.0, 1.0)
+		for i in SQ_BARS:
+			var u = (i + 0.5) / SQ_BARS * 2.0 - 1.0
+			var k = int(float(j % (SQ_BARS * 2)) / (SQ_BARS * 2) * bands)
+			j += 1
+			if c.a <= 0.005: continue
+			var v = clamp(vis.mags[k] / vis.ceiling, 0.0, 1.0)
+			var p = out * (half + 8.0) + along * u * half * 0.9
+			segs.append([p, p + out * (4.0 + v * 64.0 * (1.0 + 0.35 * punch)), 4.0, c])
+	# corner brackets, pushed out by the kick
+	var g = half + 22.0 + 26.0 * punch
+	var arm = 30.0 + 10.0 * punch
+	var bc = Color(1, 1, 1, 0.5 + 0.45 * punch)
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			var corner = x_axis * sx * g + y_axis * sy * g
+			segs.append([corner, corner - x_axis * sx * arm, 2.0, bc])
+			segs.append([corner, corner - y_axis * sy * arm, 2.0, bc])
+	R.bars(ring, segs) # (one draw call for all of it)
 
 func _draw_glow():
 	if punch < 0.01 and beat < 0.01: return
