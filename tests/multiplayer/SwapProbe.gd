@@ -30,6 +30,8 @@ func lum() -> float:
 	return sum / (32 * 18)
 # frames until done(), returns [secs, darkest, slowest ms]
 var tag = ""
+var in_ms = []
+var last_in = 0
 var shot_n = 0
 func watch(cond:String, limit:float):
 	var t0 = OS.get_ticks_usec()
@@ -42,10 +44,14 @@ func watch(cond:String, limit:float):
 		var now = OS.get_ticks_usec()
 		slow = max(slow, (now - last) / 1000.0)
 		last = now
-		dark = min(dark, lum())
 		var el = (now - t0) / 1e6
 		var sw = get_tree().root.get_node_or_null("RRScreenSwap")
-		if OS.get_environment("RR_SHOTS") != "" and sw and (sw.t > 0.0 or sw.snap_t > 0.0) and shot_n < 40:
+		var ri = get_tree().root.get_node_or_null("RRRunIntro")
+		var snapping = ri and ri.blur and ri.blur.visible
+		if snapping: in_ms.append((now - last_in) / 1000.0)
+		if !snapping or in_ms.size() % 4 == 0: dark = min(dark, lum()) # (a screen readback costs ~9 ms: rarely while timing the snap)
+		last_in = OS.get_ticks_usec()
+		if OS.get_environment("RR_SHOTS") != "" and ((sw and (sw.t > 0.0 or sw.snap_t > 0.0)) or snapping) and shot_n < 40:
 			var img = get_tree().root.get_texture().get_data()
 			img.flip_y()
 			img.resize(640, 360)
@@ -83,8 +89,11 @@ func run():
 	yield(wait(2.0), "completed")
 	# 2. a run -> results
 	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	tag = "in"
 	r = yield(watch("at_run", 12.0), "completed")
 	check(at_run(), "loading card -> run in %.2f s (darkest %.3f, slowest %.0f ms)" % r)
+	in_ms.sort()
+	check(in_ms.size() > 3, "map start snaps in: %d frames, median %.2f ms, worst %.2f ms" % [in_ms.size(), in_ms[in_ms.size() / 2] if in_ms.size() else 0.0, in_ms[-1] if in_ms.size() else 0.0])
 	yield(wait(3.0), "completed")
 	# 3. retry (pause menu path)
 	load("res://mods/replay/RunIntro.gd").start(get_tree(), 0.5)

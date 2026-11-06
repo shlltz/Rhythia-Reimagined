@@ -112,6 +112,7 @@ func finish():
 	screen.set_status("Ready")
 	if ResourceLoader.exists("res://mods/hype/PassFx.gd"): load("res://mods/hype/PassFx.gd").warm(self) # (its end-of-map shader, compiled now)
 	load("res://mods/replay/ScreenSwap.gd").warm(screen) # (and the fail snap's blur)
+	load("res://mods/replay/RunIntro.gd").warm(screen) # (and the map start's snap + its sound)
 	if result is PackedScene and OS.can_use_threads():
 		build_thread = Thread.new()
 		if build_thread.start(self, "_build", result) != OK: build_thread = null
@@ -228,7 +229,7 @@ func _process(delta):
 		switched = true
 		if build_thread: built = build_thread.wait_to_finish()
 		build_thread = null
-		if ResourceLoader.exists("res://mods/replay/RunIntro.gd"): load("res://mods/replay/RunIntro.gd").start(get_tree())
+		if ResourceLoader.exists("res://mods/replay/RunIntro.gd"): load("res://mods/replay/RunIntro.gd").start(get_tree(), 0.85, true) # (snaps in)
 		if built is Node:
 			var tree = get_tree()
 			tree.root.add_child(built)
