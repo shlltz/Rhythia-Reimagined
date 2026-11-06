@@ -39,6 +39,7 @@ func _ready():
 	scroll = menu.get_node_or_null("Main/Settings/S")
 	tabs = menu.get_node_or_null("Main/Settings/S/F/TabContainer")
 	if !settings or !scroll or !tabs: return
+	load("res://mods/replay/SmoothScroll.gd").attach(scroll) # (eased wheel scrolling)
 	if ResourceLoader.exists("res://uitheme.tres") and !settings.theme: settings.theme = load("res://uitheme.tres")
 
 	var card = Panel.new()

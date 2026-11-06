@@ -641,6 +641,7 @@ func _build_skin():
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.scroll_horizontal_enabled = false
 	p.add_child(sc)
+	load("res://mods/replay/SmoothScroll.gd").attach(sc)
 	skin_list = VBoxContainer.new()
 	skin_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	skin_list.add_constant_override("separation", 8)
@@ -782,6 +783,7 @@ func _build_collections():
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.scroll_horizontal_enabled = false
 	p.add_child(sc)
+	load("res://mods/replay/SmoothScroll.gd").attach(sc)
 	coll_list = VBoxContainer.new()
 	coll_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	coll_list.add_constant_override("separation", 6)
@@ -944,6 +946,7 @@ func _build_interface():
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.scroll_horizontal_enabled = false
 	p.add_child(sc)
+	load("res://mods/replay/SmoothScroll.gd").attach(sc)
 	p = VBoxContainer.new()
 	p.rect_min_size.x = content.rect_size.x - 20
 	p.add_constant_override("separation", 10)
@@ -1105,6 +1108,7 @@ func _build_gen():
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.scroll_horizontal_enabled = false
 	p.add_child(sc)
+	load("res://mods/replay/SmoothScroll.gd").attach(sc)
 	gen_w.list = VBoxContainer.new()
 	gen_w.list.add_constant_override("separation", 10)
 	gen_w.list.rect_min_size.x = content.rect_size.x - 16
