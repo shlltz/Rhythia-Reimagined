@@ -735,6 +735,7 @@ func make_song_button(id:int=-1):
 	rbtn.connect("button_down", self, "check_drag_on")
 	rbtn.connect("button_up", self, "check_drag_off")
 	rbtn.keep_pressed_outside = true
+	rbtn.connect("gui_input", self, "_rr_card_input", [map, id])
 	if map == Rhythia.selected_song:
 		btn.get_node("Select").pressed = true
 	# star rating badge (Steam Rhythia formula) under the map name, osu!-style
@@ -753,6 +754,34 @@ func make_song_button(id:int=-1):
 		fx.set_script(MapFocus)
 		btn.add_child(fx)
 	return btn
+
+# right-click a card: that map's actions menu (the map page's ⋯ button: delete, copy, collections,
+# export...) opens at the cursor, the map selected first so the menu acts on it
+func _rr_card_input(ev, map, i:int):
+	if !(ev is InputEventMouseButton) or ev.button_index != BUTTON_RIGHT or !ev.pressed: return
+	get_tree().set_input_as_handled()
+	if map != Rhythia.selected_song:
+		scroll_to(i)
+		Rhythia.select_song(map)
+	var results = get_viewport().get_node_or_null("Menu/Main/Maps/Results")
+	if results: results.visible = true
+	call_deferred("_rr_card_menu", get_global_mouse_position())
+
+func _rr_card_menu(at:Vector2):
+	var page = get_viewport().get_node_or_null("Menu/Main/Maps/Results/Results")
+	var a = null # (the ⋯ MenuButton; the page also has an old "Actions" box)
+	var stack = [page] if page else []
+	while !stack.empty() and a == null:
+		var n = stack.pop_back()
+		if n is MenuButton and n.name == "Actions": a = n
+		for c in n.get_children(): stack.append(c)
+	if a == null or a.disabled: return
+	var pm = a.get_popup()
+	pm.rect_position = at
+	pm.popup()
+	# keep it on screen
+	var vs = get_viewport_rect().size
+	pm.rect_position = Vector2(min(at.x, vs.x - pm.rect_size.x - 4), min(at.y, vs.y - pm.rect_size.y - 4))
 
 const StarBadge = preload("res://mods/stars/StarBadge.gd")
 const MapFocus = preload("res://mods/stars/MapFocus.gd")
