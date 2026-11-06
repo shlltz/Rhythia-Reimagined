@@ -1,7 +1,8 @@
 extends Control
 # Fail screen (personal build; the look of ULTRAKILL's death screen, own lines). The run plays on under
-# it (nothing is judged - NoteManager; the cursor still moves): the screen darkens, the camera tilts
-# over and sinks, the music goes muffled, and a fast diagnostic log types out in VCR mono - warnings
+# it (nothing is judged - NoteManager; the cursor still moves): the camera tilts over and sinks, the
+# view goes red (red-mono, then into a deep red; scanlines) with glitch bursts that come faster as it
+# goes (slices shifted, RGB split - over the text too), the music goes muffled, and a fast diagnostic log types out in VCR mono - warnings
 # orange, errors red - each line with the map start's thump (louder on the orange ones), with the
 # run's own numbers. ScreenSwap ("fail") owns it: when the log ends or a click / Esc skips it, the run
 # stops, the red card flashes, the eyelids close, the results fade in from black; R restarts instead.
@@ -13,9 +14,36 @@ const HOLD = 0.35      # s on the last line
 const ORANGE = Color(1.0, 0.56, 0.12)
 const RED = Color(1.0, 0.13, 0.1)
 const PALE = Color(1.0, 0.93, 0.78)
-const ROLL = 24.0      # degrees the camera tilts over by the end
+const ROLL = 30.0      # degrees the camera tilts over by the end
 const SINK = 0.35      # how far it sinks
-const DIM0 = 0.3       # the dark over the run at the start (-> 1 at the end)
+const TINT_SHADER = """shader_type canvas_item;
+uniform float k = 0.0;
+void fragment() {
+	vec3 col = texture(SCREEN_TEXTURE, SCREEN_UV).rgb;
+	float l = dot(col, vec3(0.3, 0.59, 0.11));
+	vec3 red = vec3(min(1.0, l * 1.7 + 0.06), l * 0.12, l * 0.1);
+	col = mix(col, red, smoothstep(0.0, 0.35, k));
+	col = mix(col, vec3(0.4, 0.0, 0.02), smoothstep(0.3, 1.0, k) * 0.92);
+	col *= 0.9 + 0.1 * sin(FRAGCOORD.y * 1.6);
+	COLOR = vec4(col, 1.0);
+}"""
+const GLITCH_SHADER = """shader_type canvas_item;
+uniform float amount = 0.0;
+uniform float seed = 0.0;
+float h(float x) { return fract(sin(x * 12.9898 + seed * 78.233) * 43758.5453); }
+void fragment() {
+	vec2 uv = SCREEN_UV;
+	float band = floor(uv.y * (14.0 + 30.0 * h(1.0)));
+	float on = step(1.0 - amount * 0.7, h(band));
+	uv.x += on * (h(band + 7.0) - 0.5) * 0.16 * amount;
+	float ca = 0.012 * amount * (0.5 + on);
+	vec3 col;
+	col.r = texture(SCREEN_TEXTURE, uv + vec2(ca, 0.0)).r;
+	col.g = texture(SCREEN_TEXTURE, uv).g;
+	col.b = texture(SCREEN_TEXTURE, uv - vec2(ca, 0.0)).b;
+	col += on * step(0.93, h(band + 3.0)) * 0.25 * amount; // a bright torn line now and then
+	COLOR = vec4(col, 1.0);
+}"""
 const MUFFLE_BUS = "RRDeathMuffle"
 
 var lines = []
@@ -30,7 +58,11 @@ var stopped:bool = false
 var players = []
 var pidx:int = 0
 var rng = RandomNumberGenerator.new()
-var black:ColorRect
+var tint:ColorRect
+var glitch:ColorRect
+var glitch_copy:BackBufferCopy
+var burst:float = 0.0    # s left of the current glitch burst
+var burst_amt:float = 0.0
 var cam = null          # the run's camera (tilted while the log runs)
 var applied:float = 0.0 # (tilt put on it this frame, taken off again first thing next frame)
 var music:AudioStreamPlayer = null
@@ -49,12 +81,8 @@ func _ready():
 	pause_mode = PAUSE_MODE_PROCESS
 	process_priority = 1000 # (after the run's own camera code: the tilt goes on last)
 	rng.randomize()
-	black = ColorRect.new()
-	black.color = Color(0, 0, 0, DIM0)
-	black.anchor_right = 1
-	black.anchor_bottom = 1
-	black.mouse_filter = MOUSE_FILTER_IGNORE
-	add_child(black)
+	tint = _shader_rect(TINT_SHADER)
+	add_child(tint)
 	var pos = max(float(Rhythia.song_end_position), 0.0) # (a fail in the lead-in: 0:00)
 	var length = max(float(Rhythia.song_end_length), 1.0)
 	var miss = int(Rhythia.song_end_misses)
@@ -114,6 +142,13 @@ func _ready():
 		l.mouse_filter = MOUSE_FILTER_IGNORE
 		add_child(l)
 		labels.append(l)
+	glitch_copy = BackBufferCopy.new() # (the glitch reads the screen with the text on it)
+	glitch_copy.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	add_child(glitch_copy)
+	glitch_copy.visible = false
+	glitch = _shader_rect(GLITCH_SHADER)
+	glitch.visible = false
+	add_child(glitch)
 	var bus = "Effects" if AudioServer.get_bus_index("Effects") >= 0 else "Master"
 	for i in 10:
 		var p = AudioStreamPlayer.new()
@@ -123,6 +158,40 @@ func _ready():
 	var sc = get_tree().current_scene
 	cam = sc.get_node_or_null("Camera") if sc else null
 	_muffle_start(sc)
+
+static func _shader_rect(code:String) -> ColorRect:
+	var r = ColorRect.new()
+	r.anchor_right = 1
+	r.anchor_bottom = 1
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sh = Shader.new()
+	sh.code = code
+	r.material = ShaderMaterial.new()
+	r.material.shader = sh
+	return r
+
+# on the loading card: the log's font drawn once at its size and its shaders compiled (no hitch on the fail)
+static func warm(parent:Node):
+	for code in [TINT_SHADER, GLITCH_SHADER]:
+		var r = _shader_rect(code)
+		r.anchor_right = 0
+		r.anchor_bottom = 0
+		r.rect_size = Vector2(2, 2)
+		r.modulate.a = 0.01
+		parent.add_child(r)
+		parent.get_tree().create_timer(0.3).connect("timeout", r, "queue_free")
+	var vs = parent.get_viewport().get_visible_rect().size
+	var f = DynamicFont.new()
+	if ResourceLoader.exists(FONT): f.font_data = load(FONT)
+	f.size = int(clamp(vs.y * 0.0235, 12, 40))
+	var l = Label.new()
+	l.text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.!-/()%' "
+	l.add_font_override("font", f)
+	l.add_constant_override("shadow_as_outline", 1)
+	l.add_color_override("font_color_shadow", Color(1, 0.5, 0.2, 0.35))
+	l.modulate.a = 0.01
+	parent.add_child(l)
+	parent.get_tree().create_timer(0.3).connect("timeout", l, "queue_free")
 
 # ------------------------------------------------------------------ the run under it
 func _muffle_start(sc):
@@ -171,6 +240,8 @@ func _exit_tree():
 func stop():
 	stopped = true
 	for p in players: p.stop()
+	glitch.visible = false
+	glitch_copy.visible = false
 
 # ------------------------------------------------------------------ the log
 func _line_sound(orange:bool):
@@ -187,7 +258,8 @@ func _process(delta):
 	if !stopped:
 		t += dt
 		var k = min(t / total, 1.0)
-		black.color.a = DIM0 + (1.0 - DIM0) * k * k
+		tint.material.set_shader_param("k", k)
+		_glitch(dt, k)
 		_muffle(min(t / 0.5, 1.0))
 		if music: music.volume_db = music_db - 12.0 * k
 		if end_t >= 0.0:
@@ -203,6 +275,21 @@ func _process(delta):
 		for l in labels: # a faint CRT flicker
 			if l.visible: l.modulate.a = 0.9 + 0.1 * rng.randf()
 	_tilt(min(t / total, 1.0))
+
+# glitch bursts: more often as the log goes on
+func _glitch(dt:float, k:float):
+	if burst > 0.0:
+		burst -= dt
+		glitch.material.set_shader_param("seed", rng.randf() * 100.0)
+		glitch.material.set_shader_param("amount", burst_amt)
+		if burst <= 0.0:
+			glitch.visible = false
+			glitch_copy.visible = false # (no screen copy between bursts)
+	elif rng.randf() < dt * (2.5 + 9.0 * k):
+		burst = rng.randf_range(0.04, 0.12)
+		burst_amt = rng.randf_range(0.35, 1.0) * (0.6 + 0.4 * k)
+		glitch.visible = true
+		glitch_copy.visible = true
 
 func _next():
 	if cur >= 0: labels[cur].visible_characters = -1

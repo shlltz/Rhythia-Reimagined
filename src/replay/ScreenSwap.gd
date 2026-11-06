@@ -15,8 +15,10 @@ extends CanvasLayer
 const TIME = {"back": 0.42, "forward": 0.55}
 const MAX_HOLD = 6.0   # (still loading: the frozen frame waits for the next screen)
 const MAX_SETTLE = 0.6 # s it waits for smooth frames once the next screen is up (a slow machine never gets them)
-const FLASH = 0.15     # s the red card flashes
-const CLOSE = 0.14     # s the eyelids take to close
+const FLASH = 0.1      # s the red card flashes
+const CLOSE = 0.12     # s the eyelids take to close
+const EYE_W = 0.62     # the eye's half width (x screen width): an almond, the corners shut at once
+const RIM = 0.05       # the lids' shaded rim (x screen height)
 const OPEN = 0.35      # s to open on the restarted run
 const FADE_IN = 0.4    # s the results take to come out of the black
 
@@ -133,12 +135,15 @@ func _fail_step(delta):
 		dead.rect_scale = Vector2(z, z)
 		if lid_t < FLASH: return
 		var k = min((lid_t - FLASH) / CLOSE, 1.0)
-		eye = 1.0 - k * k
+		eye = 0.55 * pow(1.0 - k, 2) # (starts already on the red band, closes fast)
 		lids.update()
 		if k < 1.0: return
 		dead.visible = false
 		dlog.untilt()
 		dlog.visible = false
+		var sc0 = get_tree().current_scene # the run's deferred bookkeeping (recent plays, ...): now, behind the shut eyes
+		var game0 = sc0.get_node_or_null("Game") if sc0 else null
+		if game0 and game0.has_method("rr_finish_books"): game0.rr_finish_books()
 		stage = 2
 		held = 0.0
 		steady = 0
@@ -169,7 +174,7 @@ func _fail_step(delta):
 			var game = sc.get_node_or_null("Game") if sc else null
 			if game and "black_fade" in game: game.black_fade = 0.0
 			var k = min(lid_t / OPEN, 1.0)
-			eye = 1.0 - pow(1.0 - k, 3)
+			eye = 1.7 * (1.0 - pow(1.0 - k, 3)) # (past 1: the almond opens beyond the corners)
 			lids.update()
 			if k >= 1.0: queue_free()
 		else: # the results come out of the black
@@ -177,21 +182,34 @@ func _fail_step(delta):
 			lids.modulate.a = 1.0 - k * k * (3.0 - 2.0 * k)
 			if k >= 1.0: queue_free()
 
-# two lids meeting along an eye-shaped edge (eye = 1: open past the screen edges)
+# two lids meeting along an almond edge, each with a shaded dark-red rim (eye = 1: no lids)
 func _draw_lids():
-	if eye >= 1.0: return
+	if mode == "": return
 	var s = lids.rect_size
 	var top = PoolVector2Array([Vector2(0, 0), Vector2(s.x, 0)])
 	var bot = PoolVector2Array([Vector2(0, s.y), Vector2(s.x, s.y)])
-	var n = 40
+	var te = []
+	var be = []
+	var n = 48
 	for i in range(n, -1, -1):
 		var x = s.x * i / n
-		var u = (x - s.x / 2) / (s.x * 0.75)
-		var h = s.y * 0.75 * eye * sqrt(max(0.0, 1.0 - u * u))
-		top.append(Vector2(x, max(0.0, s.y / 2 - h)))
-		bot.append(Vector2(x, min(s.y, s.y / 2 + h)))
+		var u = (x - s.x / 2) / (s.x * EYE_W)
+		var h = s.y * 0.62 * eye * sqrt(max(0.0, 1.0 - u * u))
+		var yt = max(0.0, s.y / 2 - h)
+		var yb = min(s.y, s.y / 2 + h)
+		top.append(Vector2(x, yt))
+		bot.append(Vector2(x, yb))
+		te.append(Vector2(x, yt))
+		be.append(Vector2(x, yb))
 	lids.draw_colored_polygon(top, Color(0, 0, 0))
 	lids.draw_colored_polygon(bot, Color(0, 0, 0))
+	var rim = s.y * RIM * (0.4 + 0.6 * eye)
+	var c0 = Color(0.18, 0.0, 0.0, 0.9)
+	var c1 = Color(0.18, 0.0, 0.0, 0.0)
+	for i in range(te.size() - 1):
+		if te[i].y >= be[i].y and te[i + 1].y >= be[i + 1].y: continue # (shut there)
+		lids.draw_polygon(PoolVector2Array([te[i], te[i + 1], te[i + 1] + Vector2(0, rim), te[i] + Vector2(0, rim)]), PoolColorArray([c0, c0, c1, c1]))
+		lids.draw_polygon(PoolVector2Array([be[i], be[i + 1], be[i + 1] - Vector2(0, rim), be[i] - Vector2(0, rim)]), PoolColorArray([c0, c0, c1, c1]))
 
 func _process(delta):
 	if is_instance_valid(dlog): dlog.untilt() # (the death log's tilt off the camera before anything else runs)

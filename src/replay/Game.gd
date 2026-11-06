@@ -145,12 +145,20 @@ func end(end_type:int):
 			resume = resume_offer, resumed = has_meta("rr_resumed"), # retry from the fail point (Checkpoint.gd)
 			replay_path = Globals.p("user://replays/%s.sspre" % Rhythia.replay.id) if Rhythia.record_replays and !Rhythia.replaying and Rhythia.replay and Rhythia.replay.id != "" and !has_meta("rr_resumed") else ""})
 		if CK: CK.restore_offset() # (back to the player's own Start From)
-		if ResourceLoader.exists("res://mods/stars/RecentPlays.gd") and !mp_run: # (session runs aren't personal plays)
-			load("res://mods/stars/RecentPlays.gd").record(Rhythia.get_meta("last_run"))
-		if $Spawn.rr_track and !Rhythia.replaying: $Spawn.rr_track.finish(Rhythia.selected_song, end_type, speed_multi) # (settings generator)
+		rr_books = [Rhythia.get_meta("last_run"), end_type, mp_run]
+		if !death_log: rr_finish_books() # (a live fail plays on under the death log: its ~40 ms of bookkeeping would hitch it - done once the eyes are shut, ScreenSwap)
 		var fx = get_node_or_null("PassFx")
 		if fx and end_type == Globals.END_PASS: yield(fx.zoom_in(), "completed") # personal pass effect (hype mod)
 		load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "fail" if death_log else "forward") # (no black: the run's last frame flies past into the results)
+
+var rr_books = null
+func rr_finish_books():
+	if rr_books == null: return
+	var b = rr_books
+	rr_books = null
+	if ResourceLoader.exists("res://mods/stars/RecentPlays.gd") and !b[2]: # (session runs aren't personal plays)
+		load("res://mods/stars/RecentPlays.gd").record(b[0])
+	if $Spawn.rr_track and !Rhythia.replaying: $Spawn.rr_track.finish(Rhythia.selected_song, b[1], speed_multi) # (settings generator)
 
 func update_timer(ms:float,canSkip:bool=false):
 	# (perf: the minutes / seconds worked out here were never used; the HUD formats its own)

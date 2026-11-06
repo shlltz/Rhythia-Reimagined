@@ -82,6 +82,8 @@ func shoot_for(secs:float):
 		shot_n += 1
 		yield(get_tree().create_timer(0.25, true), "timeout")
 
+func _by1(a, b): return a[1] < b[1]
+
 func run():
 	Directory.new().remove(OUT)
 	yield(wait(6.0), "completed")
@@ -93,6 +95,8 @@ func run():
 	get_tree().change_scene("res://scenes/loaders/songload.tscn")
 	yield(wait(0.7), "completed")
 	var e = InputEventKey.new(); e.scancode = KEY_ESCAPE; e.pressed = true
+	Input.parse_input_event(e)
+	e = InputEventKey.new(); e.scancode = KEY_ESCAPE; e.pressed = false # (released: a held Esc pauses the next run at its start)
 	Input.parse_input_event(e)
 	tag = "esc"
 	var r = yield(watch("at_menu", 8.0), "completed")
@@ -121,11 +125,43 @@ func run():
 	yield(wait(2.0), "completed")
 	get_tree().change_scene("res://scenes/loaders/songload.tscn")
 	r = yield(watch("at_run", 12.0), "completed")
-	yield(wait(4.0), "completed")
 	Rhythia.restart_on_death = false
 	g = get_tree().current_scene.get_node("Game")
 	var cam = get_tree().current_scene.get_node("Camera")
-	g.end(Globals.END_FAIL)
+	var end_cost = 0.0
+	var ue = OS.get_ticks_usec()
+	var lastf = ue
+	var slow_before = 0.0
+	while !g.ending and OS.get_ticks_usec() - ue < 4000000: # (the bot may fail by itself: that frame is timed)
+		yield(get_tree(), "idle_frame")
+		var now = OS.get_ticks_usec()
+		end_cost = (now - lastf) / 1000.0
+		if !g.ending: slow_before = max(slow_before, end_cost)
+		lastf = now
+	if !g.ending:
+		var u1 = OS.get_ticks_usec()
+		g.end(Globals.END_FAIL)
+		end_cost = (OS.get_ticks_usec() - u1) / 1000.0
+	out("  slowest run frame before the fail %.2f ms" % slow_before)
+	var sp = g.get_node("Spawn")
+	out("  at the fail: ms=%.0f pause_state=%s music_started=%s tree_paused=%s focus=%s" % [sp.ms, sp.pause_state, sp.music_started, get_tree().paused, OS.is_window_focused()])
+	var first = []
+	var ul = OS.get_ticks_usec()
+	for i in 6:
+		yield(get_tree(), "idle_frame")
+		first.append(stepify((OS.get_ticks_usec() - ul) / 1000.0, 0.01))
+		ul = OS.get_ticks_usec()
+	out("  fail frame (incl. end()) %.2f ms, frames after: %s" % [end_cost, str(first)])
+	var tm = []
+	for m in Engine.get_meta_list():
+		if m.begins_with("rr_tm_"): tm.append([m, Engine.get_meta(m)])
+	tm.sort_custom(self, "_by1")
+	var prev = tm[0][1] if tm.size() else 0
+	var parts = ""
+	for x in tm:
+		parts += "%s +%.1f  " % [x[0].substr(6), (x[1] - prev) / 1000.0]
+		prev = x[1]
+	out("  end() parts: " + parts)
 	var hm = [g.hits, g.misses]
 	var ms0 = g.get_node("Spawn").ms
 	var log_ms = []
@@ -140,13 +176,13 @@ func run():
 	check(sw and sw.dlog and sw.dlog.cur > 8, "fail: death log typing (line %d at 0.8 s), frames median %.2f ms, worst %.2f ms" % [sw.dlog.cur if sw and sw.dlog else -1, log_ms[log_ms.size() / 2], log_ms[-1]])
 	check(!get_tree().paused and g.get_node("Spawn").ms > ms0 + 500 and [g.hits, g.misses] == hm, "the run plays on under it (ms %.0f -> %.0f), nothing judged (hits/misses %s -> %s)" % [ms0, g.get_node("Spawn").ms, str(hm), str([g.hits, g.misses])])
 	check(abs(roll) > 3.0, "camera tilting: %.1f deg at 0.8 s" % roll)
-	if OS.get_environment("RR_SHOTS") != "": yield(shoot_for(0.2), "completed")
+	if OS.get_environment("RR_SHOTS") != "": yield(shoot_for(0.6), "completed")
 	var k = InputEventKey.new(); k.scancode = KEY_R; k.pressed = true
 	Input.parse_input_event(k)
 	if OS.get_environment("RR_SHOTS") != "":
 		for i in 14:
 			yield(get_tree(), "idle_frame")
-			if i in [1, 3, 6]:
+			if i in [1, 2, 3, 4, 5]:
 				var img = get_tree().root.get_texture().get_data()
 				img.flip_y(); img.resize(640, 360)
 				img.save_png("@@OUT@@/dead_%02d.png" % i)

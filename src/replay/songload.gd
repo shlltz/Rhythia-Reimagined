@@ -112,6 +112,12 @@ func finish():
 	screen.set_status("Ready")
 	if ResourceLoader.exists("res://mods/hype/PassFx.gd"): load("res://mods/hype/PassFx.gd").warm(self) # (its end-of-map shader, compiled now)
 	load("res://mods/replay/RunIntro.gd").warm(screen) # (and the map start's snap + its sound)
+	load("res://mods/replay/DeathLog.gd").warm(screen) # (and the death log's font)
+	if !Engine.has_meta("rr_keep_scripts"): # what a fail / the end of a run loads, kept parsed (a reparse on the fail frame hitched it)
+		var keep = []
+		for p in ["res://mods/replay/ResultsScreen.gd", "res://mods/replay/ScreenSwap.gd", "res://mods/replay/DeathLog.gd", "res://mods/replay/Checkpoint.gd", "res://mods/stars/RecentPlays.gd"]:
+			if ResourceLoader.exists(p): keep.append(load(p))
+		Engine.set_meta("rr_keep_scripts", keep)
 	if result is PackedScene and OS.can_use_threads():
 		build_thread = Thread.new()
 		if build_thread.start(self, "_build", result) != OK: build_thread = null
