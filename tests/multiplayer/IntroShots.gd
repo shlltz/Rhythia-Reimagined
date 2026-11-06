@@ -5,7 +5,7 @@ func _ready():
 	call_deferred("run")
 
 func run():
-	yield(get_tree().create_timer(8.0), "timeout")
+	yield(get_tree().create_timer(20.0), "timeout")
 	var f = File.new()
 	f.open("@@OUT@@/intro.txt", File.WRITE)
 	var mb = AudioServer.get_bus_index("Music")

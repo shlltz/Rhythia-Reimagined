@@ -1,39 +1,47 @@
 extends CanvasLayer
-# Startup intro (personal build): your RHYTHIA wordmark (logo.webp), in monochrome, writes itself up
-# like osu!lazer's logo animation - a thin white pen runs along its outlines from left to right, the
-# letters fill in right behind it with a bright leading edge, the pen lines fade into the finished logo.
-# The camera eases in the whole time (osu!-style zoom), punches on the impact (a thump made in code, a
-# faint flash) when REIMAGINED lands under the logo, and at the end flies forward through the logo
-# into the menu. No voice. Injected into init.tscn; moves itself to the root so it survives the
-# init -> menu scene change. Click / any key skips to the fly-through.
-# Cheap: the pen's ~700 segments are built once into one triangle array; the drawing is two shader
-# uniforms per frame (pen and fill progress), not geometry rebuilt every frame.
+# Startup intro (personal build), after osu!lazer's: while the game loads, a thin line pulses on black;
+# once the menu is up and running smoothly, your RHYTHIA wordmark (logo.webp, monochrome) writes itself -
+# a white pen runs along its outlines left to right, the letters fill in behind it with a bright edge,
+# the camera easing in - REIMAGINED lands under it with a thump, then the camera rushes through the
+# wordmark, the square Rhythia logo zooms down into place drawing itself on (exactly where the title
+# screen's logo sits) and a white flash hands over to the title menu, the music starting with it.
+# No voice. Injected into init.tscn; moves itself to the root so it survives the init -> menu scene
+# change. Click / any key skips to the flash.
+# Smooth: the animation only starts once loading is over (the startup frames are long), its clock
+# never jumps more than 1/30 s, the outline trace and the thump are made before it starts, and the
+# pen's ~900 segments are built once (the drawing is shader uniforms).
 
 const PATH = "res://mods/intro/Intro.gd"
 const WORDMARK = "res://mods/intro/logo.webp"
 const ICON = "res://assets/images/branding/icon.png"
-const MENU = "res://scenes/menu/menu2.tscn"
+const MENUS = ["res://scenes/menu/menu2.tscn", "res://scenes/menu/oldmenu2.tscn"]
 const Ring = preload("res://mods/replay/Ring.gd")
 const SUB = "REIMAGINED"
 
 const STROKES = 900              # outline segments
-const SAMPLE_W = 340             # the logo's alpha is traced at this width
+const SAMPLE_W = 340             # the wordmark's alpha is traced at this width
 const LOGO_W = 0.6               # of the screen's width (at most LOGO_HMAX of its height)
 const LOGO_HMAX = 0.34
 const LOGO_Y = 0.45              # centre, of the screen's height
 const SLANT = 0.12               # the pen runs left to right, a little ahead at the top
+const ICON_PX = 520.0            # = TitleMenu.LOGO: the square logo lands at the title logo's size
 
-# timeline (s)
-const PEN_AT = 0.15
-const PEN_TIME = 1.0
-const FILL_AT = 0.45
-const FILL_TIME = 1.0
-const TEXT_AT = 1.35
-const TEXT_TIME = 0.45
-const IMPACT_AT = 1.8
-const DONE_AT = 2.3
-const OUTRO = 0.55
-const MAX_WAIT = 6.0             # never cover the screen longer than this past DONE_AT
+# timeline (s, from the start of the animation)
+const PEN_AT = 0.1
+const PEN_TIME = 0.9
+const FILL_AT = 0.35
+const FILL_TIME = 0.9
+const TEXT_AT = 1.15
+const TEXT_TIME = 0.4
+const IMPACT_AT = 1.55
+const RUSH_AT = 2.05             # the camera rushes through the wordmark
+const RUSH_TIME = 0.45
+const ICON_AT = 2.2              # the square logo zooms down into place, drawing itself on
+const ICON_TIME = 0.55
+const FLASH_AT = 2.85            # white flash: the title menu takes over
+const FLASH_TIME = 0.8
+const SETTLE_FRAMES = 12         # smooth frames in a row (< 30 ms) before it starts
+const MAX_LOAD_WAIT = 15.0       # start anyway after this long
 
 # pen: vertex colour r = where along the sweep the segment is (0..1), a = the soft edge
 const PEN_SHADER = """shader_type canvas_item;
@@ -46,18 +54,21 @@ void fragment() {
 	COLOR = vec4(vec3(g), COLOR.a * step(0.0, behind) * fade);
 }"""
 
-# the logo: monochrome (luminance lifted, so the fill reads white and the dark outline stays dark),
-# revealed by the same sweep with a soft edge and a white glow riding it
+# a logo in monochrome (luminance lifted: fills read white, dark outlines stay dark), revealed by a
+# sweep with a soft edge and a white glow riding it. mode 0: left to right (slanted), 1: clockwise
+# around the centre from the top
 const FILL_SHADER = """shader_type canvas_item;
 uniform float progress = 0.0;
 uniform float slant = 0.12;
 uniform float lift = 1.45;
-uniform float grey = 1.0;
+uniform float mode = 0.0;
+const float TAU = 6.28318530718;
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
 	float l = clamp(dot(c.rgb, vec3(0.299, 0.587, 0.114)) * lift, 0.0, 1.0);
-	c.rgb = mix(c.rgb, vec3(l), grey);
-	float a = (UV.x + slant * (1.0 - UV.y)) / (1.0 + slant);
+	c.rgb = vec3(l);
+	vec2 d = UV - 0.5;
+	float a = mode < 0.5 ? (UV.x + slant * (1.0 - UV.y)) / (1.0 + slant) : fract(atan(d.x, -d.y) / TAU + 1.0);
 	float p = progress * 1.03;
 	float shown = 1.0 - smoothstep(p - 0.025, p, a);
 	float edge = exp(-abs(p - a) * 40.0) * step(a, p) * (1.0 - smoothstep(0.97, 1.03, progress));
@@ -66,19 +77,23 @@ void fragment() {
 }"""
 
 var bg:ColorRect
-var stage:Control                # everything that zooms: logo, pen, subtitle
+var loader:Control               # the loading line
+var stage:Control                # the wordmark part: logo, pen, subtitle (zooms as one)
 var logo:TextureRect
 var pen:Control
-var text:Control                 # subtitle + rule (redrawn while they animate)
-var flash_rect:ColorRect
+var text:Control
+var icon:TextureRect
+var flash:ColorRect
 var font:Font
-var player:AudioStreamPlayer
+var thump:AudioStreamPlayer
 var tex:Texture
 var aspect:float = 3.0
-var segs:Array = []              # [a, b, k] in 0..1 of the logo
-var clock:float = -1.0
+var segs:Array = []              # [a, b, k] in 0..1 of the wordmark
+var clock:float = -1.0           # animation time; < 0 = still loading
+var wait_t:float = 0.0
+var smooth:int = 0
 var impacted:bool = false
-var outro_t:float = -1.0
+var flashed:bool = false
 var music_bus:int = -1
 var music_was_muted:bool = false
 
@@ -98,9 +113,12 @@ func _ready():
 	bg = ColorRect.new()
 	bg.color = Color(0, 0, 0, 1)
 	_full(bg, self)
+	loader = Control.new()
+	_full(loader, self)
+	loader.connect("draw", self, "_draw_loader")
 	stage = Control.new()
 	_full(stage, self)
-	tex = _logo_texture()
+	tex = _wordmark()
 	if tex: aspect = tex.get_width() / max(1.0, float(tex.get_height()))
 	logo = TextureRect.new()
 	logo.texture = tex
@@ -120,22 +138,31 @@ func _ready():
 	if ResourceLoader.exists("res://uitheme.tres"): text.theme = load("res://uitheme.tres")
 	font = text.get_font("font", "Label")
 	if font is DynamicFont: font = font.duplicate()
-	flash_rect = ColorRect.new()
-	flash_rect.color = Color(1, 1, 1, 0)
-	_full(flash_rect, self)
+	icon = TextureRect.new()
+	icon.texture = load(ICON)
+	icon.expand = true
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.material = _mat(FILL_SHADER)
+	icon.material.set_shader_param("mode", 1.0)
+	icon.material.set_shader_param("lift", 1.9) # (= the title logo's grey material)
+	icon.visible = false
+	add_child(icon)
+	flash = ColorRect.new()
+	flash.color = Color(1, 1, 1, 0)
+	_full(flash, self)
+	stage.visible = false
 	_trace()
-
-	player = AudioStreamPlayer.new()
-	player.stream = _thump()
-	player.bus = "Effects" if AudioServer.get_bus_index("Effects") >= 0 else "Master"
-	player.volume_db = -4.0
-	add_child(player)
-	# keep the menu music quiet until the logo leaves
+	thump = AudioStreamPlayer.new()
+	thump.stream = _thump()
+	thump.bus = "Effects" if AudioServer.get_bus_index("Effects") >= 0 else "Master"
+	thump.volume_db = -4.0
+	add_child(thump)
+	# keep the menu music quiet until the flash
 	music_bus = AudioServer.get_bus_index("Music")
 	if music_bus >= 0:
 		music_was_muted = AudioServer.is_bus_mute(music_bus)
 		AudioServer.set_bus_mute(music_bus, true)
-	_apply()
 	layout()
 	get_tree().root.connect("size_changed", self, "layout")
 
@@ -152,7 +179,7 @@ func _mat(code:String) -> ShaderMaterial:
 	return m
 
 # the wordmark (raw .webp in the pck, decoded here); the stock icon if it's missing
-func _logo_texture():
+func _wordmark():
 	var f = File.new()
 	if f.open(WORDMARK, File.READ) == OK:
 		var img = Image.new()
@@ -164,11 +191,11 @@ func _logo_texture():
 			return t
 	return load(ICON)
 
-# where the pen passes a point (0..1 of the logo): left to right, a little ahead at the top
+# where the pen passes a point (0..1 of the wordmark): left to right, a little ahead at the top
 static func _sweep(p:Vector2) -> float:
 	return (p.x + SLANT * (1.0 - p.y)) / (1.0 + SLANT)
 
-# the logo's outlines: opaque pixels with a clear neighbour, picked evenly, each joined to another
+# the wordmark's outlines: opaque pixels with a clear neighbour, picked evenly, each joined to another
 # outline pixel 3-6 px away into a short segment (a grid of 8 px cells finds that neighbour)
 func _trace():
 	if !tex: return
@@ -218,52 +245,53 @@ func logo_rect() -> Rect2:
 	return Rect2(Vector2((vs.x - w) / 2, vs.y * LOGO_Y - h / 2), Vector2(w, h))
 
 func layout():
+	var vs = get_viewport().get_visible_rect().size
 	var r = logo_rect()
 	logo.rect_position = r.position
 	logo.rect_size = r.size
 	stage.rect_pivot_offset = r.position + r.size / 2
+	icon.rect_size = Vector2(ICON_PX, ICON_PX)
+	icon.rect_position = (vs - icon.rect_size) / 2
+	icon.rect_pivot_offset = icon.rect_size / 2
 	if font is DynamicFont: font.size = int(max(12, round(r.size.y * 0.16)))
 	pen.update()
 	text.update()
-
-func wants_fullscreen() -> bool:
-	var f = File.new()
-	if f.open(Globals.p("user://settings.json"), File.READ) != OK: return false
-	var r = JSON.parse(f.get_as_text())
-	f.close()
-	return r.error == OK and r.result is Dictionary and r.result.get("window_fullscreen", false) == true
-
-var wait_fs:bool = false
-var wait_t:float = 0.0
-var settle:int = 0
+	loader.update()
 
 func _process(delta):
 	if clock < 0:
-		# the game opens windowed and switches to fullscreen ~1-2 s later: start after that,
-		# so the drawing isn't lost in the switch (and init has applied the volume settings)
-		if wait_t == 0.0: wait_fs = wants_fullscreen()
-		wait_t += delta
-		if wait_fs and !OS.window_fullscreen and wait_t < 4.0: return
-		settle += 1
-		if settle < 3: return
-		clock = 0.0
-		layout()
+		_wait(delta)
 		return
-	clock += delta
+	clock += min(delta, 1.0 / 30.0) # (a late frame slows it a little instead of jumping ahead)
 	if !impacted and clock >= IMPACT_AT:
 		impacted = true
-		if player.stream: player.play()
-	if outro_t < 0:
-		var sc = get_tree().current_scene
-		var menu_up = sc and sc.filename in [MENU, "res://scenes/menu/oldmenu2.tscn"]
-		if clock >= DONE_AT and (menu_up or clock >= DONE_AT + MAX_WAIT): begin_outro()
-	else:
-		outro_t += delta
-		if outro_t >= OUTRO + 0.1:
-			finish()
-			return
+		thump.play()
+	if !flashed and clock >= FLASH_AT: _flash()
+	if clock >= FLASH_AT + FLASH_TIME:
+		finish()
+		return
 	_apply()
-	if clock < DONE_AT + 0.3: text.update()
+	if clock < RUSH_AT + 0.1: text.update()
+
+# loading: a thin line pulses until the menu is up and frames come smoothly
+func _wait(delta):
+	wait_t += delta
+	loader.update()
+	var sc = get_tree().current_scene
+	var up = sc != null and sc.filename in MENUS
+	smooth = smooth + 1 if up and delta < 0.03 else 0
+	if smooth >= SETTLE_FRAMES or wait_t >= MAX_LOAD_WAIT:
+		clock = 0.0
+		loader.visible = false
+		stage.visible = true
+		layout()
+		_apply()
+
+func _draw_loader():
+	var vs = loader.rect_size
+	var k = 0.5 + 0.5 * sin(wait_t * 4.0)
+	var half = 18.0 + 22.0 * k
+	loader.draw_rect(Rect2(vs.x / 2 - half, vs.y / 2 - 1, half * 2, 2), Color(1, 1, 1, 0.25 + 0.35 * k))
 
 static func _c01(v:float) -> float:
 	return clamp(v, 0.0, 1.0)
@@ -271,7 +299,6 @@ static func _c01(v:float) -> float:
 static func _cubic_out(p:float) -> float:
 	return 1.0 - pow(1.0 - clamp(p, 0.0, 1.0), 3)
 
-# pen and fill: quick in the middle, easing at both ends (a hand writing it)
 static func _sine_io(p:float) -> float:
 	return 0.5 - 0.5 * cos(PI * clamp(p, 0.0, 1.0))
 
@@ -279,23 +306,40 @@ static func _hit(now:float, at:float, decay:float) -> float:
 	return exp(-(now - at) * decay) if now >= at else 0.0
 
 func _apply():
-	var t = max(clock, 0.0)
+	var t = clock
 	pen.material.set_shader_param("progress", _sine_io((t - PEN_AT) / PEN_TIME))
-	pen.material.set_shader_param("fade", 1.0 - _c01((t - FILL_AT - FILL_TIME) / 0.35))
+	pen.material.set_shader_param("fade", 1.0 - _c01((t - FILL_AT - FILL_TIME) / 0.3))
 	logo.material.set_shader_param("progress", _sine_io((t - FILL_AT) / FILL_TIME))
-	# camera: eases in from further back the whole time, punches on the impact, breathes while
-	# waiting; the outro flies forward through the logo while everything fades to the menu
-	var s = 0.86 + 0.14 * _cubic_out(t / (IMPACT_AT + 0.2)) + 0.012 * max(0.0, t - IMPACT_AT - 0.2)
-	s += 0.05 * _hit(t, IMPACT_AT, 7.0)
-	var a = 1.0
-	if outro_t >= 0:
-		var o = _c01(outro_t / OUTRO)
-		s *= 1.0 + 1.6 * o * o * o
-		a = 1.0 - o * o
-		bg.color.a = 1.0 - _c01((outro_t - 0.15) / OUTRO)
+	# camera: eases in while it writes, punches on the impact, then rushes through the wordmark
+	var s = 0.86 + 0.14 * _cubic_out(t / (IMPACT_AT + 0.2)) + 0.05 * _hit(t, IMPACT_AT, 7.0)
+	var rush = _c01((t - RUSH_AT) / RUSH_TIME)
+	s *= 1.0 + 3.0 * rush * rush * rush
 	stage.rect_scale = Vector2(s, s)
-	stage.modulate.a = a
-	flash_rect.color.a = 0.07 * _hit(t, IMPACT_AT, 6.0)
+	stage.modulate.a = 1.0 - rush * rush
+	# the square logo: zooms down from big into its place on the title screen, drawing on clockwise
+	var ik = _c01((t - ICON_AT) / ICON_TIME)
+	icon.visible = ik > 0.0 and !flashed
+	if icon.visible:
+		var e = _cubic_out(ik)
+		var si = 1.0 + 1.4 * (1.0 - e) + 0.04 * _hit(t, ICON_AT + ICON_TIME, 9.0)
+		icon.rect_scale = Vector2(si, si)
+		icon.modulate.a = _c01(ik * 3.0)
+		icon.material.set_shader_param("progress", _sine_io(ik / 0.8))
+	# flash: full white the moment the title menu takes over, then fading
+	if flashed: flash.color.a = pow(1.0 - _c01((t - FLASH_AT) / FLASH_TIME), 2)
+
+# white flash: the black and the intro's logo go, the title menu (same logo, same place) is under it
+func _flash():
+	flashed = true
+	clock = max(clock, FLASH_AT)
+	bg.visible = false
+	stage.visible = false
+	loader.visible = false
+	icon.visible = false
+	flash.color.a = 1.0
+	if music_bus >= 0: AudioServer.set_bus_mute(music_bus, music_was_muted)
+	thump.volume_db = -9.0
+	thump.play()
 
 # the pen's segments, built once (colour r = sweep position; the shader reveals them)
 func _draw_pen():
@@ -307,7 +351,7 @@ func _draw_pen():
 		arr.append([r.position + sg[0] * r.size, r.position + sg[1] * r.size, w, Color(sg[2], 0, 0, 1)])
 	Ring.bars(pen, arr)
 
-# REIMAGINED tracking in under the logo along a rule that draws out from the middle
+# REIMAGINED tracking in under the wordmark along a rule that draws out from the middle
 func _draw_text():
 	if clock < 0: return
 	var r = logo_rect()
@@ -335,31 +379,19 @@ func _draw_text():
 		var a = 0.85 * (1.0 - 0.5 * _c01((t - IMPACT_AT) / 0.4))
 		Ring.bars(text, [[Vector2(cx - half, ry), Vector2(cx + half, ry), 2.0, Color(1, 1, 1, a)]])
 
-func _skip():
-	if clock < 0: return
-	if clock < DONE_AT:
-		clock = DONE_AT
-		impacted = true
-		text.update()
-	begin_outro()
-
-func begin_outro():
-	if outro_t < 0:
-		outro_t = 0.0
-		if music_bus >= 0: AudioServer.set_bus_mute(music_bus, music_was_muted)
-
 func _input(ev):
-	if outro_t >= 0 or clock < 0.3: return
+	if flashed or clock < 0.3: return
 	if (ev is InputEventKey or ev is InputEventMouseButton) and ev.pressed:
-		_skip()
+		clock = FLASH_AT
+		_flash()
 
 func finish():
-	if music_bus >= 0 and outro_t < 0: AudioServer.set_bus_mute(music_bus, music_was_muted)
+	if music_bus >= 0 and !flashed: AudioServer.set_bus_mute(music_bus, music_was_muted)
 	queue_free()
 
 # never leave the music bus muted, however the intro goes away
 func _exit_tree():
-	if music_bus >= 0 and outro_t < 0: AudioServer.set_bus_mute(music_bus, music_was_muted)
+	if music_bus >= 0 and !flashed: AudioServer.set_bus_mute(music_bus, music_was_muted)
 
 # a short low thump, made on the fly (16-bit mono)
 static func _thump() -> AudioStreamSample:
