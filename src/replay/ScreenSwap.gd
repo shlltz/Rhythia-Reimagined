@@ -6,15 +6,17 @@ extends CanvasLayer
 #   "forward" - grows past the camera and fades (run -> results)
 #   "fail"    - a live fail (not replays / autoplay / multiplayer): cut to black, the death log
 #               (DeathLog.gd) types out over the stopped run; when it ends (or a key / click skips it)
-#               the results load under it and it fades. R restarts instead: the fail sound, eyelids
-#               close over the log, the run restarts behind them and they open on it.
+#               the results load under it and it fades. R restarts instead: the fail sound, a quick
+#               flash of a "you are dead" card (the square logo, black on red, between black bars),
+#               eyelids close over it, the run restarts behind them and they open on it.
 # Through menuload (the black loader between a run and the menu) its fades are skipped, so the menu
 # comes up as soon as it is loaded. Frees itself when done.
 
 const TIME = {"back": 0.42, "forward": 0.55, "fail": 0.3}
 const MAX_HOLD = 6.0   # (still loading: the frozen frame waits for the next screen)
 const MAX_SETTLE = 0.6 # s it waits for smooth frames once the next screen is up (a slow machine never gets them)
-const CLOSE = 0.2      # s the eyelids take to close (R)
+const FLASH = 0.15     # s the dead card flashes (R)
+const CLOSE = 0.14     # s the eyelids take to close
 const OPEN = 0.35      # s to open on the new run
 
 var shot:TextureRect = null
@@ -30,6 +32,7 @@ var lids:Control = null
 var eye:float = 1.0      # 1 open, 0 shut
 var retrying:int = 0     # 1 closing, 2 waiting for the new run, 3 opening
 var lid_t:float = 0.0
+var dead:Control = null
 
 static func go(tree:SceneTree, scene:String, style_:String = "back"):
 	var old = tree.root.get_node_or_null("RRScreenSwap")
@@ -76,6 +79,10 @@ func _ready():
 		lids.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		lids.connect("draw", self, "_draw_lids")
 		add_child(lids)
+		dead = _dead_card() # (built and drawn faintly while the log runs: its big glyphs ready for R)
+		dead.modulate.a = 0.004
+		add_child(dead)
+		move_child(dead, lids.get_index())
 
 func _is_from(sc) -> bool:
 	return from_sc != null and sc == from_sc.get_ref()
@@ -86,16 +93,24 @@ func retry():
 	retrying = 1
 	lid_t = 0.0
 	if Rhythia.fail_asp: Rhythia.fail_asp.play()
+	dead.modulate.a = 1.0
 	if Rhythia.has_meta("last_run"): Rhythia.remove_meta("last_run") # (no stale results on the next menu)
 
 func _retry_step(delta):
 	var dt = min(delta, 1.0 / 30.0)
 	lid_t += dt
 	if retrying == 1:
-		var k = min(lid_t / CLOSE, 1.0)
+		if dead and dead.modulate.a >= 1.0: # the card punches in (a slight zoom down to size)
+			var f = min(lid_t / FLASH, 1.0)
+			var z = 1.0 + 0.06 * (1.0 - f) * (1.0 - f)
+			dead.rect_pivot_offset = dead.rect_size / 2
+			dead.rect_scale = Vector2(z, z)
+		if lid_t < FLASH: return
+		var k = min((lid_t - FLASH) / CLOSE, 1.0)
 		eye = 1.0 - k * k
 		lids.update()
 		if k >= 1.0:
+			if dead: dead.visible = false
 			retrying = 2
 			steady = 0
 			settle = 0.0
@@ -189,3 +204,56 @@ func _process(delta):
 		dlog.modulate.a = a
 	if k >= 1.0:
 		queue_free()
+
+# black bars, a red band with the square logo in black, big white text (VCR mono)
+func _dead_card() -> Control:
+	var c = Control.new()
+	c.anchor_right = 1
+	c.anchor_bottom = 1
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var vs = get_viewport().get_visible_rect().size
+	var bg = ColorRect.new()
+	bg.color = Color(0, 0, 0)
+	bg.anchor_right = 1
+	bg.anchor_bottom = 1
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.add_child(bg)
+	var band = ColorRect.new()
+	band.color = Color(1.0, 0.02, 0.02)
+	band.rect_position = Vector2(0, vs.y * 0.185)
+	band.rect_size = Vector2(vs.x, vs.y * 0.64)
+	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.add_child(band)
+	var sk = load("res://mods/replay/Reimagined.gd").skin_tex("logo")
+	var tex = sk if sk else load("res://assets/images/branding/icon.png")
+	var logo = TextureRect.new()
+	logo.texture = tex
+	logo.expand = true
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.modulate = Color(0, 0, 0)
+	var ls = vs.y * 0.46
+	logo.rect_position = Vector2(vs.x / 2 - ls / 2, vs.y * 0.505 - ls / 2)
+	logo.rect_size = Vector2(ls, ls)
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.add_child(logo)
+	var font = DynamicFont.new()
+	var fp = load("res://mods/replay/DeathLog.gd").FONT
+	if ResourceLoader.exists(fp): font.font_data = load(fp)
+	font.size = int(vs.y * 0.12)
+	for row in [["[YOU ARE DEAD]", 0.0], ["Press [R] TO RESTART", vs.y * 0.825]]:
+		var size = int(vs.y * 0.12)
+		while size > 12 and font.get_string_size(row[0]).x > vs.x * 0.92: # (fits the width)
+			size -= 2
+			font.size = size
+		var l = Label.new()
+		l.text = row[0]
+		l.add_font_override("font", font.duplicate())
+		l.add_color_override("font_color", Color(1, 1, 1))
+		l.align = Label.ALIGN_CENTER
+		l.valign = Label.VALIGN_CENTER
+		l.rect_position = Vector2(0, row[1])
+		l.rect_size = Vector2(vs.x, vs.y * 0.18)
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		c.add_child(l)
+		font.size = int(vs.y * 0.12)
+	return c

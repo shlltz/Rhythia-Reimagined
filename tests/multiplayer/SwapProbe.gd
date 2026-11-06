@@ -137,6 +137,13 @@ func run():
 	if OS.get_environment("RR_SHOTS") != "": yield(shoot_for(1.6), "completed")
 	var k = InputEventKey.new(); k.scancode = KEY_R; k.pressed = true
 	Input.parse_input_event(k)
+	if OS.get_environment("RR_SHOTS") != "":
+		for i in 12:
+			yield(get_tree(), "idle_frame")
+			if i in [2, 6, 11]:
+				var img = get_tree().root.get_texture().get_data()
+				img.flip_y(); img.resize(640, 360)
+				img.save_png("@@OUT@@/dead_%02d.png" % i)
 	tag = "eyes"
 	yield(wait(1.5), "completed") # (R held a while: must not give up the restarted run)
 	k = InputEventKey.new(); k.scancode = KEY_R; k.pressed = false
