@@ -9,10 +9,10 @@ var black_fade_target:bool = false
 var black_fade:float = 0
 
 # mod: map card loading screen (LoadScreen.gd: the map page's cover carries on behind it, the
-# preview keeps playing muffled). It stays at least MIN_SHOW seconds so the card can be read;
+# preview keeps playing muffled). It stays at least MIN_SHOW seconds (its slide-in), then the run starts;
 # restarts go straight to song.tscn, not here.
 const LoadScreen = preload("res://mods/replay/LoadScreen.gd")
-const MIN_SHOW = 3.0 # (= LoadScreen.SHOW: the bar is full then)
+const MIN_SHOW = 0.8 # (= LoadScreen.SHOW: the bar is full then)
 var cancelled:bool = false
 var switched:bool = false
 var screen:Control
