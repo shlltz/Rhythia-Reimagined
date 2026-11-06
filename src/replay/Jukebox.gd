@@ -1,7 +1,8 @@
 extends Node
 # Background music from your maps (personal build, after the Rhythia lazer fork's jukebox): on the
 # first menu of a session a random map from the library is selected, so its song plays through the
-# map page's preview player (PreviewMusic/Song) and its cover is the backdrop. When a song the
+# map page's preview player (PreviewMusic/Song), from the beginning (the preview starts mid-song), and
+# its cover is the backdrop. When a song the
 # jukebox picked comes round to its start again (the preview loops), the next random map follows.
 # A map you pick yourself loops as before; next() (the now playing panel) hands it back to the
 # jukebox. Added by menu2.gd as "Jukebox". Engine meta rr_jb = the song the jukebox picked.
@@ -10,6 +11,9 @@ var menu:Node
 var bag:Array = []                # shuffled maps still to come (no repeats until all have played)
 var last_pos:float = -1.0
 var started:bool = false
+var restart:bool = false          # the next stream that plays is the jukebox's song: seek it to 0:00
+var restart_from = null           # (the stream playing before it)
+var restart_t:float = 0.0
 
 func _ready():
 	menu = get_parent()
@@ -48,6 +52,16 @@ func _process(delta):
 		last_pos = -1.0
 		return
 	if p.stream_paused: return
+	# the preview starts in the middle of the song: the jukebox's song starts from the beginning
+	# (once its stream is in - the map page builds it on a worker)
+	if restart:
+		restart_t += delta
+		if p.playing and p.stream != restart_from:
+			restart = false
+			p.seek(0.0)
+			last_pos = -1.0
+			return
+		if restart_t > 6.0: restart = false
 	var pos = p.get_playback_position()
 	var length = p.stream.get_length()
 	# looped back to the start, or stopped at the end: next map
@@ -66,6 +80,10 @@ func next():
 	if s == null: return
 	Engine.set_meta("rr_jb", s)
 	last_pos = -1.0
+	var old = player()
+	restart_from = old.stream if old else null
+	restart = true
+	restart_t = 0.0
 	Rhythia.select_song(s)
 	_sync_list(s)
 	var p = player() # (preview off in the settings: play it anyway, it's the background music)

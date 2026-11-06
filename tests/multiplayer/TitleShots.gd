@@ -48,7 +48,7 @@ func run():
 	var first = Rhythia.selected_song
 	jb.next()
 	yield(wait(2.0), "completed")
-	out("next: map %s (changed %s), playing %s" % [Rhythia.selected_song.name if Rhythia.selected_song else "-", Rhythia.selected_song != first, p.playing if p else false])
+	out("next: map %s (changed %s), playing %s at %.1f s" % [Rhythia.selected_song.name if Rhythia.selected_song else "-", Rhythia.selected_song != first, p.playing if p else false, p.get_playback_position() if p else 0.0])
 	if p and p.stream:
 		p.seek(p.stream.get_length() - 1.0)
 		var before = Rhythia.selected_song
