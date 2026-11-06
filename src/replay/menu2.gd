@@ -80,6 +80,7 @@ func _ready():
 	call_deferred("_add_visualizer")
 	call_deferred("_add_rr_credits")
 	call_deferred("_add_music_pause")
+	call_deferred("_add_jukebox")
 	add_child(load("res://mods/replay/UIJuice.gd").new()) # osu-style hover/press springs
 	call_deferred("_add_osu_screens")
 	call_deferred("_add_settings_style")
@@ -243,6 +244,13 @@ func _add_music_pause():
 	var b = load("res://mods/replay/MusicPause.gd").new()
 	add_child(b)
 	b.z_index = 3
+
+# background music: random maps from the library (Jukebox.gd)
+func _add_jukebox():
+	if has_node("Jukebox"): return
+	var j = load("res://mods/replay/Jukebox.gd").new()
+	j.name = "Jukebox"
+	add_child(j)
 
 # rewrite-style audio spectrum along the bottom (above the pages, under the sidebar)
 func _add_visualizer():

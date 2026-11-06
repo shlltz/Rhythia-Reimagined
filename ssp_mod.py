@@ -406,7 +406,7 @@ SCRIPT_MODS = {
                           'HUD.gd': 'res://scripts/game/HUD.gd', 'CursorTrail.gd': 'res://scripts/game/CursorTrail.gd',
                           'songload.gd': 'res://scripts/loaders/songload.gd', 'EndInfo.gd': 'res://scripts/ui/menu/buttons/EndInfo.gd'},
                ['ReplayViewer.gd', 'ReplayBrowser.gd', 'UIAnim.gd', 'VolumeOverlay.gd', 'LoadScreen.gd', 'AudioVisualizer.gd', 'PauseMenu.gd', 'UIJuice.gd', 'OsuSfx.gd', 'TitleMenu.gd', 'ResultsScreen.gd',
-                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'SettingsRows.gd', 'UIKit.gd', 'RunIntro.gd', 'RewriteHud.gd', 'HudParts.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd', 'CrashWatch.gd', 'Look.gd', 'QuickRetry.gd', 'FpsCounter.gd', 'DropFiles.gd', 'HudFont.gd', 'CursorGlow.gd', 'PlayTrack.gd', 'Atmosphere.gd', 'RunFx.gd', 'Editor.gd', 'EditorModel.gd', 'EditorAuto.gd', 'EditorCapture.gd', 'EditorPatterns.gd', 'ReplayStats.gd', 'ReplayStudio.gd', 'GifWriter.gd', 'ClipExport.gd', 'ClipRecorder.gd', 'Device.gd', 'GyroCursor.gd', 'Updater.gd', 'update_key.pub', 'ColorsetMaker.gd', 'Classic.gd', 'ClassicLook.gd', 'Library.gd', 'Checkpoint.gd', 'Skins.gd', 'SkinPanel.gd', 'RewriteFeel.gd', 'MapBackdrop.gd', 'CardUI.gd', 'NamePanel.gd',
+                'Reimagined.gd', 'ReimaginedPanel.gd', 'OsuTrail.gd', 'SettingsStyle.gd', 'SettingsRows.gd', 'UIKit.gd', 'RunIntro.gd', 'RewriteHud.gd', 'HudParts.gd', 'MusicPause.gd', 'TouchScroll.gd', 'Icons.gd', 'Ring.gd', 'UserDir.gd', 'CrashWatch.gd', 'Look.gd', 'QuickRetry.gd', 'FpsCounter.gd', 'DropFiles.gd', 'HudFont.gd', 'CursorGlow.gd', 'PlayTrack.gd', 'Atmosphere.gd', 'RunFx.gd', 'Editor.gd', 'EditorModel.gd', 'EditorAuto.gd', 'EditorCapture.gd', 'EditorPatterns.gd', 'ReplayStats.gd', 'ReplayStudio.gd', 'GifWriter.gd', 'ClipExport.gd', 'ClipRecorder.gd', 'Device.gd', 'GyroCursor.gd', 'Updater.gd', 'update_key.pub', 'ColorsetMaker.gd', 'Classic.gd', 'ClassicLook.gd', 'Library.gd', 'Checkpoint.gd', 'Skins.gd', 'SkinPanel.gd', 'RewriteFeel.gd', 'MapBackdrop.gd', 'Jukebox.gd', 'NowPlaying.gd', 'CardUI.gd', 'NamePanel.gd',
                 'icons/uicons-solid-rounded.woff', 'icons/Flaticon-license.txt']),
     'browser': ('browser', {}, ['MapBrowser.gd']),
     'hype': ('hype', {}, ['Hype.gd', 'PassFx.gd']),     # cover visualizer, 7+/10+ star glow / quake / lightning, pass glow + zoom
@@ -499,7 +499,7 @@ def boot_fixes(pk):
     pk.write(CUTSCENE, b'[gd_scene load_steps=2 format=2]\n\n[ext_resource path="res://mods/fixes/NoCutscene.gd" type="Script" id=1]\n\n[node name="NoCutscene" type="Node"]\nscript = ExtResource( 1 )\n')
     init_add_node(pk, 'res://mods/fixes/Boot.gd', 'RRBoot', 91)
 def intro(pk):
-    for f in ('Intro.gd',): # (personal build: line-drawn intro, its thump is made in code - no intro.mp3 voice)
+    for f in ('Intro.gd', 'logo.webp'): # (personal build: the logo draws itself (your RHYTHIA wordmark, logo.webp), its thump is made in code - no intro.mp3 voice)
         if f in OPTIONAL_ASSETS and not os.path.exists(os.path.join(SRC, 'intro', f)):
             print('  (no intro/%s - not in the public repo: the intro plays without sound)' % f); continue
         pk.add('res://mods/intro/' + f, src('intro', f))

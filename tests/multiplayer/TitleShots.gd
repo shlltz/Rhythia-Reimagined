@@ -42,6 +42,18 @@ func run():
 	for n in get_tree().root.find_node("PreviewMusic", true, false).get_children() if get_tree().root.find_node("PreviewMusic", true, false) else []:
 		if n is AudioStreamPlayer: players.append("%s playing %s" % [n.name, n.playing])
 	out("title spectrum max %.2f (ceiling %.4f); music: %s; bus Music muted %s" % [mx, vz.ceiling if vz else -1.0, str(players), AudioServer.is_bus_mute(AudioServer.get_bus_index("Music"))])
+	var jb = menu.get_node_or_null("Jukebox")
+	var p = jb.player() if jb else null
+	out("jukebox: map %s, picked by jukebox %s, playing %s at %.1f s" % [Rhythia.selected_song.name if Rhythia.selected_song else "-", Engine.has_meta("rr_jb") and Engine.get_meta("rr_jb") == Rhythia.selected_song, p.playing if p else false, p.get_playback_position() if p else 0.0])
+	var first = Rhythia.selected_song
+	jb.next()
+	yield(wait(2.0), "completed")
+	out("next: map %s (changed %s), playing %s" % [Rhythia.selected_song.name if Rhythia.selected_song else "-", Rhythia.selected_song != first, p.playing if p else false])
+	if p and p.stream:
+		p.seek(p.stream.get_length() - 1.0)
+		var before = Rhythia.selected_song
+		yield(wait(3.0), "completed")
+		out("song end -> next random map: %s" % (Rhythia.selected_song != before))
 	yield(shot("title_closed"), "completed")
 	if tm:
 		out("expanded before: %s, visible %s" % [tm.expanded, tm.visible])

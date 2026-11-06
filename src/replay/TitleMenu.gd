@@ -197,6 +197,9 @@ func _ready():
 	if mono:
 		brand.visible = false # (the version is in the status line)
 		_add_terminal()
+	var np = load("res://mods/replay/NowPlaying.gd").new() # (the jukebox's song, pause / next)
+	np.menu = menu
+	root.add_child(np)
 	apply_skin()
 	show_menu()
 

@@ -1,66 +1,82 @@
 extends CanvasLayer
-# Startup intro (personal build): the Rhythia logo draws itself up like osu!lazer's logo animation - a
-# thin white pen line runs around the logo's outline, the logo's body sweeps in right behind it with a
-# bright leading edge, the pen lines fade into the finished logo; then a line draws out beneath it,
-# RHYTHIA REIMAGINED tracks in along it and lands with a small impact (a thump made on the fly, a faint
-# flash), and it all pushes in and fades to the menu. No voice. Injected into init.tscn; moves itself
-# to the root so it survives the init -> menu scene change. Click / any key skips to the settled picture.
+# Startup intro (personal build): your RHYTHIA wordmark (logo.webp), in monochrome, writes itself up
+# like osu!lazer's logo animation - a thin white pen runs along its outlines from left to right, the
+# letters fill in right behind it with a bright leading edge, the pen lines fade into the finished logo.
+# The camera eases in the whole time (osu!-style zoom), punches on the impact (a thump made in code, a
+# faint flash) when REIMAGINED lands under the logo, and at the end flies forward through the logo
+# into the menu. No voice. Injected into init.tscn; moves itself to the root so it survives the
+# init -> menu scene change. Click / any key skips to the fly-through.
+# Cheap: the pen's ~700 segments are built once into one triangle array; the drawing is two shader
+# uniforms per frame (pen and fill progress), not geometry rebuilt every frame.
 
 const PATH = "res://mods/intro/Intro.gd"
-const LOGO = "res://assets/images/branding/icon.png"
+const WORDMARK = "res://mods/intro/logo.webp"
+const ICON = "res://assets/images/branding/icon.png"
 const MENU = "res://scenes/menu/menu2.tscn"
 const Ring = preload("res://mods/replay/Ring.gd")
-const TITLE = "RHYTHIA REIMAGINED"
+const SUB = "REIMAGINED"
 
-const STROKES = 700              # outline segments
-const SAMPLE = 200               # the logo's alpha is traced at this size
-const LOGO_H = 0.36              # of the screen's height
-const LOGO_Y = 0.42              # centre, of the screen's height
-const START = 0.0                # where the pen starts: fraction of a turn clockwise from the top
+const STROKES = 900              # outline segments
+const SAMPLE_W = 340             # the logo's alpha is traced at this width
+const LOGO_W = 0.6               # of the screen's width (at most LOGO_HMAX of its height)
+const LOGO_HMAX = 0.34
+const LOGO_Y = 0.45              # centre, of the screen's height
+const SLANT = 0.12               # the pen runs left to right, a little ahead at the top
 
 # timeline (s)
-const PEN_AT = 0.2
-const PEN_TIME = 0.85
-const FILL_AT = 0.5
-const FILL_TIME = 0.9
-const RULE_AT = 1.3
-const RULE_TIME = 0.35
-const TEXT_AT = 1.4
-const TEXT_TIME = 0.5
-const IMPACT_AT = 1.9
-const DONE_AT = 2.25
-const OUTRO = 0.45
+const PEN_AT = 0.15
+const PEN_TIME = 1.0
+const FILL_AT = 0.45
+const FILL_TIME = 1.0
+const TEXT_AT = 1.35
+const TEXT_TIME = 0.45
+const IMPACT_AT = 1.8
+const DONE_AT = 2.3
+const OUTRO = 0.55
 const MAX_WAIT = 6.0             # never cover the screen longer than this past DONE_AT
 
-# the logo's body revealed by a sweep around its centre (clockwise from START), soft edge, a white
-# glow riding the edge; grey = the stock pink logo turned white
-const SWEEP_SHADER = """shader_type canvas_item;
+# pen: vertex colour r = where along the sweep the segment is (0..1), a = the soft edge
+const PEN_SHADER = """shader_type canvas_item;
 uniform float progress = 0.0;
-uniform float start = 0.0;
-uniform float grey = 0.0;
-uniform float lift = 1.9;
-const float TAU = 6.28318530718;
+uniform float fade = 1.0;
+void fragment() {
+	float behind = progress * 1.001 - COLOR.r;
+	float head = exp(-max(behind, 0.0) * 25.0);
+	float g = 0.72 + 0.28 * head;
+	COLOR = vec4(vec3(g), COLOR.a * step(0.0, behind) * fade);
+}"""
+
+# the logo: monochrome (luminance lifted, so the fill reads white and the dark outline stays dark),
+# revealed by the same sweep with a soft edge and a white glow riding it
+const FILL_SHADER = """shader_type canvas_item;
+uniform float progress = 0.0;
+uniform float slant = 0.12;
+uniform float lift = 1.45;
+uniform float grey = 1.0;
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
 	float l = clamp(dot(c.rgb, vec3(0.299, 0.587, 0.114)) * lift, 0.0, 1.0);
 	c.rgb = mix(c.rgb, vec3(l), grey);
-	vec2 d = UV - 0.5;
-	float a = fract(atan(d.x, -d.y) / TAU - start + 1.0);
-	float p = progress * 1.02;
-	float shown = 1.0 - smoothstep(p - 0.02, p, a);
-	float edge = exp(-abs(p - a) * 45.0) * step(a, p) * (1.0 - smoothstep(0.98, 1.02, progress));
-	c.rgb = min(c.rgb + vec3(0.9 * edge), vec3(1.0));
+	float a = (UV.x + slant * (1.0 - UV.y)) / (1.0 + slant);
+	float p = progress * 1.03;
+	float shown = 1.0 - smoothstep(p - 0.025, p, a);
+	float edge = exp(-abs(p - a) * 40.0) * step(a, p) * (1.0 - smoothstep(0.97, 1.03, progress));
+	c.rgb = min(c.rgb + vec3(0.85 * edge), vec3(1.0));
 	COLOR = vec4(c.rgb, c.a * shown) * COLOR;
 }"""
 
 var bg:ColorRect
-var canvas:Control               # pen lines, rule, title and flash are drawn here
+var stage:Control                # everything that zooms: logo, pen, subtitle
 var logo:TextureRect
+var pen:Control
+var text:Control                 # subtitle + rule (redrawn while they animate)
+var flash_rect:ColorRect
 var font:Font
 var player:AudioStreamPlayer
-var strokes:Array = []           # [a, b, turn] (a, b in 0..1 of the logo; turn = where the pen passes it)
+var tex:Texture
+var aspect:float = 3.0
+var segs:Array = []              # [a, b, k] in 0..1 of the logo
 var clock:float = -1.0
-var flash:float = 0.0
 var impacted:bool = false
 var outro_t:float = -1.0
 var music_bus:int = -1
@@ -81,26 +97,33 @@ func _ready():
 	pause_mode = Node.PAUSE_MODE_PROCESS
 	bg = ColorRect.new()
 	bg.color = Color(0, 0, 0, 1)
-	_full(bg)
-	var tex = _logo_texture()
+	_full(bg, self)
+	stage = Control.new()
+	_full(stage, self)
+	tex = _logo_texture()
+	if tex: aspect = tex.get_width() / max(1.0, float(tex.get_height()))
 	logo = TextureRect.new()
 	logo.texture = tex
 	logo.expand = true
-	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.stretch_mode = TextureRect.STRETCH_SCALE
 	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	logo.material = ShaderMaterial.new()
-	logo.material.shader = Shader.new()
-	logo.material.shader.code = SWEEP_SHADER
-	logo.material.set_shader_param("start", START)
-	logo.material.set_shader_param("grey", 1.0 if tex and tex.resource_path == LOGO else 0.0) # (the stock pink logo turns white)
-	add_child(logo)
-	canvas = Control.new()
-	_full(canvas)
-	canvas.connect("draw", self, "_draw_canvas")
-	if ResourceLoader.exists("res://uitheme.tres"): canvas.theme = load("res://uitheme.tres")
-	font = canvas.get_font("font", "Label")
+	logo.material = _mat(FILL_SHADER)
+	logo.material.set_shader_param("slant", SLANT)
+	stage.add_child(logo)
+	pen = Control.new()
+	_full(pen, stage)
+	pen.material = _mat(PEN_SHADER)
+	pen.connect("draw", self, "_draw_pen")
+	text = Control.new()
+	_full(text, stage)
+	text.connect("draw", self, "_draw_text")
+	if ResourceLoader.exists("res://uitheme.tres"): text.theme = load("res://uitheme.tres")
+	font = text.get_font("font", "Label")
 	if font is DynamicFont: font = font.duplicate()
-	_trace(tex)
+	flash_rect = ColorRect.new()
+	flash_rect.color = Color(1, 1, 1, 0)
+	_full(flash_rect, self)
+	_trace()
 
 	player = AudioStreamPlayer.new()
 	player.stream = _thump()
@@ -116,37 +139,50 @@ func _ready():
 	layout()
 	get_tree().root.connect("size_changed", self, "layout")
 
-func _full(c:Control):
+func _full(c:Control, parent:Node):
 	c.anchor_right = 1
 	c.anchor_bottom = 1
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(c)
+	parent.add_child(c)
 
-# the logo from the Rhythia-reimagined skin folder if there is one, else the stock icon
+func _mat(code:String) -> ShaderMaterial:
+	var m = ShaderMaterial.new()
+	m.shader = Shader.new()
+	m.shader.code = code
+	return m
+
+# the wordmark (raw .webp in the pck, decoded here); the stock icon if it's missing
 func _logo_texture():
-	if ResourceLoader.exists("res://mods/replay/Reimagined.gd"):
-		var t = load("res://mods/replay/Reimagined.gd").skin_tex("logo")
-		if t: return t
-	return load(LOGO)
+	var f = File.new()
+	if f.open(WORDMARK, File.READ) == OK:
+		var img = Image.new()
+		var err = img.load_webp_from_buffer(f.get_buffer(f.get_len()))
+		f.close()
+		if err == OK:
+			var t = ImageTexture.new()
+			t.create_from_image(img, Texture.FLAG_FILTER | Texture.FLAG_MIPMAPS)
+			return t
+	return load(ICON)
 
-# where the pen passes a point: fraction of a turn around the centre, clockwise from START
-static func _turn(p:Vector2) -> float:
-	var d = p - Vector2(0.5, 0.5)
-	return fposmod(atan2(d.x, -d.y) / TAU - START, 1.0)
+# where the pen passes a point (0..1 of the logo): left to right, a little ahead at the top
+static func _sweep(p:Vector2) -> float:
+	return (p.x + SLANT * (1.0 - p.y)) / (1.0 + SLANT)
 
-# the logo's outline: opaque pixels with a clear neighbour, picked evenly, each joined to another
+# the logo's outlines: opaque pixels with a clear neighbour, picked evenly, each joined to another
 # outline pixel 3-6 px away into a short segment (a grid of 8 px cells finds that neighbour)
-func _trace(tex:Texture):
+func _trace():
 	if !tex: return
 	var img = tex.get_data()
 	if !(img is Image): return
 	img = img.duplicate()
 	if img.is_compressed(): img.decompress()
-	img.resize(SAMPLE, SAMPLE, Image.INTERPOLATE_BILINEAR)
+	var w = SAMPLE_W
+	var h = int(max(8, round(SAMPLE_W / aspect)))
+	img.resize(w, h, Image.INTERPOLATE_BILINEAR)
 	img.lock()
 	var edge = []
-	for y in range(1, SAMPLE - 1):
-		for x in range(1, SAMPLE - 1):
+	for y in range(1, h - 1):
+		for x in range(1, w - 1):
 			if img.get_pixel(x, y).a < 0.5: continue
 			if img.get_pixel(x - 1, y).a < 0.5 or img.get_pixel(x + 1, y).a < 0.5 or img.get_pixel(x, y - 1).a < 0.5 or img.get_pixel(x, y + 1).a < 0.5:
 				edge.append(Vector2(x, y))
@@ -157,6 +193,7 @@ func _trace(tex:Texture):
 		var k = int(p.x / 8) * 1000 + int(p.y / 8)
 		if !cells.has(k): cells[k] = []
 		cells[k].append(p)
+	var size = Vector2(w, h)
 	var step = max(1, edge.size() / STROKES)
 	for i in range(0, edge.size(), step):
 		var a:Vector2 = edge[i]
@@ -172,20 +209,22 @@ func _trace(tex:Texture):
 						best = d
 						b = q
 		if b == a: continue
-		strokes.append([a / SAMPLE, b / SAMPLE, _turn((a + b) / 2 / SAMPLE)])
+		segs.append([a / size, b / size, _sweep((a + b) / 2 / size)])
 
 func logo_rect() -> Rect2:
 	var vs = get_viewport().get_visible_rect().size
-	var d = vs.y * LOGO_H
-	return Rect2(Vector2((vs.x - d) / 2, vs.y * LOGO_Y - d / 2), Vector2(d, d))
+	var w = min(vs.x * LOGO_W, vs.y * LOGO_HMAX * aspect)
+	var h = w / aspect
+	return Rect2(Vector2((vs.x - w) / 2, vs.y * LOGO_Y - h / 2), Vector2(w, h))
 
 func layout():
 	var r = logo_rect()
 	logo.rect_position = r.position
 	logo.rect_size = r.size
-	logo.rect_pivot_offset = r.size / 2
-	if font is DynamicFont: font.size = int(max(12, round(r.size.x * 0.085)))
-	canvas.update()
+	stage.rect_pivot_offset = r.position + r.size / 2
+	if font is DynamicFont: font.size = int(max(12, round(r.size.y * 0.16)))
+	pen.update()
+	text.update()
 
 func wants_fullscreen() -> bool:
 	var f = File.new()
@@ -202,7 +241,7 @@ func _process(delta):
 	if clock < 0:
 		# the game opens windowed and switches to fullscreen ~1-2 s later: start after that,
 		# so the drawing isn't lost in the switch (and init has applied the volume settings)
-		if wait_fs == false and wait_t == 0.0: wait_fs = wants_fullscreen()
+		if wait_t == 0.0: wait_fs = wants_fullscreen()
 		wait_t += delta
 		if wait_fs and !OS.window_fullscreen and wait_t < 4.0: return
 		settle += 1
@@ -211,105 +250,97 @@ func _process(delta):
 		layout()
 		return
 	clock += delta
-	if flash > 0: flash = max(0.0, flash - delta * 6.0)
 	if !impacted and clock >= IMPACT_AT:
 		impacted = true
-		flash = 1.0
 		if player.stream: player.play()
 	if outro_t < 0:
 		var sc = get_tree().current_scene
 		var menu_up = sc and sc.filename in [MENU, "res://scenes/menu/oldmenu2.tscn"]
 		if clock >= DONE_AT and (menu_up or clock >= DONE_AT + MAX_WAIT): begin_outro()
-	_apply()
-	if outro_t >= 0:
+	else:
 		outro_t += delta
-		var o = clamp(outro_t / OUTRO, 0.0, 1.0)
-		o = o * o
-		var s = logo.rect_scale.x * (1.0 + 0.06 * o)
-		logo.rect_scale = Vector2(s, s)
-		logo.modulate.a = 1.0 - o
-		canvas.modulate.a = 1.0 - o
-		bg.color.a = 1.0 - clamp((outro_t - 0.1) / OUTRO, 0.0, 1.0)
 		if outro_t >= OUTRO + 0.1:
 			finish()
 			return
-	if clock < DONE_AT + 0.5 or flash > 0 or outro_t >= 0: canvas.update()
+	_apply()
+	if clock < DONE_AT + 0.3: text.update()
 
 static func _c01(v:float) -> float:
 	return clamp(v, 0.0, 1.0)
 
-static func _expo_out(p:float) -> float:
-	return 1.0 if p >= 1.0 else 1.0 - pow(2.0, -10.0 * p)
-
 static func _cubic_out(p:float) -> float:
-	return 1.0 - pow(1.0 - p, 3)
+	return 1.0 - pow(1.0 - clamp(p, 0.0, 1.0), 3)
 
-# pen and fill run fast in the middle of the turn, ease at both ends (a hand drawing it)
+# pen and fill: quick in the middle, easing at both ends (a hand writing it)
 static func _sine_io(p:float) -> float:
 	return 0.5 - 0.5 * cos(PI * clamp(p, 0.0, 1.0))
 
+static func _hit(now:float, at:float, decay:float) -> float:
+	return exp(-(now - at) * decay) if now >= at else 0.0
+
 func _apply():
 	var t = max(clock, 0.0)
-	var fill = _sine_io((t - FILL_AT) / FILL_TIME)
-	logo.material.set_shader_param("progress", fill)
-	var s = 1.03 - 0.03 * _cubic_out(_c01((t - FILL_AT) / (FILL_TIME + 0.3)))
-	logo.rect_scale = Vector2(s, s)
+	pen.material.set_shader_param("progress", _sine_io((t - PEN_AT) / PEN_TIME))
+	pen.material.set_shader_param("fade", 1.0 - _c01((t - FILL_AT - FILL_TIME) / 0.35))
+	logo.material.set_shader_param("progress", _sine_io((t - FILL_AT) / FILL_TIME))
+	# camera: eases in from further back the whole time, punches on the impact, breathes while
+	# waiting; the outro flies forward through the logo while everything fades to the menu
+	var s = 0.86 + 0.14 * _cubic_out(t / (IMPACT_AT + 0.2)) + 0.012 * max(0.0, t - IMPACT_AT - 0.2)
+	s += 0.05 * _hit(t, IMPACT_AT, 7.0)
+	var a = 1.0
+	if outro_t >= 0:
+		var o = _c01(outro_t / OUTRO)
+		s *= 1.0 + 1.6 * o * o * o
+		a = 1.0 - o * o
+		bg.color.a = 1.0 - _c01((outro_t - 0.15) / OUTRO)
+	stage.rect_scale = Vector2(s, s)
+	stage.modulate.a = a
+	flash_rect.color.a = 0.07 * _hit(t, IMPACT_AT, 6.0)
 
-func _draw_canvas():
+# the pen's segments, built once (colour r = sweep position; the shader reveals them)
+func _draw_pen():
+	if segs.empty(): return
+	var r = logo_rect()
+	var w = max(1.5, r.size.x / SAMPLE_W * 1.1)
+	var arr = []
+	for sg in segs:
+		arr.append([r.position + sg[0] * r.size, r.position + sg[1] * r.size, w, Color(sg[2], 0, 0, 1)])
+	Ring.bars(pen, arr)
+
+# REIMAGINED tracking in under the logo along a rule that draws out from the middle
+func _draw_text():
 	if clock < 0: return
 	var r = logo_rect()
 	var t = clock
-	var w = max(1.5, r.size.x / 200.0 * 1.2)
-	# the pen: outline segments appear as the pen passes them, the newest brightest; they fade
-	# once the fill has caught up
-	var pen = _sine_io((t - PEN_AT) / PEN_TIME)
-	var fade = 1.0 - _c01((t - FILL_AT - FILL_TIME) / 0.35)
-	if pen > 0 and fade > 0 and !strokes.empty():
-		var segs = []
-		for st in strokes:
-			var behind = pen * 1.001 - st[2]
-			if behind < 0: continue
-			var head = exp(-behind * 30.0)
-			var g = 0.75 + 0.25 * head
-			segs.append([r.position + st[0] * r.size, r.position + st[1] * r.size, w * (1.0 + head), Color(g, g, g, fade)])
-		Ring.bars(canvas, segs)
-	# the title, tracking in (letters close up as it fades in), and the line under it
-	var y = r.end.y + r.size.y * 0.16
 	var cx = r.position.x + r.size.x / 2
-	var text = _c01((t - TEXT_AT) / TEXT_TIME)
-	if font and text > 0:
-		var k = _cubic_out(text)
-		var fs = font.get_height()
-		var spacing = fs * (0.32 + 0.6 * (1.0 - k))
+	var y = r.end.y + r.size.y * 0.24
+	var k = _cubic_out((t - TEXT_AT) / TEXT_TIME)
+	if font and k > 0:
+		var spacing = font.get_height() * (0.55 + 0.9 * (1.0 - k))
 		var adv = []
 		var total = 0.0
-		for ch in TITLE:
+		for ch in SUB:
 			var cw = font.get_string_size(ch).x
 			adv.append(cw)
 			total += cw + spacing
 		total -= spacing
-		var land = _c01((t - IMPACT_AT) / 0.22)
-		var pop = 1.0 + 0.04 * (1.0 - land) if t >= IMPACT_AT else 1.0
-		var x = cx - total * pop / 2
-		var col = Color(1, 1, 1, 0.92 * k)
-		for i in TITLE.length():
-			canvas.draw_string(font, Vector2(x, y + font.get_ascent() * 0.5), TITLE[i], col)
-			x += (adv[i] + spacing) * pop
-	var rule = _expo_out(_c01((t - RULE_AT) / RULE_TIME))
+		var x = cx - total / 2
+		for i in SUB.length():
+			text.draw_string(font, Vector2(x, y + font.get_ascent() * 0.5), SUB[i], Color(1, 1, 1, 0.92 * k))
+			x += adv[i] + spacing
+	var rule = _cubic_out((t - TEXT_AT + 0.1) / 0.35)
 	if rule > 0:
-		var ry = y + r.size.y * 0.09
-		var half = r.size.x * 0.75 * rule
-		var a = 0.9 * (1.0 - 0.55 * _c01((t - IMPACT_AT) / 0.4))
-		Ring.bars(canvas, [[Vector2(cx - half, ry), Vector2(cx + half, ry), max(2.0, w), Color(1, 1, 1, a)]])
-	if flash > 0: canvas.draw_rect(Rect2(Vector2.ZERO, canvas.rect_size), Color(1, 1, 1, flash * 0.06))
+		var ry = y + font.get_height() * 0.75 if font else y + 20
+		var half = r.size.x * 0.32 * rule
+		var a = 0.85 * (1.0 - 0.5 * _c01((t - IMPACT_AT) / 0.4))
+		Ring.bars(text, [[Vector2(cx - half, ry), Vector2(cx + half, ry), 2.0, Color(1, 1, 1, a)]])
 
 func _skip():
 	if clock < 0: return
 	if clock < DONE_AT:
-		clock = DONE_AT + 0.5
+		clock = DONE_AT
 		impacted = true
-		flash = 0.0
-		_apply()
+		text.update()
 	begin_outro()
 
 func begin_outro():
