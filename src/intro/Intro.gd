@@ -1,10 +1,10 @@
 extends CanvasLayer
-# Startup intro (personal build; port of the Rewrite : Unleashed one): on a black screen, white speed
-# lines streak in from both sides and settle onto the outline of the Rhythia logo, drawing it; the logo
-# fills in under them as they fade, a line draws out beneath it and RHYTHIA REIMAGINED tracks in along
-# it and lands with a small impact (a thump made on the fly, a faint flash). Then it pushes in and
-# fades to the menu. No voice. Injected into init.tscn; moves itself to the root so it survives the
-# init -> menu scene change. Click / any key skips to the settled picture.
+# Startup intro (personal build): the Rhythia logo draws itself up like osu!lazer's logo animation - a
+# thin white pen line runs around the logo's outline, the logo's body sweeps in right behind it with a
+# bright leading edge, the pen lines fade into the finished logo; then a line draws out beneath it,
+# RHYTHIA REIMAGINED tracks in along it and lands with a small impact (a thump made on the fly, a faint
+# flash), and it all pushes in and fades to the menu. No voice. Injected into init.tscn; moves itself
+# to the root so it survives the init -> menu scene change. Click / any key skips to the settled picture.
 
 const PATH = "res://mods/intro/Intro.gd"
 const LOGO = "res://assets/images/branding/icon.png"
@@ -16,28 +16,49 @@ const STROKES = 700              # outline segments
 const SAMPLE = 200               # the logo's alpha is traced at this size
 const LOGO_H = 0.36              # of the screen's height
 const LOGO_Y = 0.42              # centre, of the screen's height
+const START = 0.0                # where the pen starts: fraction of a turn clockwise from the top
 
 # timeline (s)
-const LINES_IN = 0.15
-const LINES_SPREAD = 0.55
-const LINE_TRAVEL = 0.5
-const FILL_AT = 0.95
-const FILL_TIME = 0.45
-const RULE_AT = 1.25
+const PEN_AT = 0.2
+const PEN_TIME = 0.85
+const FILL_AT = 0.5
+const FILL_TIME = 0.9
+const RULE_AT = 1.3
 const RULE_TIME = 0.35
-const TEXT_AT = 1.35
+const TEXT_AT = 1.4
 const TEXT_TIME = 0.5
-const IMPACT_AT = 1.85
-const DONE_AT = 2.2
+const IMPACT_AT = 1.9
+const DONE_AT = 2.25
 const OUTRO = 0.45
 const MAX_WAIT = 6.0             # never cover the screen longer than this past DONE_AT
 
+# the logo's body revealed by a sweep around its centre (clockwise from START), soft edge, a white
+# glow riding the edge; grey = the stock pink logo turned white
+const SWEEP_SHADER = """shader_type canvas_item;
+uniform float progress = 0.0;
+uniform float start = 0.0;
+uniform float grey = 0.0;
+uniform float lift = 1.9;
+const float TAU = 6.28318530718;
+void fragment() {
+	vec4 c = texture(TEXTURE, UV);
+	float l = clamp(dot(c.rgb, vec3(0.299, 0.587, 0.114)) * lift, 0.0, 1.0);
+	c.rgb = mix(c.rgb, vec3(l), grey);
+	vec2 d = UV - 0.5;
+	float a = fract(atan(d.x, -d.y) / TAU - start + 1.0);
+	float p = progress * 1.02;
+	float shown = 1.0 - smoothstep(p - 0.02, p, a);
+	float edge = exp(-abs(p - a) * 45.0) * step(a, p) * (1.0 - smoothstep(0.98, 1.02, progress));
+	c.rgb = min(c.rgb + vec3(0.9 * edge), vec3(1.0));
+	COLOR = vec4(c.rgb, c.a * shown) * COLOR;
+}"""
+
 var bg:ColorRect
-var canvas:Control               # lines, rule, title and flash are drawn here
+var canvas:Control               # pen lines, rule, title and flash are drawn here
 var logo:TextureRect
 var font:Font
 var player:AudioStreamPlayer
-var strokes:Array = []           # [a, b, delay, side, reach, shade] (a, b in 0..1 of the logo)
+var strokes:Array = []           # [a, b, turn] (a, b in 0..1 of the logo; turn = where the pen passes it)
 var clock:float = -1.0
 var flash:float = 0.0
 var impacted:bool = false
@@ -67,8 +88,11 @@ func _ready():
 	logo.expand = true
 	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	logo.modulate.a = 0.0
-	if tex and tex.resource_path == LOGO: logo.material = _grey() # (the stock pink logo turns white)
+	logo.material = ShaderMaterial.new()
+	logo.material.shader = Shader.new()
+	logo.material.shader.code = SWEEP_SHADER
+	logo.material.set_shader_param("start", START)
+	logo.material.set_shader_param("grey", 1.0 if tex and tex.resource_path == LOGO else 0.0) # (the stock pink logo turns white)
 	add_child(logo)
 	canvas = Control.new()
 	_full(canvas)
@@ -88,6 +112,7 @@ func _ready():
 	if music_bus >= 0:
 		music_was_muted = AudioServer.is_bus_mute(music_bus)
 		AudioServer.set_bus_mute(music_bus, true)
+	_apply()
 	layout()
 	get_tree().root.connect("size_changed", self, "layout")
 
@@ -104,9 +129,10 @@ func _logo_texture():
 		if t: return t
 	return load(LOGO)
 
-func _grey():
-	if ResourceLoader.exists("res://mods/replay/Look.gd"): return load("res://mods/replay/Look.gd").grey_material()
-	return null
+# where the pen passes a point: fraction of a turn around the centre, clockwise from START
+static func _turn(p:Vector2) -> float:
+	var d = p - Vector2(0.5, 0.5)
+	return fposmod(atan2(d.x, -d.y) / TAU - START, 1.0)
 
 # the logo's outline: opaque pixels with a clear neighbour, picked evenly, each joined to another
 # outline pixel 3-6 px away into a short segment (a grid of 8 px cells finds that neighbour)
@@ -131,8 +157,6 @@ func _trace(tex:Texture):
 		var k = int(p.x / 8) * 1000 + int(p.y / 8)
 		if !cells.has(k): cells[k] = []
 		cells[k].append(p)
-	var rng = RandomNumberGenerator.new()
-	rng.seed = 1110
 	var step = max(1, edge.size() / STROKES)
 	for i in range(0, edge.size(), step):
 		var a:Vector2 = edge[i]
@@ -148,10 +172,7 @@ func _trace(tex:Texture):
 						best = d
 						b = q
 		if b == a: continue
-		var u = a.x / SAMPLE
-		# a sweep outwards from the middle, a little scattered
-		var delay = LINES_IN + abs(u - 0.5) * 2.0 * LINES_SPREAD * 0.7 + rng.randf() * LINES_SPREAD * 0.3
-		strokes.append([a / SAMPLE, b / SAMPLE, delay, -1.0 if u < 0.5 else 1.0, rng.randf_range(0.35, 0.8), rng.randf_range(0.7, 1.0)])
+		strokes.append([a / SAMPLE, b / SAMPLE, _turn((a + b) / 2 / SAMPLE)])
 
 func logo_rect() -> Rect2:
 	var vs = get_viewport().get_visible_rect().size
@@ -180,8 +201,8 @@ var settle:int = 0
 func _process(delta):
 	if clock < 0:
 		# the game opens windowed and switches to fullscreen ~1-2 s later: start after that,
-		# so the lines aren't lost in the switch (and init has applied the volume settings)
-		if wait_t == 0.0: wait_fs = wants_fullscreen()
+		# so the drawing isn't lost in the switch (and init has applied the volume settings)
+		if wait_fs == false and wait_t == 0.0: wait_fs = wants_fullscreen()
 		wait_t += delta
 		if wait_fs and !OS.window_fullscreen and wait_t < 4.0: return
 		settle += 1
@@ -206,7 +227,7 @@ func _process(delta):
 		o = o * o
 		var s = logo.rect_scale.x * (1.0 + 0.06 * o)
 		logo.rect_scale = Vector2(s, s)
-		logo.modulate.a *= 1.0 - o
+		logo.modulate.a = 1.0 - o
 		canvas.modulate.a = 1.0 - o
 		bg.color.a = 1.0 - clamp((outro_t - 0.1) / OUTRO, 0.0, 1.0)
 		if outro_t >= OUTRO + 0.1:
@@ -223,10 +244,15 @@ static func _expo_out(p:float) -> float:
 static func _cubic_out(p:float) -> float:
 	return 1.0 - pow(1.0 - p, 3)
 
+# pen and fill run fast in the middle of the turn, ease at both ends (a hand drawing it)
+static func _sine_io(p:float) -> float:
+	return 0.5 - 0.5 * cos(PI * clamp(p, 0.0, 1.0))
+
 func _apply():
-	var fill = _cubic_out(_c01((clock - FILL_AT) / FILL_TIME))
-	logo.modulate.a = fill
-	var s = 1.04 - 0.04 * fill
+	var t = max(clock, 0.0)
+	var fill = _sine_io((t - FILL_AT) / FILL_TIME)
+	logo.material.set_shader_param("progress", fill)
+	var s = 1.03 - 0.03 * _cubic_out(_c01((t - FILL_AT) / (FILL_TIME + 0.3)))
 	logo.rect_scale = Vector2(s, s)
 
 func _draw_canvas():
@@ -234,20 +260,18 @@ func _draw_canvas():
 	var r = logo_rect()
 	var t = clock
 	var w = max(1.5, r.size.x / 200.0 * 1.2)
-	var fade = 1.0 - _c01((t - FILL_AT - 0.15) / 0.5) # (the lines give way to the fill)
-	if fade > 0 and !strokes.empty():
-		var sw = canvas.rect_size.x
+	# the pen: outline segments appear as the pen passes them, the newest brightest; they fade
+	# once the fill has caught up
+	var pen = _sine_io((t - PEN_AT) / PEN_TIME)
+	var fade = 1.0 - _c01((t - FILL_AT - FILL_TIME) / 0.35)
+	if pen > 0 and fade > 0 and !strokes.empty():
 		var segs = []
 		for st in strokes:
-			var p = _expo_out(_c01((t - st[2]) / LINE_TRAVEL))
-			if p <= 0.0: continue
-			var a = r.position + st[0] * r.size
-			var b = r.position + st[1] * r.size
-			# a long streak from the side, shortening onto its segment
-			var off = (1.0 - p) * sw * st[4] * st[3]
-			var tail = (1.0 - p) * sw * 0.18 * st[3]
-			var g = st[5]
-			segs.append([a + Vector2(off + tail, 0), b + Vector2(off, 0), w, Color(g, g, g, min(1.0, p * 3.0) * fade)])
+			var behind = pen * 1.001 - st[2]
+			if behind < 0: continue
+			var head = exp(-behind * 30.0)
+			var g = 0.75 + 0.25 * head
+			segs.append([r.position + st[0] * r.size, r.position + st[1] * r.size, w * (1.0 + head), Color(g, g, g, fade)])
 		Ring.bars(canvas, segs)
 	# the title, tracking in (letters close up as it fades in), and the line under it
 	var y = r.end.y + r.size.y * 0.16
@@ -285,6 +309,7 @@ func _skip():
 		clock = DONE_AT + 0.5
 		impacted = true
 		flash = 0.0
+		_apply()
 	begin_outro()
 
 func begin_outro():
