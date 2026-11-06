@@ -1348,6 +1348,7 @@ func _pause_choice(what:String):
 			else: music_started = false # paused in the lead-in: music starts on time again
 		"retry":
 			if _mp_on: return # (no restarts in a multiplayer match)
+			load("res://mods/replay/RunIntro.gd").start(get_tree(), 0.5) # (the run fades back in under the last frame)
 			get_tree().change_scene("res://scenes/song.tscn")
 		"quit":
 			get_parent().end(Globals.END_GIVEUP)

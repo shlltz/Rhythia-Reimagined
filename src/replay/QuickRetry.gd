@@ -34,4 +34,5 @@ func _process(delta):
 	fade.color.a = t / HOLD
 	if held and t >= HOLD:
 		done = true
+		load("res://mods/replay/RunIntro.gd").start(get_tree(), 0.5)
 		get_tree().change_scene("res://scenes/song.tscn")

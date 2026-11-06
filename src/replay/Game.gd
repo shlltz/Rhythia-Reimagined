@@ -130,6 +130,7 @@ func end(end_type:int):
 		- helmeto
 		"""
 		
+		load("res://mods/replay/RunIntro.gd").start(get_tree(), 0.5)
 		get_tree().change_scene("res://scenes/song.tscn")
 	else:
 		# results screen mod (ResultsScreen.gd, opened by menu2.gd)
@@ -146,10 +147,7 @@ func end(end_type:int):
 		if $Spawn.rr_track and !Rhythia.replaying: $Spawn.rr_track.finish(Rhythia.selected_song, end_type, speed_multi) # (settings generator)
 		var fx = get_node_or_null("PassFx")
 		if fx and end_type == Globals.END_PASS: yield(fx.zoom_in(), "completed") # personal pass effect (hype mod)
-		else:
-			black_fade_target = true
-			yield(get_tree().create_timer(0.35),"timeout")
-		get_tree().change_scene("res://scenes/loaders/menuload.tscn")
+		load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "forward") # (no black: the run's last frame flies past into the results)
 
 func update_timer(ms:float,canSkip:bool=false):
 	# (perf: the minutes / seconds worked out here were never used; the HUD formats its own)

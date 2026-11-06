@@ -12,7 +12,7 @@ var black_fade:float = 0
 # preview keeps playing muffled). It stays at least MIN_SHOW seconds (its slide-in), then the run starts;
 # restarts go straight to song.tscn, not here.
 const LoadScreen = preload("res://mods/replay/LoadScreen.gd")
-const MIN_SHOW = 0.8 # (= LoadScreen.SHOW: the bar is full then)
+const MIN_SHOW = 1.5 # (= LoadScreen.SHOW: the bar is full then)
 var cancelled:bool = false
 var switched:bool = false
 var screen:Control
@@ -242,7 +242,7 @@ func _input(ev):
 	cancelled = true
 	Rhythia.replaying = false
 	if Engine.has_meta("rr_launch"): Engine.remove_meta("rr_launch")
-	black_fade_target = true
+	load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "back") # (at once: the card shrinks away over the map page)
 
 # leaving another way (Esc, an error): the half-built run is finished and dropped
 func _exit_tree():

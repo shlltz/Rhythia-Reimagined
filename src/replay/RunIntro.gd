@@ -9,11 +9,14 @@ const PUSH = 14.0 # degrees of extra field of view at the start
 
 var shot:TextureRect
 var t:float = 0.0
+var time:float = TIME
 var cam:Camera = null
 var base_fov:float = 70.0
 var steady:int = 0 # smooth frames since the run's scene came up (its first frames hitch while it builds)
 
-static func start(tree:SceneTree):
+static func start(tree:SceneTree, time:float = TIME):
+	var old = tree.root.get_node_or_null("RRRunIntro")
+	if old: old.free() # (a retry while the last one still fades)
 	var img = tree.root.get_texture().get_data()
 	if !(img is Image) or img.get_width() < 2: return
 	img.flip_y()
@@ -22,6 +25,7 @@ static func start(tree:SceneTree):
 	var n = load("res://mods/replay/RunIntro.gd").new()
 	n.name = "RRRunIntro"
 	n.set_meta("tex", tex)
+	n.time = time
 	tree.root.add_child(n)
 
 func _ready():
@@ -41,7 +45,7 @@ func _process(delta):
 		steady = steady + 1 if sc0 and sc0.has_node("Game") and delta < 0.05 else 0
 		return
 	t += min(delta, 1.0 / 30.0)
-	var k = min(t / TIME, 1.0)
+	var k = min(t / time, 1.0)
 	var e = 1.0 - pow(1.0 - k, 3)
 	shot.rect_pivot_offset = shot.rect_size / 2
 	var s = 1.0 + 0.07 * e

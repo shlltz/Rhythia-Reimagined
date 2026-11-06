@@ -64,6 +64,7 @@ Every feature test should pass on both `own` and `share`. The newer drivers:
 | `MenuAblate.gd` | the same for menu items (`RR_MENU_ROOT=Menu/Main/Maps`, `RR_MENU_DEPTH=n`) |
 | `HudVpTest.gd` | HUD panels render only on change: no panel ever shows stale content (`RR_HUD_STYLE=classic\|rewrite`, `RR_HUD_HITS=n` to start in the dense part) |
 | `PassZoomTest.gd` | the slowest frame from a map's last notes through the pass zoom (`RR_SHOTS=1`: pictures instead) |
+| `SwapProbe.gd` | screen transitions (Esc on the loading card, card -> run, retry, run -> results): time, darkest frame, slowest frame (`RR_SHOTS=1`: pictures during the swap) |
 | `FeaturesTest.gd` | dropped colorsets / meshes / settings files / fonts, HUD font + trail fade + cursor glow in a run, settings generator (live run tracked, advice, Apply / Undo stick with the settings page open) |
 | `FpsCounterTest.gd` | FPS counter: text, top-right placement, clicks pass through, same node in runs, switch, hidden while a clip records |
 
