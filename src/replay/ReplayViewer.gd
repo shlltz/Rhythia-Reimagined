@@ -260,6 +260,10 @@ func _ready():
 	root.add_child(center_label)
 
 	build_keys_panel()
+	var an = load("res://mods/replay/ReplayAnalyzer.gd").new() # (Toolbox: cursor path, hitboxes, timing)
+	an.spawn = spawn
+	an.viewer = self
+	root.add_child(an)
 	apply_ui_state()
 	if Engine.has_meta("rr_clip") and ResourceLoader.exists("res://mods/replay/ClipRecorder.gd"): # (Replay Studio: record a clip)
 		var rec = load("res://mods/replay/ClipRecorder.gd").new()
