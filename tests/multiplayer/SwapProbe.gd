@@ -45,7 +45,7 @@ func watch(cond:String, limit:float):
 		dark = min(dark, lum())
 		var el = (now - t0) / 1e6
 		var sw = get_tree().root.get_node_or_null("RRScreenSwap")
-		if OS.get_environment("RR_SHOTS") != "" and sw and sw.t > 0.0 and shot_n < 30:
+		if OS.get_environment("RR_SHOTS") != "" and sw and (sw.t > 0.0 or sw.snap_t > 0.0) and shot_n < 40:
 			var img = get_tree().root.get_texture().get_data()
 			img.flip_y()
 			img.resize(640, 360)
@@ -97,5 +97,30 @@ func run():
 	g.end(Globals.END_GIVEUP)
 	r = yield(watch("at_results", 10.0), "completed")
 	check(at_results(), "run -> results in %.2f s (darkest %.3f, slowest %.0f ms)" % r)
+	# 4. fail: snaps out (zoom blur) at once; frame times during the snap vs the run before it
+	yield(wait(2.0), "completed")
+	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	r = yield(watch("at_run", 12.0), "completed")
+	yield(wait(3.0), "completed")
+	var run_ms = []
+	for i in 30:
+		var u = OS.get_ticks_usec()
+		yield(get_tree(), "idle_frame")
+		run_ms.append((OS.get_ticks_usec() - u) / 1000.0)
+	Rhythia.restart_on_death = false
+	tag = "fail"
+	var snap_ms = []
+	get_tree().current_scene.get_node("Game").end(Globals.END_FAIL)
+	var t0 = OS.get_ticks_usec()
+	while get_tree().root.has_node("RRScreenSwap") and get_tree().root.get_node("RRScreenSwap").pending != "":
+		var u = OS.get_ticks_usec()
+		yield(get_tree(), "idle_frame")
+		snap_ms.append((OS.get_ticks_usec() - u) / 1000.0)
+	var snap_s = (OS.get_ticks_usec() - t0) / 1e6
+	out("snap frames in order: " + str(snap_ms.slice(0, 4)))
+	run_ms.sort(); snap_ms.sort()
+	out("run frames: median %.2f ms, worst %.2f | snap frames (%d in %.2f s): median %.2f ms, worst %.2f" % [run_ms[15], run_ms[29], snap_ms.size(), snap_s, snap_ms[snap_ms.size() / 2] if snap_ms.size() else 0.0, snap_ms[-1] if snap_ms.size() else 0.0])
+	r = yield(watch("at_results", 10.0), "completed")
+	check(at_results(), "fail -> results in %.2f s after the snap (darkest %.3f, slowest %.0f ms)" % r)
 	out("== totals: %d passed, %d failed" % [passed, failed])
 	OS.kill(OS.get_process_id())
