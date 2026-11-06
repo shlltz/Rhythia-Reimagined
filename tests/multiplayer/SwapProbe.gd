@@ -117,30 +117,36 @@ func run():
 	g.end(Globals.END_GIVEUP)
 	r = yield(watch("at_results", 10.0), "completed")
 	check(at_results(), "run -> results in %.2f s (darkest %.3f, slowest %.0f ms)" % r)
-	# 4. fail: the death log over the stopped run; R restarts (eyelids), a key skips to the results
+	# 4. fail: the death log over the run, which plays on (not paused, nothing judged, camera tilting)
 	yield(wait(2.0), "completed")
 	get_tree().change_scene("res://scenes/loaders/songload.tscn")
 	r = yield(watch("at_run", 12.0), "completed")
-	yield(wait(2.0), "completed")
+	yield(wait(4.0), "completed")
 	Rhythia.restart_on_death = false
-	tag = "fail"
-	get_tree().current_scene.get_node("Game").end(Globals.END_FAIL)
+	g = get_tree().current_scene.get_node("Game")
+	var cam = get_tree().current_scene.get_node("Camera")
+	g.end(Globals.END_FAIL)
+	var hm = [g.hits, g.misses]
+	var ms0 = g.get_node("Spawn").ms
 	var log_ms = []
 	var u0 = OS.get_ticks_usec()
-	while (OS.get_ticks_usec() - u0) < 700000:
+	while (OS.get_ticks_usec() - u0) < 800000:
 		var u = OS.get_ticks_usec()
 		yield(get_tree(), "idle_frame")
 		log_ms.append((OS.get_ticks_usec() - u) / 1000.0)
 	log_ms.sort()
 	var sw = get_tree().root.get_node_or_null("RRScreenSwap")
-	check(sw and sw.dlog and sw.dlog.cur > 3, "fail: death log typing (line %d at 0.7 s), frames median %.2f ms, worst %.2f ms" % [sw.dlog.cur if sw and sw.dlog else -1, log_ms[log_ms.size() / 2], log_ms[-1]])
-	if OS.get_environment("RR_SHOTS") != "": yield(shoot_for(1.6), "completed")
+	var roll = rad2deg(asin(clamp(cam.global_transform.basis.x.y, -1, 1)))
+	check(sw and sw.dlog and sw.dlog.cur > 8, "fail: death log typing (line %d at 0.8 s), frames median %.2f ms, worst %.2f ms" % [sw.dlog.cur if sw and sw.dlog else -1, log_ms[log_ms.size() / 2], log_ms[-1]])
+	check(!get_tree().paused and g.get_node("Spawn").ms > ms0 + 500 and [g.hits, g.misses] == hm, "the run plays on under it (ms %.0f -> %.0f), nothing judged (hits/misses %s -> %s)" % [ms0, g.get_node("Spawn").ms, str(hm), str([g.hits, g.misses])])
+	check(abs(roll) > 3.0, "camera tilting: %.1f deg at 0.8 s" % roll)
+	if OS.get_environment("RR_SHOTS") != "": yield(shoot_for(0.2), "completed")
 	var k = InputEventKey.new(); k.scancode = KEY_R; k.pressed = true
 	Input.parse_input_event(k)
 	if OS.get_environment("RR_SHOTS") != "":
-		for i in 12:
+		for i in 14:
 			yield(get_tree(), "idle_frame")
-			if i in [2, 6, 11]:
+			if i in [1, 3, 6]:
 				var img = get_tree().root.get_texture().get_data()
 				img.flip_y(); img.resize(640, 360)
 				img.save_png("@@OUT@@/dead_%02d.png" % i)
@@ -149,21 +155,27 @@ func run():
 	k = InputEventKey.new(); k.scancode = KEY_R; k.pressed = false
 	Input.parse_input_event(k)
 	r = yield(watch("at_run", 8.0), "completed")
-	check(at_run() and !Rhythia.has_meta("last_run"), "R on the death log -> restarted run in %.2f s (darkest %.3f, slowest %.0f ms)" % r)
-	out("  after R: %s paused=%s ms=%s" % [get_tree().current_scene.filename, get_tree().paused, get_tree().current_scene.get_node("Game/Spawn").ms if get_tree().current_scene.has_node("Game/Spawn") else "?"])
-	yield(wait(2.0), "completed")
-	out("  2 s later: %s paused=%s ms=%s" % [get_tree().current_scene.filename, get_tree().paused, get_tree().current_scene.get_node("Game/Spawn").ms if get_tree().current_scene.has_node("Game/Spawn") else "?"])
+	check(at_run() and !Rhythia.has_meta("last_run"), "R on the death log -> restarted run (darkest %.3f, slowest %.0f ms)" % [r[1], r[2]])
+	yield(wait(3.0), "completed")
+	out("  restarted run still going: ms=%.0f" % get_tree().current_scene.get_node("Game/Spawn").ms)
+	# click: red card, eyes close, black, the results fade in
 	get_tree().current_scene.get_node("Game").end(Globals.END_FAIL)
 	yield(wait(0.5), "completed")
-	sw = get_tree().root.get_node_or_null("RRScreenSwap")
-	out("  second fail: swap=%s dlog=%s scene=%s" % [sw != null, sw.dlog != null if sw else false, get_tree().current_scene.filename])
-	k = InputEventKey.new(); k.scancode = KEY_SPACE; k.pressed = true
-	Input.parse_input_event(k)
-	k = InputEventKey.new(); k.scancode = KEY_SPACE; k.pressed = false
-	Input.parse_input_event(k)
+	var mb = InputEventMouseButton.new(); mb.button_index = BUTTON_LEFT; mb.pressed = true
+	Input.parse_input_event(mb)
+	mb = InputEventMouseButton.new(); mb.button_index = BUTTON_LEFT; mb.pressed = false
+	Input.parse_input_event(mb)
 	tag = "skip"
 	r = yield(watch("at_results", 10.0), "completed")
-	check(at_results(), "key on the death log -> results in %.2f s (darkest %.3f, slowest %.0f ms)" % r)
+	check(at_results(), "click on the death log -> results in %.2f s (darkest %.3f: black between)" % [r[0], r[1]])
+	yield(wait(1.5), "completed")
+	# the log runs out by itself
+	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	r = yield(watch("at_run", 12.0), "completed")
+	yield(wait(3.0), "completed")
+	get_tree().current_scene.get_node("Game").end(Globals.END_FAIL)
+	r = yield(watch("at_results", 12.0), "completed")
+	check(at_results(), "death log run out -> results in %.2f s" % r[0])
 	yield(wait(1.5), "completed")
 	# 5. a failed replay: no death log
 	get_tree().change_scene("res://scenes/loaders/songload.tscn")

@@ -318,7 +318,7 @@ func _process(delta:float):
 		comboring._set_percent(combo_ring_value)
 		vp_mark(left_vp) # (a shader parameter: no redraw signal)
 	
-	if Input.is_action_pressed("give_up"):
+	if Input.is_action_pressed("give_up") and !Game.rr_giveup_block:
 		rr_giveup_shown = true
 		get_node("GiveUpHud").visible = true
 		get_node("GiveUpVP/Control/Label").visible = !$PauseHud.visible

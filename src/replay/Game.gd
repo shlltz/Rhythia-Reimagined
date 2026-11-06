@@ -71,7 +71,10 @@ func end(end_type:int):
 		Rhythia.replay.store_sig($Spawn.rms,Globals.RS_GIVEUP)
 	if end_type != Globals.END_PASS:
 		Rhythia.fail_asp.play()
-	get_tree().paused = true
+	# a live fail gets the death log (ScreenSwap "fail"): the run plays on under it (nothing is judged,
+	# NoteManager), it stops when the log ends
+	var death_log = end_type == Globals.END_FAIL and !Rhythia.replaying and !Rhythia.visual_mode and !mp_run and !Rhythia.restart_on_death
+	if !death_log: get_tree().paused = true
 	if total_notes == 0: total_notes = 1
 	update_hud()
 	Rhythia.just_ended_song = true
@@ -147,7 +150,7 @@ func end(end_type:int):
 		if $Spawn.rr_track and !Rhythia.replaying: $Spawn.rr_track.finish(Rhythia.selected_song, end_type, speed_multi) # (settings generator)
 		var fx = get_node_or_null("PassFx")
 		if fx and end_type == Globals.END_PASS: yield(fx.zoom_in(), "completed") # personal pass effect (hype mod)
-		load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "fail" if end_type == Globals.END_FAIL and !Rhythia.replaying and !Rhythia.visual_mode and !mp_run else "forward") # (no black: the run's last frame flies past into the results)
+		load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "fail" if death_log else "forward") # (no black: the run's last frame flies past into the results)
 
 func update_timer(ms:float,canSkip:bool=false):
 	# (perf: the minutes / seconds worked out here were never used; the HUD formats its own)
@@ -189,8 +192,9 @@ func _process(delta):
 	if passed:
 		$Avatar/ArmR.translation.y += (1 - $Avatar/ArmR.translation.y) * 0.01
 	
+	if rr_giveup_block and !Input.is_action_pressed("give_up"): rr_giveup_block = false
 	if !ending:
-		if Input.is_action_pressed("give_up"):
+		if Input.is_action_pressed("give_up") and !rr_giveup_block:
 			giving_up += delta/0.6
 			if giving_up >= 1:
 				if !Rhythia.queue_active and $Spawn.ms > last_ms: end(Globals.END_PASS)
@@ -280,7 +284,12 @@ func miss(col):
 			end(Globals.END_FAIL)
 
 
+# R restarts from the death log, and R is also hold-to-give-up: a run that starts with it already
+# held ignores it until it's let go (one long first frame would otherwise give up at once)
+var rr_giveup_block:bool = false
+
 func _ready():
+	rr_giveup_block = Input.is_action_pressed("give_up")
 	if ResourceLoader.exists("res://mods/hype/PassFx.gd"): # pass glow + zoom (hype mod)
 		var fx = load("res://mods/hype/PassFx.gd").new()
 		fx.name = "PassFx"

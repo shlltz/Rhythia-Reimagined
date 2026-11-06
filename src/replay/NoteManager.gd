@@ -361,6 +361,8 @@ func reposition_notes(force:bool=false,rerun_start:int=-1):
 			is_first = false
 #			$Label.text += "next_ms: %s\n" % [ notems ]
 #			next_ms = notems
+		elif ms >= notems and notes[i][2] == Globals.NSTATE_ACTIVE and get_parent().ending: # (failed, death log up: the run plays on, nothing is judged)
+			if ms > notems + hit_window: notes[i][2] = Globals.NSTATE_MISS
 		elif ms >= notems and notes[i][2] == Globals.NSTATE_ACTIVE:
 			if rr_track: rr_track.came_due(i, Vector2(cursor_node.transform.origin.x, cursor_node.transform.origin.y))
 			var result = Rhythia.visual_mode or note_check_collision(i)
