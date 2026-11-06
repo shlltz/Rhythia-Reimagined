@@ -147,7 +147,7 @@ func end(end_type:int):
 		if $Spawn.rr_track and !Rhythia.replaying: $Spawn.rr_track.finish(Rhythia.selected_song, end_type, speed_multi) # (settings generator)
 		var fx = get_node_or_null("PassFx")
 		if fx and end_type == Globals.END_PASS: yield(fx.zoom_in(), "completed") # personal pass effect (hype mod)
-		load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "fail" if end_type == Globals.END_FAIL else "forward") # (no black: the run's last frame flies past into the results)
+		load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "fail" if end_type == Globals.END_FAIL and !Rhythia.replaying and !Rhythia.visual_mode and !mp_run else "forward") # (no black: the run's last frame flies past into the results)
 
 func update_timer(ms:float,canSkip:bool=false):
 	# (perf: the minutes / seconds worked out here were never used; the HUD formats its own)

@@ -111,7 +111,7 @@ func finish():
 	
 	screen.set_status("Ready")
 	if ResourceLoader.exists("res://mods/hype/PassFx.gd"): load("res://mods/hype/PassFx.gd").warm(self) # (its end-of-map shader, compiled now)
-	load("res://mods/replay/ScreenSwap.gd").warm(screen) # (and the fail snap's blur)
+	load("res://mods/replay/ScreenSwap.gd").warm(screen) # (and the death log's blips)
 	load("res://mods/replay/RunIntro.gd").warm(screen) # (and the map start's snap + its sound)
 	if result is PackedScene and OS.can_use_threads():
 		build_thread = Thread.new()
