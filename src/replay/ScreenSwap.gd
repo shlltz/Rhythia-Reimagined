@@ -6,9 +6,10 @@ extends CanvasLayer
 #   "forward" - grows past the camera and fades (run -> results)
 #   "fail"    - a live fail (not replays / autoplay / multiplayer): the death log (DeathLog.gd) runs over
 #               the run, which plays on under it. When the log ends, or a click / Esc skips it, the run
-#               stops, a red card flashes (the square logo, black on red, between black bars), eyelids
-#               close, the results load behind the black and fade in. R: the same, with the fail sound,
-#               and the run restarts behind the closed eyes, which open on it.
+#               stops, a red card flashes (black bars, a red band): the square logo and a FAIL jump around
+#               it glitching, then the logo alone snaps back to the centre, eyelids close, the fail sound
+#               plays in the dark, the results load behind it and fade in. R: the same, but the run
+#               restarts behind the closed eyes, which open on it.
 # Through menuload (the black loader between a run and the menu) its fades are skipped, so the menu
 # comes up as soon as it is loaded. Frees itself when done.
 
@@ -40,6 +41,9 @@ var mode:String = ""     # fail, once answered: "retry" / "results"
 var stage:int = 0        # 1 card + closing, 2 waiting for the next screen, 3 opening / fading in
 var lid_t:float = 0.0
 var dead_logo:TextureRect = null
+var dead_fail:Label = null
+var dead_glitch:ColorRect = null
+var dead_copy:BackBufferCopy = null
 var logo_home:Vector2
 var band_rect:Rect2
 var next_pop:float = 0.0
@@ -112,9 +116,7 @@ func _close(m:String):
 	dead.visible = true
 	next_pop = 0.0
 	prng.randomize()
-	if m == "retry":
-		if Rhythia.fail_asp: Rhythia.fail_asp.play()
-		if Rhythia.has_meta("last_run"): Rhythia.remove_meta("last_run") # (no stale results on the next menu)
+	if m == "retry" and Rhythia.has_meta("last_run"): Rhythia.remove_meta("last_run") # (no stale results on the next menu)
 
 # the next screen (after a change_scene) is up and drawing smoothly; the loaders' own fades skipped
 func _next_ready(delta) -> bool:
@@ -147,8 +149,21 @@ func _fail_step(delta):
 				var sc = prng.randf_range(0.6, 1.15)
 				dead_logo.rect_scale = Vector2(sc, sc)
 				dead_logo.rect_rotation = prng.randf_range(-25.0, 25.0)
+				var fs = dead_fail.rect_size # the FAIL jumps too (somewhere else on the band)
+				dead_fail.visible = true
+				dead_fail.rect_position = Vector2(prng.randf_range(band_rect.position.x, band_rect.end.x - fs.x), prng.randf_range(band_rect.position.y, band_rect.end.y - fs.y))
+				dead_fail.rect_rotation = prng.randf_range(-12.0, 12.0)
+				var fz = prng.randf_range(0.75, 1.25)
+				dead_fail.rect_scale = Vector2(fz, fz)
 				_pop_sound(prng.randf_range(1.5, 2.2), -15.0)
-		elif dead_logo.rect_position != logo_home: # back home, a punch
+			dead_copy.visible = true # glitching while they jump
+			dead_glitch.visible = true
+			dead_glitch.material.set_shader_param("seed", prng.randf() * 100.0)
+			dead_glitch.material.set_shader_param("amount", prng.randf_range(0.45, 1.0))
+		elif dead_logo.rect_position != logo_home: # back home, a punch (clean: no FAIL, no glitch)
+			dead_fail.visible = false
+			dead_copy.visible = false
+			dead_glitch.visible = false
 			dead_logo.rect_position = logo_home
 			dead_logo.rect_rotation = 0.0
 			dead_logo.rect_scale = Vector2(1.25, 1.25)
@@ -163,6 +178,9 @@ func _fail_step(delta):
 		dead.visible = false
 		dlog.untilt()
 		dlog.visible = false
+		if Rhythia.fail_asp: # the fail sound once the eyes are shut (the run is paused by now: it plays through it)
+			Rhythia.fail_asp.pause_mode = Node.PAUSE_MODE_PROCESS
+			Rhythia.fail_asp.play()
 		var sc0 = get_tree().current_scene # the run's deferred bookkeeping (recent plays, ...): now, behind the shut eyes
 		var game0 = sc0.get_node_or_null("Game") if sc0 else null
 		if game0 and game0.has_method("rr_finish_books"): game0.rr_finish_books()
@@ -287,6 +305,31 @@ func _dead_card() -> Control:
 	logo_home = logo.rect_position
 	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	c.add_child(logo)
+	var DL = load("res://mods/replay/DeathLog.gd")
+	dead_fail = Label.new()
+	dead_fail.text = "FAIL"
+	var ff = DynamicFont.new()
+	if ResourceLoader.exists(DL.FONT): ff.font_data = load(DL.FONT)
+	ff.size = DL.fail_size(vs)
+	dead_fail.add_font_override("font", ff)
+	dead_fail.add_color_override("font_color", Color(0, 0, 0))
+	dead_fail.rect_size = ff.get_string_size("FAIL") + Vector2(8, 0)
+	dead_fail.rect_pivot_offset = dead_fail.rect_size / 2
+	dead_fail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dead_fail.visible = false
+	c.add_child(dead_fail)
+	dead_copy = BackBufferCopy.new() # (the glitch reads the card as drawn)
+	dead_copy.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	dead_copy.visible = false
+	c.add_child(dead_copy)
+	dead_glitch = ColorRect.new()
+	dead_glitch.anchor_right = 1
+	dead_glitch.anchor_bottom = 1
+	dead_glitch.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dead_glitch.material = ShaderMaterial.new()
+	dead_glitch.material.shader = DL.shader(DL.GLITCH_SHADER)
+	dead_glitch.visible = false
+	c.add_child(dead_glitch)
 	return c
 
 # each pop of the logo: the map start's thump, pitched up

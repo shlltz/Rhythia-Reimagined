@@ -188,11 +188,19 @@ static func _shader_rect(code:String) -> ColorRect:
 	r.anchor_right = 1
 	r.anchor_bottom = 1
 	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sh = Shader.new()
-	sh.code = code
 	r.material = ShaderMaterial.new()
-	r.material.shader = sh
+	r.material.shader = shader(code)
 	return r
+
+# one Shader per code for the session (compiled once on the loading card, shared by every use)
+static func shader(code:String) -> Shader:
+	var cache = Engine.get_meta("rr_shader_cache") if Engine.has_meta("rr_shader_cache") else {}
+	if !cache.has(code.hash()):
+		var sh = Shader.new()
+		sh.code = code
+		cache[code.hash()] = sh
+		Engine.set_meta("rr_shader_cache", cache)
+	return cache[code.hash()]
 
 # on the loading card: the log's font drawn once at its size and its shaders compiled (no hitch on the fail)
 static func warm(parent:Node):
@@ -225,6 +233,18 @@ static func warm(parent:Node):
 	l.modulate.a = 0.01
 	parent.add_child(l)
 	parent.get_tree().create_timer(0.3).connect("timeout", l, "queue_free")
+	var f2 = DynamicFont.new() # (the red card's FAIL, ScreenSwap)
+	if ResourceLoader.exists(FONT): f2.font_data = load(FONT)
+	f2.size = fail_size(vs)
+	var l2 = Label.new()
+	l2.text = "FAIL"
+	l2.add_font_override("font", f2)
+	l2.modulate.a = 0.01
+	parent.add_child(l2)
+	parent.get_tree().create_timer(0.3).connect("timeout", l2, "queue_free")
+
+static func fail_size(vs:Vector2) -> int:
+	return int(clamp(vs.y * 0.17, 40, 260))
 
 
 func _radio_job(_u):
