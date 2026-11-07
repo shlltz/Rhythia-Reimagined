@@ -14,8 +14,11 @@ const HOLD = 0.35      # s on the last line
 const ORANGE = Color(1.0, 0.56, 0.12)
 const RED = Color(1.0, 0.13, 0.1)
 const PALE = Color(1.0, 0.93, 0.78)
-const ROLL = 30.0      # degrees the camera tilts over by the end
-const SINK = 0.35      # how far it sinks
+const ROLL = 16.0      # degrees the camera rolls over by the end
+const PITCH = 42.0     # degrees it tips back (looking up: falling backwards to the ground)
+const SINK = 1.0       # how far it drops (accelerating)
+const SLOW_END = 0.3   # the run's speed (map + song, pitch down like tape) by the end of the log
+const RADIO_DB = [-24.0, -9.0] # the radio static from the start to the end of the log
 const TINT_SHADER = """shader_type canvas_item;
 uniform float k = 0.0;
 void fragment() {
@@ -64,7 +67,10 @@ var glitch_copy:BackBufferCopy
 var burst:float = 0.0    # s left of the current glitch burst
 var burst_amt:float = 0.0
 var cam = null          # the run's camera (tilted while the log runs)
-var applied:float = 0.0 # (tilt put on it this frame, taken off again first thing next frame)
+var applied:bool = false # (fall put on it this frame, taken off again first thing next frame)
+var base_tf:Transform    # (the camera as the run left it)
+var nm = null           # the run's NoteManager (slowed down)
+var radio:AudioStreamPlayer = null
 var music:AudioStreamPlayer = null
 var music_bus:String = ""
 var music_db:float = 0.0
@@ -157,7 +163,17 @@ func _ready():
 		players.append(p)
 	var sc = get_tree().current_scene
 	cam = sc.get_node_or_null("Camera") if sc else null
+	nm = sc.get_node_or_null("Game/Spawn") if sc else null
+	if nm and !("rr_slow" in nm): nm = null
 	_muffle_start(sc)
+	_radio_take() # (done long ago on the loading card)
+	if Engine.has_meta("rr_radio_sfx"): # the radio static under the log
+		radio = AudioStreamPlayer.new()
+		radio.stream = Engine.get_meta("rr_radio_sfx")
+		radio.bus = bus
+		radio.volume_db = RADIO_DB[0]
+		add_child(radio)
+		radio.play(rng.randf() * 1.0)
 
 static func _shader_rect(code:String) -> ColorRect:
 	var r = ColorRect.new()
@@ -172,6 +188,15 @@ static func _shader_rect(code:String) -> ColorRect:
 
 # on the loading card: the log's font drawn once at its size and its shaders compiled (no hitch on the fail)
 static func warm(parent:Node):
+	_radio_take()
+	if !Engine.has_meta("rr_radio_sfx") and !Engine.has_meta("rr_radio_job"): # the radio static, made on a worker (tens of ms of maths)
+		if OS.can_use_threads():
+			var job = load("res://mods/replay/DeathLog.gd").new() # (not in the tree: just the thread's target)
+			var th = Thread.new()
+			if th.start(job, "_radio_job") == OK: Engine.set_meta("rr_radio_job", [th, job])
+			else: job.free()
+		else: Engine.set_meta("rr_radio_sfx", _radio_sound())
+
 	for code in [TINT_SHADER, GLITCH_SHADER]:
 		var r = _shader_rect(code)
 		r.anchor_right = 0
@@ -192,6 +217,18 @@ static func warm(parent:Node):
 	l.modulate.a = 0.01
 	parent.add_child(l)
 	parent.get_tree().create_timer(0.3).connect("timeout", l, "queue_free")
+
+
+func _radio_job(_u):
+	return _radio_sound()
+
+static func _radio_take():
+	if !Engine.has_meta("rr_radio_job"): return
+	var j = Engine.get_meta("rr_radio_job")
+	Engine.remove_meta("rr_radio_job")
+	var s = j[0].wait_to_finish()
+	j[1].free()
+	if s is AudioStreamSample: Engine.set_meta("rr_radio_sfx", s)
 
 # ------------------------------------------------------------------ the run under it
 func _muffle_start(sc):
@@ -218,17 +255,19 @@ func _muffle(k:float):
 
 # ScreenSwap calls this first thing every frame: the camera back as the run left it
 func untilt():
-	if applied != 0.0 and is_instance_valid(cam):
-		cam.translate_object_local(Vector3(0, applied * SINK, 0))
-		cam.rotate_object_local(Vector3(0, 0, 1), -deg2rad(ROLL) * applied)
-	applied = 0.0
+	if applied and is_instance_valid(cam): cam.transform = base_tf
+	applied = false
 
+# falling backwards: the view tips up and rolls a little while it drops, faster and faster
 func _tilt(k:float):
 	if !is_instance_valid(cam): return
 	var e = k * k * (3.0 - 2.0 * k)
-	cam.rotate_object_local(Vector3(0, 0, 1), deg2rad(ROLL) * e)
-	cam.translate_object_local(Vector3(0, -e * SINK, 0))
-	applied = e
+	base_tf = cam.transform
+	var tf = base_tf
+	tf.basis = tf.basis * Basis(Vector3(1, 0, 0), deg2rad(PITCH) * e) * Basis(Vector3(0, 0, 1), deg2rad(ROLL) * e)
+	tf.origin.y -= SINK * k * k
+	cam.transform = tf
+	applied = true
 
 func _exit_tree():
 	untilt()
@@ -240,6 +279,7 @@ func _exit_tree():
 func stop():
 	stopped = true
 	for p in players: p.stop()
+	if radio: radio.stop()
 	glitch.visible = false
 	glitch_copy.visible = false
 
@@ -262,6 +302,11 @@ func _process(delta):
 		_glitch(dt, k)
 		_muffle(min(t / 0.5, 1.0))
 		if music: music.volume_db = music_db - 12.0 * k
+		var slow = lerp(1.0, SLOW_END, k * k * (3.0 - 2.0 * k)) # the run winds down, the song with it (pitch down, like tape)
+		if nm:
+			nm.rr_slow = slow
+			if music: music.pitch_scale = max(0.05, float(nm.speed_multi) * slow)
+		if radio: radio.volume_db = lerp(RADIO_DB[0], RADIO_DB[1], k) + (6.0 if burst > 0.0 else 0.0) # (louder with every glitch)
 		if end_t >= 0.0:
 			end_t += dt
 			labels[-1].visible = fmod(end_t, 0.14) < 0.09 or end_t > 0.28 # (the last line blinks twice)
@@ -316,3 +361,46 @@ func _input(ev):
 		get_tree().set_input_as_handled() # (not before 0.25 s: a click still in flight from the run)
 		answered = true
 		parent.finish()
+
+# radio static (a loop): hiss in a radio band, fluttering, with dropouts and crackles; made once on
+# the loading card (22 kHz is plenty for static)
+static func _radio_sound() -> AudioStreamSample:
+	var rate = 22050
+	var n = int(rate * 1.6)
+	var data = PoolByteArray()
+	data.resize(n * 2)
+	var rng = RandomNumberGenerator.new()
+	rng.seed = 1993
+	var lp1 = 0.0
+	var lp2 = 0.0
+	var gate = 1.0
+	var gate_n = 0
+	var crack = 0.0
+	var ph = 0.0
+	for i in n:
+		var w = rng.randf() * 2.0 - 1.0
+		lp1 += (w - lp1) * 0.55       # (top of the band)
+		lp2 += (lp1 - lp2) * 0.09     # (bottom of the band)
+		var hiss = lp1 - lp2
+		gate_n -= 1
+		if gate_n <= 0: # dropouts / level jumps every 15..90 ms
+			gate_n = int(rate * rng.randf_range(0.015, 0.09))
+			gate = 0.08 if rng.randf() < 0.18 else rng.randf_range(0.45, 1.0)
+		ph += TAU * rng.randf_range(9.0, 23.0) / rate
+		var flutter = 0.75 + 0.25 * sin(ph)
+		if rng.randf() < 0.0012: crack = rng.randf_range(0.5, 1.0) * (1.0 if rng.randf() < 0.5 else -1.0)
+		crack *= 0.93
+		var edge = min(1.0, min(i, n - 1 - i) / (rate * 0.01)) # (no click at the loop point)
+		var v = int(clamp((hiss * 1.6 * gate * flutter + crack) * edge, -1.0, 1.0) * 24000.0)
+		if v < 0: v += 65536
+		data[i * 2] = v & 0xff
+		data[i * 2 + 1] = (v >> 8) & 0xff
+	var s = AudioStreamSample.new()
+	s.format = AudioStreamSample.FORMAT_16_BITS
+	s.mix_rate = rate
+	s.stereo = false
+	s.data = data
+	s.loop_mode = AudioStreamSample.LOOP_FORWARD
+	s.loop_begin = 0
+	s.loop_end = n
+	return s

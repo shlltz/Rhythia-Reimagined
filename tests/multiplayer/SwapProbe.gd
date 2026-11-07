@@ -173,6 +173,12 @@ func run():
 	log_ms.sort()
 	var sw = get_tree().root.get_node_or_null("RRScreenSwap")
 	var roll = rad2deg(asin(clamp(cam.global_transform.basis.x.y, -1, 1)))
+	var look_up = rad2deg(asin(clamp(-cam.global_transform.basis.z.y, -1, 1))) # (forward is -z)
+	var spn = g.get_node("Spawn")
+	var mus = spn.get_node("Music")
+	var dl = get_tree().root.get_node("RRScreenSwap").dlog
+	check(spn.rr_slow < 0.95 and mus.pitch_scale < 0.95 * spn.speed_multi and dl.radio and dl.radio.playing, "the run winds down (speed %.2f, music pitch %.2f), radio static playing" % [spn.rr_slow, mus.pitch_scale])
+	check(look_up > 8.0, "falling: the camera looks up %.1f deg" % look_up)
 	check(sw and sw.dlog and sw.dlog.cur > 8, "fail: death log typing (line %d at 0.8 s), frames median %.2f ms, worst %.2f ms" % [sw.dlog.cur if sw and sw.dlog else -1, log_ms[log_ms.size() / 2], log_ms[-1]])
 	check(!get_tree().paused and g.get_node("Spawn").ms > ms0 + 500 and [g.hits, g.misses] == hm, "the run plays on under it (ms %.0f -> %.0f), nothing judged (hits/misses %s -> %s)" % [ms0, g.get_node("Spawn").ms, str(hm), str([g.hits, g.misses])])
 	check(abs(roll) > 3.0, "camera tilting: %.1f deg at 0.8 s" % roll)

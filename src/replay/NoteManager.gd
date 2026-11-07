@@ -868,6 +868,8 @@ func _fx_refill():
 			fx_ready[src].append(src.duplicate())
 			return
 
+var rr_slow:float = 1.0
+
 func _process(delta:float):
 	_fx_refill()
 	var u = OS.get_ticks_usec()
@@ -882,6 +884,7 @@ func _process(delta:float):
 		else:
 			delta *= replay_rate
 		$Music.stream_paused = replay_paused
+	if rr_slow != 1.0: delta *= rr_slow # (the death log winds the run down: DeathLog.gd, music pitch with it)
 	
 	if Rhythia.vr: do_vr_cursor()
 	elif Rhythia.get("cam_unlock"): do_spin()
