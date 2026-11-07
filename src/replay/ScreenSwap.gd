@@ -13,9 +13,9 @@ extends CanvasLayer
 # Through menuload (the black loader between a run and the menu) its fades are skipped, so the menu
 # comes up as soon as it is loaded. Frees itself when done.
 
-const TIME = {"back": 0.42, "forward": 0.55}
+const TIME = {"back": 0.36, "forward": 0.4}
 const MAX_HOLD = 6.0   # (still loading: the frozen frame waits for the next screen)
-const MAX_SETTLE = 0.6 # s it waits for smooth frames once the next screen is up (a slow machine never gets them)
+const MAX_SETTLE = 0.4 # s it waits for smooth frames once the next screen is up (a slow machine never gets them)
 const FLASH = 0.44     # s the red card shows: the logo pops around the band (POPS s), then back to the centre
 const POPS = 0.3
 const POP_EVERY = 0.042
@@ -259,17 +259,30 @@ func _process(delta):
 		return
 	if !up:
 		up = _next_ready(delta)
+		_drift() # (never a still frame while the next screen loads: it keeps moving)
 		return
 	t += min(delta, 1.0 / 30.0)
 	var k = min(t / TIME.get(style, 0.45), 1.0)
 	var e = 1.0 - pow(1.0 - k, 3)
 	if shot:
 		shot.rect_pivot_offset = shot.rect_size / 2
-		var s = (1.0 - 0.08 * e) if style == "back" else (1.0 + 0.12 * e)
+		var s = drift_s + ((-0.08 * e) if style == "back" else (0.12 * e))
 		shot.rect_scale = Vector2(s, s)
 		shot.modulate.a = 1.0 - k * k * (3.0 - 2.0 * k)
 	if k >= 1.0:
 		queue_free()
+
+# while the next screen loads the frozen frame drifts (forward: on towards you, back: away) and dims a
+# little, so the change is moving from the first frame; the move-away then carries on from there
+var drift_s:float = 1.0
+func _drift():
+	if !shot: return
+	var d = 1.0 - exp(-held * 2.5)
+	drift_s = 1.0 + (0.04 * d if style == "forward" else -0.03 * d)
+	shot.rect_pivot_offset = shot.rect_size / 2
+	shot.rect_scale = Vector2(drift_s, drift_s)
+	var v = 1.0 - 0.22 * d
+	shot.modulate = Color(v, v, v, 1.0)
 
 # black bars, a red band with the square logo in black
 func _dead_card() -> Control:

@@ -81,6 +81,20 @@ static func record(run:Dictionary):
 		f.close()
 		Engine.set_meta("rr_recent_key", _key(Globals.p(FILE))) # (the kept copy is what was written)
 
+# a map's plays so far, for the results screen's "how this run compares" (read before the run is recorded)
+static func summary(id:String) -> Dictionary:
+	var plays:Array = _load().get(id, [])
+	var out = {attempts = plays.size(), best_score = -1, best_acc = -1.0, last = null, fails_in_row = 0}
+	for p in plays:
+		if p.get("passed"):
+			out.best_score = max(out.best_score, int(p.get("score", 0)))
+			out.best_acc = max(out.best_acc, float(p.get("acc", 0.0)))
+	if !plays.empty(): out.last = plays[plays.size() - 1]
+	for i in range(plays.size() - 1, -1, -1):
+		if plays[i].get("passed"): break
+		out.fails_in_row += 1
+	return out
+
 static func grade(p:Dictionary) -> Array: # [letter, colour] - EndInfo.gd thresholds
 	if !p.passed: return ["F", Color("#ff6b6b")]
 	var a = float(p.acc)

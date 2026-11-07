@@ -62,6 +62,7 @@ func update_hud():
 var ending:bool = false
 func end(end_type:int):
 	if ending: return
+	Engine.time_scale = 1.0 # (the pass moment's slow motion never outlives the run)
 	print("My god, what are you doing!?")
 	ending = true
 	var mp = get_tree().root.get_node_or_null("RRMultiplayer") # multiplayer match: final score to the lobby
@@ -145,10 +146,13 @@ func end(end_type:int):
 			resume = resume_offer, resumed = has_meta("rr_resumed"), # retry from the fail point (Checkpoint.gd)
 			replay_path = Globals.p("user://replays/%s.sspre" % Rhythia.replay.id) if Rhythia.record_replays and !Rhythia.replaying and Rhythia.replay and Rhythia.replay.id != "" and !has_meta("rr_resumed") else ""})
 		if CK: CK.restore_offset() # (back to the player's own Start From)
+		if ResourceLoader.exists("res://mods/stars/RecentPlays.gd") and !Rhythia.replaying: # this map's plays before this one (ResultsScreen: how this run compares)
+			Rhythia.get_meta("last_run")["prev"] = load("res://mods/stars/RecentPlays.gd").summary(Rhythia.selected_song.id)
 		rr_books = [Rhythia.get_meta("last_run"), end_type, mp_run]
 		if !death_log: rr_finish_books() # (a live fail plays on under the death log: its ~40 ms of bookkeeping would hitch it - done once the eyes are shut, ScreenSwap)
 		var fx = get_node_or_null("PassFx")
-		if fx and end_type == Globals.END_PASS: yield(fx.zoom_in(), "completed") # personal pass effect (hype mod)
+		if fx and end_type == Globals.END_PASS and !has_meta("rr_pass_moment"): yield(fx.zoom_in(), "completed") # personal pass effect (hype mod; the pass moment, PassMoment.gd, cuts from white instead)
+		elif !death_log: yield(get_tree(), "idle_frame") # (quitting from the pause menu: one frame without it, so the frozen frame is the run alone)
 		load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "fail" if death_log else "forward") # (no black: the run's last frame flies past into the results)
 
 var rr_books = null
@@ -175,7 +179,8 @@ func update_timer(ms:float,canSkip:bool=false):
 			get_node("Spawn/Music").stop()
 			end(Globals.END_PASS)
 		elif !Rhythia.queue_active and !get_node("Spawn/Music").playing:
-			end(Globals.END_PASS)
+			var pm = get_node_or_null("PassMoment")
+			if !(pm and pm.started and !pm.done): end(Globals.END_PASS) # (the pass moment ends the run itself)
 
 
 
@@ -298,6 +303,11 @@ var rr_giveup_block:bool = false
 
 func _ready():
 	rr_giveup_block = Input.is_action_pressed("give_up")
+	var PM = load("res://mods/replay/PassMoment.gd")
+	if PM.live(): # the moment on the last note of a pass
+		var pm = PM.new()
+		pm.name = "PassMoment"
+		add_child(pm)
 	if ResourceLoader.exists("res://mods/hype/PassFx.gd"): # pass glow + zoom (hype mod)
 		var fx = load("res://mods/hype/PassFx.gd").new()
 		fx.name = "PassFx"

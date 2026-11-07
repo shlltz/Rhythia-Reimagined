@@ -140,6 +140,8 @@ func _ready():
 		if g[0] == "F": vc = load(CardUI.LOOK).CRIT.lightened(0.15)
 		elif g[0] in ["SS", "S"] and CardUI._has("hot"): vc = Lk.hot(0.95)
 		CardUI.label(holder, "// EVALUATION: " + v, _f(15), vc, Vector2(sx, RING_C.y + 58), W - sx - 30)
+		var pl = _progress()
+		for i in pl.size(): CardUI.label(holder, pl[i][0], _f(15), pl[i][1], Vector2(sx, RING_C.y + 84 + i * 22), W - sx - 30)
 
 	# ---- stat tiles (2 rows of 4)
 	var fs = _f(14)
@@ -337,6 +339,28 @@ func _button(bar:Control, text:String, cb:String):
 	bar.add_child(b)
 	return b
 
+# how this pass compares with the map's plays before it (Game.end: run.prev, RecentPlays.summary) - up to 2 lines
+func _progress() -> Array:
+	var p = run.get("prev")
+	if !(p is Dictionary) or run.end_type != Globals.END_PASS or run.replay or run.get("stored"): return []
+	var good = Color("#7dffa8")
+	var gold = Color("#ffd75e")
+	var dim = Color(1, 1, 1, 0.45)
+	var acc = float(run.hits) / max(1.0, float(run.total))
+	var out = []
+	if p.best_score < 0:
+		out.append(["FIRST CLEAR" + (" after %d attempt%s" % [p.attempts, "" if p.attempts == 1 else "s"] if p.attempts > 0 else ""), gold])
+	elif p.fails_in_row >= 2:
+		out.append(["CLEARED after %d attempts" % (p.fails_in_row + 1), gold])
+	if p.best_score >= 0:
+		if run.score > p.best_score: out.append(["▲ NEW BEST  +%s" % Globals.comma_sep(run.score - p.best_score), gold])
+		elif acc > p.best_acc + 0.00005: out.append(["▲ +%.2f%% accuracy over your best" % ((acc - p.best_acc) * 100.0), good])
+	if p.last and int(p.last.get("misses", 0)) > run.misses:
+		var d = int(p.last.misses) - run.misses
+		out.append(["%d fewer miss%s than last time" % [d, "" if d == 1 else "es"], good])
+	if out.empty() and p.best_score > run.score: out.append(["▼ %s below your best" % Globals.comma_sep(p.best_score - run.score), dim])
+	return out.slice(0, 1) if out.size() > 2 else out
+
 func _status() -> Array:
 	if run.replay: return ["Replay", Color("#9ad0ff")]
 	if run.end_type != Globals.END_PASS: return [("Failed" if run.end_type == Globals.END_FAIL else "Gave up") + (" (resumed)" if run.get("resumed") else ""), Color("#ff6b6b")]
@@ -373,8 +397,28 @@ func _process(delta):
 	if Rhythia.has_meta("last_run_best") and best_label.text == "":
 		if Rhythia.get_meta("last_run_best"): best_label.text = "NEW PERSONAL BEST!"
 
+const STAMP = {"SS": [0.42, 1.3], "S": [0.34, 1.0], "A": [0.26, 0.7], "B": [0.2, 0.5], "C": [0.16, 0.4], "D": [0.12, 0.3]} # flash, shake
+
 func _stamp():
-	if mono and CardUI._has("fx_on") and load(CardUI.LOOK).fx_on() and !run.get("stored"): # decisive payoff: a short red / white hit on S, SS and a failed run
+	var g = _grade(float(run.hits) / max(1.0, float(run.total)))
+	if run.end_type == Globals.END_PASS and !run.replay and !run.get("stored"): # every pass lands: a flash in the grade's colour and a shake, both bigger for better grades
+		var st = STAMP.get(g[0], [0.15, 0.3])
+		var fc:Color = g[2].lightened(0.35)
+		flash = ColorRect.new()
+		flash.color = Color(fc.r, fc.g, fc.b, st[0])
+		flash.anchor_right = 1; flash.anchor_bottom = 1
+		flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		get_child(0).add_child(flash)
+		shake = st[1]
+		if g[0] in ["SS", "S"] and Engine.has_meta("rr_enter_sfx"): # (a heavy hit under the click)
+			var p = AudioStreamPlayer.new()
+			p.stream = Engine.get_meta("rr_enter_sfx")
+			p.pitch_scale = 0.7
+			p.volume_db = -2.0
+			p.bus = "Effects" if AudioServer.get_bus_index("Effects") >= 0 else "Master"
+			add_child(p)
+			p.play()
+	elif mono and CardUI._has("fx_on") and load(CardUI.LOOK).fx_on() and !run.get("stored"): # decisive payoff: a short red hit on a failed run
 		var Look = load(CardUI.LOOK)
 		var gk = _grade(float(run.hits) / max(1.0, float(run.total)))[0]
 		if gk in ["SS", "S", "F"]:
