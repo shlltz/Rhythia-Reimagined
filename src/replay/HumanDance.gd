@@ -6,12 +6,16 @@ extends DanceMover
 #    cursor passes through notes with a Catmull-Rom velocity;
 #  - jumps with time to spare: the cursor overshoots the note it just hit a little and settles, waits,
 #    then makes a minimum-jerk reach (bell-shaped speed) to the next note with a slight sideways bow;
+#  - spin: one turning direction kept, arcs around the outside of turns, loops on back-and-forth;
 #  - long breaks: the hand relaxes toward the middle and wanders more.
 # A low-amplitude hand tremor on top. Everything is a function of song time, so seeking is exact.
 # Times inside are "hand" ms (song ms / speed multiplier), positions are note grid units (0..2).
 
 const SETTLE = 55.0          # ms the overshoot takes to settle
 const OVERSHOOT = 0.13    # max overshoot (grid units)
+const SPIN_BOW = 0.11     # how far a reach arcs out sideways (x its length)
+const SPIN_TURN = 0.3     # radians streams lean the spin's way at each note
+const SPIN_LOOP = 1.4     # a stream turn against the spin harder than this (radians) loops round instead
 const CENTRE = Vector2(1, 1)
 
 var speed:float = 1.0
@@ -21,6 +25,7 @@ var V:PoolVector2Array = PoolVector2Array()  # velocity through each point (unit
 var S:PoolRealArray = PoolRealArray()        # when the reach toward point i+1 starts
 var BOW:PoolRealArray = PoolRealArray()
 var seg:int = 0
+var flips:int = 0 # (spin direction changes, for the test)
 
 func _init(song:Song):
 	speed = max(0.05, Globals.speed_multi[Rhythia.mod_speed_level])
@@ -53,8 +58,25 @@ func _init(song:Song):
 	S.resize(m); V.resize(m); BOW.resize(m)
 	var flow = []
 	flow.resize(m)
+	# spin: like a spinning player the path keeps one turning direction (clockwise or counter-) and
+	# arcs around the outside of turns; it only flips on a clear turn the other way. Back-and-forth
+	# jumps become loops instead of straight lines.
+	var spin = 1.0
+	var pressure = 0.0
+	var SP = []
+	SP.resize(m)
 	for i in m:
-		BOW[i] = rng.randf_range(-0.07, 0.07)
+		if i > 0 and i < m - 2:
+			# (only a run of turns against it flips it; after a break the hand picks whichever fits)
+			var c = _turn(P[i], P[i + 1], P[i + 2])
+			pressure = pressure * 0.55 + c
+			var limit = 0.7 if T[i + 1] - T[i] > 900.0 else 1.9
+			if pressure * spin < -limit:
+				spin = sign(c)
+				flips += 1
+		SP[i] = spin
+		BOW[i] = -spin * (SPIN_BOW + rng.randf_range(0.0, 0.05))
+	for i in m:
 		if i == m - 1:
 			S[i] = T[i]; flow[i] = false
 			continue
@@ -67,13 +89,29 @@ func _init(song:Song):
 		var v = Vector2.ZERO
 		if i > 0 and i < m - 1:
 			var tng = (P[i + 1] - P[i - 1]) / max(T[i + 1] - T[i - 1], 1.0)
+			var a = P[i] - P[i - 1]
 			if flow[i]:
 				v = tng * (0.9 if flow[i - 1] else 0.6)
-			else: # stopping here: carry on a little past it and settle
+				var b = P[i + 1] - P[i]
+				if a.length() > 0.3 and b.length() > 0.3:
+					# leave the note turned a little the spin's way; a hard turn against it (or going straight
+					# back) swings round on the spin's side instead
+					var phi = a.angle_to(b)
+					if abs(phi) > SPIN_LOOP and sign(phi) != SP[i]: phi += TAU * SP[i] # (a hard turn against the spin: loop round)
+					var vin = a.length() / max(T[i] - T[i - 1], 1.0)
+					v = Vector2(max(v.length(), vin * 0.45), 0).rotated(a.angle() + phi * 0.5 + SP[i] * SPIN_TURN)
+			else: # stopping here: carry on a little past it, curling the spin's way, and settle
 				var mv = max(T[i] - S[i - 1], 1.0)
-				v = (P[i] - P[i - 1]) / mv * 0.35
+				v = (a / mv * 0.35).rotated(SP[i] * 0.6)
 				if v.length() * SETTLE > OVERSHOOT: v = v.normalized() * OVERSHOOT / SETTLE
 		V[i] = v
+
+# how much a -> b -> c turns (+ counter-clockwise, - clockwise, ~0 straight on or straight back)
+func _turn(a:Vector2, b:Vector2, c:Vector2) -> float:
+	var u = b - a
+	var w = c - b
+	if u.length() < 0.3 or w.length() < 0.3: return 0.0
+	return (u.x * w.y - u.y * w.x) / (u.length() * w.length())
 
 # Fitts-style reach time (hand ms) for a distance; slower when there's lots of time
 func _move_time(d:float, gap:float) -> float:

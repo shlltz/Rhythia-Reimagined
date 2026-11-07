@@ -1,5 +1,5 @@
 extends Node
-# Autoplay cursor (HumanDance.gd): sampled over the whole map at 240 Hz - every note inside the hitbox at
+# Autoplay cursor (HumanDance.gd, spins one way, loops on turns against it): sampled over the whole map at 240 Hz - every note inside the hitbox at
 # its time, no teleports, no end-of-map snap, a sane top speed; compared with the stock bouncy mover.
 # Then a live autoplay run: the HumanDance mover is used, no misses, the cursor moves.
 # Output @@OUT@@/auto.txt (+ auto.png with RR_SHOTS)
@@ -38,6 +38,11 @@ func stats(mv, notes):
 	var speeds = []
 	var length = 0.0
 	var turns = 0
+	var wind = 0.0
+	var win = 0.0
+	var win_abs = 0.0
+	var win_t = t
+	var wind_abs = 0.0
 	var pv = Vector2.ZERO
 	while t < t1:
 		t += step
@@ -50,6 +55,15 @@ func stats(mv, notes):
 		speeds.append(d / step * 1000.0)
 		var v = c - prev
 		if pv.length() > 0.004 and v.length() > 0.004 and pv.normalized().dot(v.normalized()) < 0.5: turns += 1
+		if pv.length() > 0.008 and v.length() > 0.008:
+			var ang = pv.angle_to(v)
+			win += ang
+			win_abs += abs(ang)
+		if t - win_t > 1500.0: # (turning direction kept within 1.5 s stretches)
+			if win_abs > 1.0:
+				wind += abs(win)
+				wind_abs += win_abs
+			win = 0.0; win_abs = 0.0; win_t = t
 		pv = v
 		prev = c
 	speeds.sort()
@@ -58,7 +72,36 @@ func stats(mv, notes):
 		if float(notes[i][2]) >= at - 300 and float(notes[i][2]) <= at + 300:
 			var gap = max(float(notes[i][2]) - float(notes[i - 1][2]), 1.0)
 			need = max(need, Vector2(notes[i][0], notes[i][1]).distance_to(Vector2(notes[i - 1][0], notes[i - 1][1])) / gap * step)
-	return {at = at, need = need, inside = inside, worst = worst, maxstep = maxstep, p99 = speeds[int(speeds.size() * 0.99)], length = length, turns = turns}
+	return {spin = abs(wind) / max(wind_abs, 0.001), at = at, need = need, inside = inside, worst = worst, maxstep = maxstep, p99 = speeds[int(speeds.size() * 0.99)], length = length, turns = turns}
+
+# the cursor path over 6 s of the map's busiest part, notes as squares (old -> new = dark -> bright)
+func path_png(mv, notes, name):
+	var img = Image.new()
+	img.create(420, 420, false, Image.FORMAT_RGB8)
+	img.fill(Color(0.05, 0.05, 0.07))
+	img.lock()
+	var t0 = float(notes[int(notes.size() * 0.4)][2])
+	var t1 = t0 + 6000.0
+	for n in notes:
+		if float(n[2]) < t0 or float(n[2]) > t1: continue
+		var c = Vector2(60 + n[0] * 150, 60 + n[1] * 150)
+		for k in range(-20, 21):
+			for q in [-20, 20]:
+				img.set_pixel(int(c.x + k), int(c.y + q), Color(0.3, 0.3, 0.4))
+				img.set_pixel(int(c.x + q), int(c.y + k), Color(0.3, 0.3, 0.4))
+	var t = t0
+	while t < t1:
+		var p = mv.update(t)
+		var k = (t - t0) / 6000.0
+		var x = int(60 + p.x * 150)
+		var y = int(60 + p.y * 150)
+		for dx in 2:
+			for dy in 2:
+				if x + dx >= 0 and x + dx < 420 and y + dy >= 0 and y + dy < 420:
+					img.set_pixel(x + dx, y + dy, Color(0.3 + 0.7 * k, 0.5 + 0.4 * k, 1.0))
+		t += 1.0
+	img.unlock()
+	img.save_png("@@OUT@@/%s.png" % name)
 
 func run():
 	Directory.new().remove(OUT)
@@ -73,11 +116,15 @@ func run():
 	var us = (OS.get_ticks_usec() - u) / 1000.0
 	var b = stats(BouncyDanceMover.new(song), notes)
 	out("  %d notes; human %s" % [notes.size(), str(a)])
-	out("  stock bouncy %s" % str(b))
+	out("  stock bouncy %s; spin flips %d" % [str(b), hm.flips])
 	check(a.inside == notes.size(), "every note inside the hitbox at its time (%d / %d, worst %.2f)" % [a.inside, notes.size(), a.worst])
 	check(a.maxstep < max(0.12, a.need * 2.2), "no teleports (largest 240 Hz step %.3f at %.0f ms; the map needs %.3f there on average)" % [a.maxstep, a.at, a.need])
-	check(a.p99 < 40.0, "top speed sane (p99 %.1f units/s, stock %.1f)" % [a.p99, b.p99])
+	check(a.p99 < b.p99 * 0.8, "top speed sane (p99 %.1f units/s, stock %.1f)" % [a.p99, b.p99])
 	check(a.turns < b.turns, "fewer sharp direction changes than stock (%d vs %d)" % [a.turns, b.turns])
+	check(a.spin > b.spin + 0.1, "spins: one turning direction dominates (%.2f of all turning, stock %.2f)" % [a.spin, b.spin])
+	if OS.get_environment("RR_SHOTS") != "":
+		path_png(hm, notes, "auto_path_human")
+		path_png(BouncyDanceMover.new(song), notes, "auto_path_stock")
 	out("  sampling cost %.1f ms" % us)
 	# a live autoplay run
 	Rhythia.replay = Replay.new()
