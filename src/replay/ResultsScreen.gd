@@ -66,6 +66,13 @@ func _ready():
 	bd.texture = Engine.get_meta("rr_backdrop") if Engine.has_meta("rr_backdrop") and Rhythia.selected_song == song else MapBackdrop.small_texture(song)
 	root.add_child(bd)
 	if bd.texture == null and song: root.add_child(CardUI.no_cover_bg(song))
+	if mono: # personal build: the tally board (this card's look + ULTRAKILL's results)
+		_build_board(root)
+		_buttons(root)
+		_cover(true)
+		UIAnim.play(root, Vector2.ZERO, Vector2.ZERO, 0.0, 1.0, 0.3)
+		_layout()
+		return
 
 	holder = Panel.new()
 	if ResourceLoader.exists("res://uitheme.tres"): holder.theme = load("res://uitheme.tres")
@@ -166,7 +173,13 @@ func _ready():
 	foot.align = Label.ALIGN_CENTER
 	if run.get("stored") and run.get("when"): foot.text = ("Played by %s  ·  " % name_ if name_ != "" else "") + "played " + str(run.when)
 
-	# ---- buttons
+	_buttons(root)
+
+	_cover(true)
+	UIAnim.play(root, Vector2.ZERO, Vector2.ZERO, 0.0, 1.0, 0.3)
+	_layout()
+
+func _buttons(root:Control):
 	var bar = HBoxContainer.new()
 	bar.anchor_left = 0.5; bar.anchor_right = 0.5; bar.anchor_top = 1; bar.anchor_bottom = 1
 	bar.margin_left = -330; bar.margin_right = 330; bar.margin_top = -86; bar.margin_bottom = -34
@@ -186,9 +199,6 @@ func _ready():
 			bar.margin_left -= 85
 			bar.margin_right += 85
 
-	_cover(true)
-	UIAnim.play(root, Vector2.ZERO, Vector2.ZERO, 0.0, 1.0, 0.3)
-	_layout()
 
 func _mod_tags(tl:Panel):
 	var mods = run.get("mods", null)
@@ -363,6 +373,9 @@ func _process(delta):
 			flash.queue_free()
 			flash = null
 	_layout()
+	if board:
+		_tally()
+		return
 	# score counts up over 1.2 s (ease out)
 	var k = clamp(t / 1.2, 0.0, 1.0)
 	var shown = int(run.score * (1.0 - pow(1.0 - k, 3)))
@@ -396,9 +409,10 @@ func _stamp():
 func _layout():
 	var size = get_viewport().get_visible_rect().size
 	var mouse = get_viewport().get_mouse_position()
-	var k = clamp(min((size.y - 120.0) / H, (size.x - 40.0) / W), 0.4, 1.0) # (short windows: shrink so the button bar stays below the card)
+	var hs = holder.rect_size
+	var k = clamp(min((size.y - 120.0) / hs.y, (size.x - 40.0) / hs.x), 0.4, 1.0) # (short windows: shrink so the button bar stays below the card)
 	holder.rect_scale = Vector2(k, k)
-	var target = Vector2((size.x - W * k) / 2, max(12.0, (size.y - 108.0 - H * k) / 2)) + (size / 2 - mouse) * (6.0 / size.y)
+	var target = Vector2((size.x - hs.x * k) / 2, max(12.0, (size.y - 108.0 - hs.y * k) / 2)) + (size / 2 - mouse) * (6.0 / size.y)
 	if shake > 0.0: target += Vector2(randf() - 0.5, randf() - 0.5) * 22.0 * shake # (short impact shake)
 	var dt = get_process_delta_time() # (smoothing by time, not per frame: same feel at any fps)
 	holder.rect_position = holder.rect_position.linear_interpolate(target, 1.0 - exp(-dt * 12.0)) if t > 0.05 else target
@@ -414,6 +428,10 @@ func _layout():
 
 # ------------------------------------------------------------------ actions
 func _input(ev):
+	if board and !closing and t < T_RANK and ev.is_pressed() and ((ev is InputEventMouseButton and ev.button_index <= BUTTON_MIDDLE) or (ev is InputEventKey and ev.scancode in [KEY_SPACE, KEY_ENTER])):
+		_skip_tally() # (a click / Space / Enter: the whole tally at once)
+		get_tree().set_input_as_handled()
+		return
 	if closing or !(ev is InputEventKey) or !ev.pressed or ev.echo: return
 	if menu.has_node("ReplayStudio"): return # (Esc closes the studio over it first)
 	if ev.scancode == KEY_ESCAPE: _back()
@@ -476,6 +494,7 @@ func _go(scene:String):
 		var z = 1.03 * (1.0 + 0.1 * e * e * (3.0 - 2.0 * e))
 		bd_zoom = z
 		Engine.get_meta("rr_launch")["scale"] = z
+		if bg_fx: bg_fx.modulate.a = 1.0 - e # (the loading screen opens on the plain cover)
 		yield(get_tree(), "idle_frame")
 	get_tree().change_scene(scene)
 
@@ -495,3 +514,252 @@ func _cover(on:bool):
 func _exit_tree():
 	_cover(false)
 	if Rhythia.has_meta("last_run_best"): Rhythia.remove_meta("last_run_best")
+
+# ------------------------------------------------------------------ the tally board (personal build)
+# This card's look (dark panel, corner brackets, the blurred cover) with ULTRAKILL's results layout:
+# the title and "-- difficulty --" in VCR mono, three stat rows (accuracy / combo / misses) each with
+# its own rank letter in a box, a big rank square, bonus lines, mods, hits and the total, over the
+# cover pixelated and tinted in the rank's colour. They tally in one by one (counting values with
+# ticks, the ranks popping in), then the big rank stamps; a click / Space / Enter skips to the end.
+const BW = 940.0
+const BH = 760.0
+const UK_FONT = "res://assets/font/UbuntuMono/Regular.ttf" # (= VCR OSD Mono in this build)
+const RANK_COL = {"SS": Color("#f0b020"), "S": Color("#ff2a2a"), "A": Color("#ff8a1e"), "B": Color("#ffd23c"),
+	"C": Color("#4ccf5a"), "D": Color("#3b8cff"), "F": Color("#8a1018")}
+const T_ROW0 = 0.3     # the first row
+const T_ROW = 0.3      # between rows
+const T_BONUS = 1.25
+const T_TOTAL = 1.5
+const T_RANK = 2.1     # the big rank stamps
+const BG_SHADER = """shader_type canvas_item;
+uniform float px = 14.0;
+uniform vec4 tint = vec4(0.0, 0.0, 0.0, 0.5);
+void fragment() {
+	vec2 sz = 1.0 / SCREEN_PIXEL_SIZE;
+	vec2 uv = (floor(SCREEN_UV * sz / px) + 0.5) * px / sz;
+	vec3 c = texture(SCREEN_TEXTURE, uv).rgb;
+	COLOR = vec4(mix(c, tint.rgb, tint.a), 1.0);
+}"""
+
+var board:bool = false
+var bg_fx:ColorRect = null
+var rows = []          # {at, panel, value, target, fmt, box, ranked}
+var bonuses = []       # {at, node, shown}
+var rank_sq:Panel = null
+var skipping:bool = false
+var next_tick:float = 0.0
+var vf = {}
+
+func _v(size:int):
+	if vf.has(size): return vf[size]
+	var f = null
+	if ResourceLoader.exists(UK_FONT):
+		f = DynamicFont.new()
+		f.font_data = load(UK_FONT)
+		f.size = size
+	else: f = _f(size)
+	vf[size] = f
+	return f
+
+func _uk_label(parent:Control, text:String, size:int, col:Color, pos:Vector2, w:float = 0.0, align:int = Label.ALIGN_LEFT) -> Label:
+	var l = Label.new()
+	l.text = text
+	l.add_font_override("font", _v(size))
+	l.add_color_override("font_color", col)
+	l.rect_position = pos
+	if w > 0: l.rect_size = Vector2(w, 0)
+	l.align = align
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(l)
+	return l
+
+func _dark(parent:Control, r:Rect2, a:float = 0.38) -> ColorRect:
+	var c = ColorRect.new()
+	c.color = Color(0, 0, 0, a)
+	c.rect_position = r.position
+	c.rect_size = r.size
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(c)
+	return c
+
+static func row_rank(kind:String, run_:Dictionary) -> String:
+	var total = max(1.0, float(run_.total))
+	if kind == "acc":
+		var a = float(run_.hits) / total
+		return "S" if a >= 0.98 else ("A" if a >= 0.95 else ("B" if a >= 0.90 else ("C" if a >= 0.85 else "D")))
+	if kind == "combo":
+		if run_.misses == 0 and run_.end_type == Globals.END_PASS: return "S"
+		var c = float(run_.combo) / total
+		return "A" if c >= 0.75 else ("B" if c >= 0.5 else ("C" if c >= 0.25 else "D"))
+	var m = float(run_.misses) / total
+	return "S" if m == 0.0 else ("A" if m <= 0.01 else ("B" if m <= 0.03 else ("C" if m <= 0.06 else "D")))
+
+func _build_board(root:Control):
+	board = true
+	var song = run.song
+	var acc = float(run.hits) / max(1.0, float(run.total))
+	var g = _grade(acc)
+	var rc:Color = RANK_COL.get(g[0], Color(1, 1, 1))
+	# the cover, pixelated and tinted in the rank's colour (over the blurred backdrop, under the board)
+	bg_fx = ColorRect.new()
+	bg_fx.anchor_right = 1; bg_fx.anchor_bottom = 1
+	bg_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg_fx.material = ShaderMaterial.new()
+	bg_fx.material.shader = Shader.new()
+	bg_fx.material.shader.code = BG_SHADER
+	bg_fx.material.set_shader_param("tint", Color(rc.r * 0.3, rc.g * 0.3, rc.b * 0.3, 0.8))
+	root.add_child(bg_fx)
+
+	holder = Panel.new()
+	if ResourceLoader.exists("res://uitheme.tres"): holder.theme = load("res://uitheme.tres")
+	var sb = CardUI.box(Color(0.03, 0.03, 0.035, 0.62), Color(1, 1, 1, 0.1), 1, 18)
+	sb.shadow_color = Color(0, 0, 0, 0.45)
+	sb.shadow_size = 36
+	holder.add_stylebox_override("panel", sb)
+	root.add_child(holder)
+	holder.rect_size = Vector2(BW, BH)
+	holder.connect("draw", self, "_draw_frame")
+
+	# ---- header: status, title, -- difficulty --, the map line
+	var st = _status()
+	var stxt = "// " + st[0].to_upper()
+	if run.end_type != Globals.END_PASS and !run.replay:
+		stxt += "  AT %s (%d%%)" % [_mmss(run.position), int(clamp(run.position / max(1.0, run.length), 0, 1) * 100)]
+	_uk_label(holder, stxt, 18, st[1], Vector2(0, 22), BW, Label.ALIGN_CENTER)
+	var title = ("[REPLAY] " if run.replay else "") + (song.name if song else "?")
+	_uk_label(holder, CardUI.fit(title.to_upper(), _v(44), BW - 80), 44, Color(1, 1, 1), Vector2(0, 46), BW, Label.ALIGN_CENTER)
+	var d = CardUI.difficulty(song)
+	_uk_label(holder, "-- %s --" % (d[0].to_upper() if d[0] != "" else "UNRATED"), 26, Color(1, 1, 1, 0.9), Vector2(0, 100), BW, Label.ALIGN_CENTER)
+	var info = []
+	var stars = CardUI.stars(song, run.speed)
+	if stars > 0: info.append("★ %.2f" % stars)
+	if run.length > 0: info.append(CardUI.mmss(float(run.length) / max(0.01, run.speed)))
+	info.append("mapped by " + (str(song.creator) if song else "?"))
+	var il = CardUI.label(holder, PoolStringArray(info).join("   ·   "), _f(15), Color(1, 1, 1, 0.45), Vector2(0, 138), BW)
+	il.align = Label.ALIGN_CENTER
+
+	# ---- the three rows, each with its rank
+	var defs = [["ACCURACY:", acc * 100.0, "%.2f%%", "acc"], ["COMBO:", float(run.combo), "%dx", "combo"], ["MISSES:", float(run.misses), "%d", "miss"]]
+	for i in defs.size():
+		var y = 184.0 + i * 100.0
+		var panel = Control.new()
+		panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.add_child(panel)
+		_dark(panel, Rect2(40, y, 430, 84))
+		_uk_label(panel, defs[i][0], 30, Color(1, 1, 1, 0.62), Vector2(62, y + 24))
+		var val = _uk_label(panel, "", 30, Color(1, 1, 1), Vector2(250, y + 24), 200, Label.ALIGN_RIGHT)
+		var rk = row_rank(defs[i][3], run)
+		var box = Control.new()
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.rect_position = Vector2(482, y)
+		box.rect_size = Vector2(76, 84)
+		box.rect_pivot_offset = box.rect_size / 2
+		holder.add_child(box)
+		_dark(box, Rect2(Vector2.ZERO, box.rect_size))
+		_uk_label(box, rk, 54, RANK_COL[rk], Vector2(0, 10), 76, Label.ALIGN_CENTER)
+		panel.modulate.a = 0.0
+		box.modulate.a = 0.0
+		rows.append({at = T_ROW0 + i * T_ROW, panel = panel, value = val, target = defs[i][1], fmt = defs[i][2], box = box, ranked = false})
+
+	# ---- the big rank square (the grade, white on its colour)
+	rank_sq = Panel.new()
+	rank_sq.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var rs = StyleBoxFlat.new()
+	rs.bg_color = rc
+	rank_sq.add_stylebox_override("panel", rs)
+	rank_sq.rect_position = Vector2(600, 184)
+	rank_sq.rect_size = Vector2(284, 284)
+	rank_sq.rect_pivot_offset = rank_sq.rect_size / 2
+	holder.add_child(rank_sq)
+	grade_text = _uk_label(rank_sq, g[0], 230 if g[0].length() == 1 else 150, Color(1, 1, 1), Vector2.ZERO, 284, Label.ALIGN_CENTER)
+	grade_text.valign = Label.VALIGN_CENTER
+	grade_text.rect_size = Vector2(284, 284)
+	grade_text.rect_pivot_offset = grade_text.rect_size / 2
+	grade_text.modulate.a = 0.0
+	rank_sq.modulate.a = 0.0
+
+	# ---- bonus lines (+ good / - bad), mods, hits, total
+	var lines = []
+	if run.replay: lines.append(["+ REPLAY", Color(0.6, 0.82, 1)])
+	if run.end_type == Globals.END_PASS and run.misses == 0: lines.append(["+ FULL COMBO", Color(1, 1, 1)])
+	if run.end_type == Globals.END_PASS and run.pauses == 0 and !run.replay: lines.append(["+ NO PAUSES", Color(1, 1, 1)])
+	if run.pauses > 0: lines.append(["- PAUSED x%d" % run.pauses, Color("#ff5a5a")])
+	if run.get("resumed"): lines.append(["- RESUMED", Color("#ffb35e")])
+	if run.end_type == Globals.END_FAIL: lines.append(["- ENERGY DEPLETED", Color("#ff5a5a")])
+	elif run.end_type == Globals.END_GIVEUP: lines.append(["- GAVE UP", Color("#ff5a5a")])
+	if lines.empty(): lines.append(["+ CLEARED", Color(1, 1, 1)])
+	for i in min(lines.size(), 3):
+		var l = _uk_label(holder, lines[i][0], 24, lines[i][1], Vector2(62, 500 + i * 36))
+		l.modulate.a = 0.0
+		bonuses.append({at = T_BONUS + i * 0.1, node = l, shown = false})
+	var ml = _uk_label(holder, "MODS:", 24, Color(1, 1, 1, 0.62), Vector2(600, 500))
+	var mods = run.get("mods", null)
+	if mods == null: mods = current_mods()
+	var tags = []
+	var spd = CardUI.speed_tag(run.speed)
+	if spd != "": tags.append(spd)
+	for m in mods: tags.append(SHORT.get(m, m))
+	var mv = _uk_label(holder, CardUI.fit(PoolStringArray(tags).join("  ") if !tags.empty() else "-", _v(24), 284), 24, Color(1, 1, 1), Vector2(600, 540))
+	for n in [ml, mv]: n.modulate.a = 0.0
+	bonuses.append({at = T_BONUS, node = ml, shown = false})
+	bonuses.append({at = T_BONUS + 0.1, node = mv, shown = false})
+	var hits_row = Control.new()
+	hits_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(hits_row)
+	_uk_label(hits_row, "HITS:", 28, Color(1, 1, 1, 0.62), Vector2(62, 628))
+	_uk_label(hits_row, "%s / %s" % [Globals.comma_sep(run.hits), Globals.comma_sep(run.total)], 28, Color(1, 1, 1), Vector2(250, 628), 220, Label.ALIGN_RIGHT)
+	hits_row.modulate.a = 0.0
+	bonuses.append({at = T_TOTAL - 0.1, node = hits_row, shown = false})
+	var tl = _uk_label(holder, "TOTAL:", 28, Color(1, 1, 1, 0.62), Vector2(600, 628))
+	tl.modulate.a = 0.0
+	bonuses.append({at = T_TOTAL, node = tl, shown = false})
+	score_label = _uk_label(holder, "", 28, Color(1, 1, 1), Vector2(690, 628), 210, Label.ALIGN_RIGHT)
+	best_label = _uk_label(holder, "", 20, Color("#ffd75e"), Vector2(560, 672), 340, Label.ALIGN_RIGHT)
+	var name_ = CardUI.player()
+	var when_ = ("played " + str(run.when)) if run.get("stored") and run.get("when") else CardUI.today()
+	CardUI.label(holder, ("played by %s  ·  " % name_ if name_ != "" else "") + when_, _f(15), Color(1, 1, 1, 0.38), Vector2(40, BH - 38), BW - 80)
+
+func _tick(db:float = -15.0):
+	if skipping or t < next_tick: return
+	next_tick = t + 0.045
+	sfx.play("click-short.ogg", db)
+
+func _tally():
+	var dt = get_process_delta_time()
+	for r in rows:
+		if t < r.at: continue
+		var k = clamp((t - r.at) / 0.24, 0.0, 1.0)
+		var e = 1.0 - pow(1.0 - k, 2)
+		r.panel.modulate.a = min(1.0, (t - r.at) / 0.08)
+		r.value.text = (r.fmt % (r.target * e)) if r.fmt == "%.2f%%" else (r.fmt % int(round(r.target * e)))
+		if k < 1.0: _tick()
+		if !r.ranked and t >= r.at + 0.27:
+			r.ranked = true
+			r.box.modulate.a = 1.0
+			r.box.rect_scale = Vector2(1.6, 1.6)
+			if !skipping: sfx.play("menuclick.ogg", -9.0)
+		if r.ranked: r.box.rect_scale = r.box.rect_scale.linear_interpolate(Vector2.ONE, 1.0 - exp(-dt * 16.0))
+	for b in bonuses:
+		if t < b.at: continue
+		b.node.modulate.a = min(1.0, (t - b.at) / 0.08)
+		if !b.shown:
+			b.shown = true
+			if !skipping: sfx.play("click-short.ogg", -11.0)
+	if t >= T_TOTAL:
+		var k = clamp((t - T_TOTAL) / 0.5, 0.0, 1.0)
+		score_label.text = Globals.comma_sep(int(run.score * (1.0 - pow(1.0 - k, 3))))
+		if k < 1.0: _tick(-17.0)
+	if !stamped and t >= T_RANK:
+		stamped = true
+		rank_sq.modulate.a = 1.0
+		rank_sq.rect_scale = Vector2(1.35, 1.35)
+		_stamp()
+	if stamped: rank_sq.rect_scale = rank_sq.rect_scale.linear_interpolate(Vector2.ONE, 1.0 - exp(-dt * 12.0))
+	if Rhythia.has_meta("last_run_best") and best_label.text == "":
+		if Rhythia.get_meta("last_run_best"): best_label.text = "+ NEW PERSONAL BEST"
+	skipping = false
+
+func _skip_tally():
+	skipping = true
+	t = T_RANK + 0.6 # (past every count: all values whole)
+	_tally()
