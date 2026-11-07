@@ -17,7 +17,8 @@ const PALE = Color(1.0, 0.93, 0.78)
 const ROLL = 16.0      # degrees the camera rolls over by the end
 const PITCH = 42.0     # degrees it tips back (looking up: falling backwards to the ground)
 const SINK = 1.0       # how far it drops (accelerating)
-const SLOW_END = 0.3   # the run's speed (map + song, pitch down like tape) by the end of the log
+const SLOW_END = 0.08  # the run's speed (map + song, pitch down like tape) by the end of the log
+const CURSOR_GONE = 0.7 # (the cursor has faded out by this part of the log)
 const RADIO_DB = [-24.0, -9.0] # the radio static from the start to the end of the log
 const TINT_SHADER = """shader_type canvas_item;
 uniform float k = 0.0;
@@ -71,6 +72,12 @@ var applied:bool = false # (fall put on it this frame, taken off again first thi
 var base_tf:Transform    # (the camera as the run left it)
 var nm = null           # the run's NoteManager (slowed down)
 var radio:AudioStreamPlayer = null
+var cur_mat:SpatialMaterial = null # the run's cursor (fading out), its trail and glow
+var cur_a:float = 1.0
+var trail = null
+var trail_a:float = 1.0
+var glow = null
+var cur_2d:CanvasItem = null
 var music:AudioStreamPlayer = null
 var music_bus:String = ""
 var music_db:float = 0.0
@@ -166,6 +173,7 @@ func _ready():
 	nm = sc.get_node_or_null("Game/Spawn") if sc else null
 	if nm and !("rr_slow" in nm): nm = null
 	_muffle_start(sc)
+	_cursor_start(sc)
 	_radio_take() # (done long ago on the loading card)
 	if Engine.has_meta("rr_radio_sfx"): # the radio static under the log
 		radio = AudioStreamPlayer.new()
@@ -253,6 +261,31 @@ func _muffle(k:float):
 	if bus < 0 or AudioServer.get_bus_effect_count(bus) == 0: return
 	AudioServer.get_bus_effect(bus, 0).cutoff_hz = 20000.0 * pow(500.0 / 20000.0, k)
 
+# the cursor fades away while the log types (its own material copied first: the run's stays as it is)
+func _cursor_start(sc):
+	if !sc: return
+	var mesh = sc.get_node_or_null("Game/Spawn/Cursor/Mesh")
+	if mesh and mesh.get("material/0") is SpatialMaterial:
+		cur_mat = mesh.get("material/0").duplicate()
+		cur_mat.flags_transparent = true
+		cur_a = cur_mat.albedo_color.a
+		mesh.set("material/0", cur_mat)
+	trail = sc.get_node_or_null("Game/CursorTrail")
+	if trail and "rr_alpha" in trail: trail_a = trail.rr_alpha
+	else: trail = null
+	var cur = sc.get_node_or_null("Game/Spawn/Cursor")
+	if cur:
+		for c in cur.get_children():
+			if c is MeshInstance and "mat" in c and c.get("mat") is SpatialMaterial: glow = c
+	cur_2d = sc.get_node_or_null("Game/Spawn/Cursor/VisualPos")
+
+func _cursor_fade(f:float):
+	var e = f * f * (3.0 - 2.0 * f)
+	if cur_mat: cur_mat.albedo_color.a = cur_a * (1.0 - e)
+	if is_instance_valid(trail): trail.rr_alpha = trail_a * (1.0 - e)
+	if is_instance_valid(glow) and glow.mat: glow.mat.albedo_color.a *= (1.0 - e) # (after its own update: this runs last)
+	if is_instance_valid(cur_2d): cur_2d.modulate.a = 1.0 - e
+
 # ScreenSwap calls this first thing every frame: the camera back as the run left it
 func untilt():
 	if applied and is_instance_valid(cam): cam.transform = base_tf
@@ -302,7 +335,8 @@ func _process(delta):
 		_glitch(dt, k)
 		_muffle(min(t / 0.5, 1.0))
 		if music: music.volume_db = music_db - 12.0 * k
-		var slow = lerp(1.0, SLOW_END, k * k * (3.0 - 2.0 * k)) # the run winds down, the song with it (pitch down, like tape)
+		var slow = lerp(1.0, SLOW_END, 1.0 - pow(1.0 - k, 2)) # the run winds down hard, the song with it (pitch down, like tape)
+		_cursor_fade(clamp(k / CURSOR_GONE, 0.0, 1.0))
 		if nm:
 			nm.rr_slow = slow
 			if music: music.pitch_scale = max(0.05, float(nm.speed_multi) * slow)

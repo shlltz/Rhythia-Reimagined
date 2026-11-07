@@ -179,16 +179,18 @@ func run():
 	var dl = get_tree().root.get_node("RRScreenSwap").dlog
 	check(spn.rr_slow < 0.95 and mus.pitch_scale < 0.95 * spn.speed_multi and dl.radio and dl.radio.playing, "the run winds down (speed %.2f, music pitch %.2f), radio static playing" % [spn.rr_slow, mus.pitch_scale])
 	check(look_up > 8.0, "falling: the camera looks up %.1f deg" % look_up)
+	var cmat = g.get_node("Spawn/Cursor/Mesh").get("material/0")
+	check(cmat.albedo_color.a < 0.75, "the cursor fading away (alpha %.2f at 0.8 s)" % cmat.albedo_color.a)
 	check(sw and sw.dlog and sw.dlog.cur > 8, "fail: death log typing (line %d at 0.8 s), frames median %.2f ms, worst %.2f ms" % [sw.dlog.cur if sw and sw.dlog else -1, log_ms[log_ms.size() / 2], log_ms[-1]])
-	check(!get_tree().paused and g.get_node("Spawn").ms > ms0 + 500 and [g.hits, g.misses] == hm, "the run plays on under it (ms %.0f -> %.0f), nothing judged (hits/misses %s -> %s)" % [ms0, g.get_node("Spawn").ms, str(hm), str([g.hits, g.misses])])
+	check(!get_tree().paused and g.get_node("Spawn").ms > ms0 + 200 and [g.hits, g.misses] == hm, "the run plays on under it (ms %.0f -> %.0f), nothing judged (hits/misses %s -> %s)" % [ms0, g.get_node("Spawn").ms, str(hm), str([g.hits, g.misses])])
 	check(abs(roll) > 3.0, "camera tilting: %.1f deg at 0.8 s" % roll)
 	if OS.get_environment("RR_SHOTS") != "": yield(shoot_for(0.6), "completed")
 	var k = InputEventKey.new(); k.scancode = KEY_R; k.pressed = true
 	Input.parse_input_event(k)
 	if OS.get_environment("RR_SHOTS") != "":
-		for i in 14:
+		for i in 16:
 			yield(get_tree(), "idle_frame")
-			if i in [1, 2, 3, 4, 5]:
+			if i in [1, 2, 3, 4, 6, 9]:
 				var img = get_tree().root.get_texture().get_data()
 				img.flip_y(); img.resize(640, 360)
 				img.save_png("@@OUT@@/dead_%02d.png" % i)

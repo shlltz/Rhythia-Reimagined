@@ -15,7 +15,9 @@ extends CanvasLayer
 const TIME = {"back": 0.42, "forward": 0.55}
 const MAX_HOLD = 6.0   # (still loading: the frozen frame waits for the next screen)
 const MAX_SETTLE = 0.6 # s it waits for smooth frames once the next screen is up (a slow machine never gets them)
-const FLASH = 0.1      # s the red card flashes
+const FLASH = 0.44     # s the red card shows: the logo pops around the band (POPS s), then back to the centre
+const POPS = 0.3
+const POP_EVERY = 0.042
 const CLOSE = 0.12     # s the eyelids take to close
 const EYE_W = 0.62     # the eye's half width (x screen width): an almond, the corners shut at once
 const RIM = 0.05       # the lids' shaded rim (x screen height)
@@ -37,6 +39,12 @@ var eye:float = 1.0      # 1 open, 0 shut
 var mode:String = ""     # fail, once answered: "retry" / "results"
 var stage:int = 0        # 1 card + closing, 2 waiting for the next screen, 3 opening / fading in
 var lid_t:float = 0.0
+var dead_logo:TextureRect = null
+var logo_home:Vector2
+var band_rect:Rect2
+var next_pop:float = 0.0
+var pop_snd:AudioStreamPlayer = null
+var prng = RandomNumberGenerator.new()
 var up:bool = false     # (back / forward: the next screen is in)
 
 static func go(tree:SceneTree, scene:String, style_:String = "back"):
@@ -102,6 +110,8 @@ func _close(m:String):
 	get_tree().paused = true # (the run stops here)
 	dlog.stop()
 	dead.visible = true
+	next_pop = 0.0
+	prng.randomize()
 	if m == "retry":
 		if Rhythia.fail_asp: Rhythia.fail_asp.play()
 		if Rhythia.has_meta("last_run"): Rhythia.remove_meta("last_run") # (no stale results on the next menu)
@@ -128,11 +138,23 @@ func _next_ready(delta) -> bool:
 func _fail_step(delta):
 	var dt = min(delta, 1.0 / 30.0)
 	lid_t += dt
-	if stage == 1: # the red card punches in, the eyelids close over it
-		var f = min(lid_t / FLASH, 1.0)
-		var z = 1.0 + 0.06 * (1.0 - f) * (1.0 - f)
-		dead.rect_pivot_offset = dead.rect_size / 2
-		dead.rect_scale = Vector2(z, z)
+	if stage == 1: # the red card: the logo pops around the band, snaps back to the centre, the eyelids close
+		if lid_t < POPS:
+			if lid_t >= next_pop:
+				next_pop = lid_t + POP_EVERY
+				var ls = dead_logo.rect_size
+				dead_logo.rect_position = Vector2(prng.randf_range(band_rect.position.x, band_rect.end.x - ls.x), prng.randf_range(band_rect.position.y - ls.y * 0.15, band_rect.end.y - ls.y * 0.85))
+				var sc = prng.randf_range(0.6, 1.15)
+				dead_logo.rect_scale = Vector2(sc, sc)
+				dead_logo.rect_rotation = prng.randf_range(-25.0, 25.0)
+				_pop_sound(prng.randf_range(1.5, 2.2), -15.0)
+		elif dead_logo.rect_position != logo_home: # back home, a punch
+			dead_logo.rect_position = logo_home
+			dead_logo.rect_rotation = 0.0
+			dead_logo.rect_scale = Vector2(1.25, 1.25)
+			_pop_sound(1.0, -9.0)
+		else:
+			dead_logo.rect_scale = dead_logo.rect_scale.linear_interpolate(Vector2.ONE, 1.0 - exp(-dt * 22.0))
 		if lid_t < FLASH: return
 		var k = min((lid_t - FLASH) / CLOSE, 1.0)
 		eye = 0.55 * pow(1.0 - k, 2) # (starts already on the red band, closes fast)
@@ -250,7 +272,9 @@ func _dead_card() -> Control:
 	band.rect_size = Vector2(vs.x, vs.y * 0.64)
 	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	c.add_child(band)
+	band_rect = Rect2(band.rect_position, band.rect_size)
 	var logo = TextureRect.new()
+	dead_logo = logo
 	var sk = load("res://mods/replay/Reimagined.gd").skin_tex("logo")
 	logo.texture = sk if sk else load("res://assets/images/branding/icon.png")
 	logo.expand = true
@@ -259,6 +283,20 @@ func _dead_card() -> Control:
 	var ls = vs.y * 0.46
 	logo.rect_position = Vector2(vs.x / 2 - ls / 2, vs.y * 0.505 - ls / 2)
 	logo.rect_size = Vector2(ls, ls)
+	logo.rect_pivot_offset = logo.rect_size / 2
+	logo_home = logo.rect_position
 	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	c.add_child(logo)
 	return c
+
+# each pop of the logo: the map start's thump, pitched up
+func _pop_sound(pitch:float, db:float):
+	if !Engine.has_meta("rr_enter_sfx"): return
+	if !pop_snd:
+		pop_snd = AudioStreamPlayer.new()
+		pop_snd.bus = "Effects" if AudioServer.get_bus_index("Effects") >= 0 else "Master"
+		add_child(pop_snd)
+	pop_snd.stream = Engine.get_meta("rr_enter_sfx")
+	pop_snd.pitch_scale = pitch
+	pop_snd.volume_db = db
+	pop_snd.play()
