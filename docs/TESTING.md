@@ -66,7 +66,7 @@ Every feature test should pass on both `own` and `share`. The newer drivers:
 | `PassZoomTest.gd` | the slowest frame from a map's last notes through the pass zoom (`RR_SHOTS=1`: pictures instead) |
 | `SwapProbe.gd` | screen transitions (Esc on the loading card, card -> run, retry, run -> results): time, darkest frame, slowest frame (`RR_SHOTS=1`: pictures during the swap) |
 | `PassProbe.gd` | the pass moment (hit-stop, slow motion, camera push, white-out into the results, time scale restored), progress lines, quitting from the pause menu (time, no pause menu in the frozen frame) |
-| `AutoProbe.gd` | the human-like autoplay cursor (HumanDance.gd, spins): every note in the hitbox at its time, no teleports, top speed, sharp turns and spin direction vs the stock mover (RR_SHOTS: path pictures); a live autoplay run with no misses |
+| `AutoProbe.gd` | the human-like autoplay cursor (HumanDance.gd, spins): every note in the hitbox at its time, no teleports, top speed, sharp turns, spin direction and plain moves on easy parts vs the stock mover (RR_SHOTS: path pictures); a live autoplay run with no misses |
 | `FeaturesTest.gd` | dropped colorsets / meshes / settings files / fonts, HUD font + trail fade + cursor glow in a run, settings generator (live run tracked, advice, Apply / Undo stick with the settings page open) |
 | `FpsCounterTest.gd` | FPS counter: text, top-right placement, clicks pass through, same node in runs, switch, hidden while a clip records |
 

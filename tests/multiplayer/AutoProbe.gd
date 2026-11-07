@@ -67,12 +67,30 @@ func stats(mv, notes):
 		pv = v
 		prev = c
 	speeds.sort()
+	# easy parts (>= 450 ms between notes): how far the path strays from a straight line
+	var slow_n = 0
+	var slow_ratio = 0.0
+	for i in range(1, notes.size()):
+		var ta = float(notes[i - 1][2])
+		var tb = float(notes[i][2])
+		var chord = Vector2(notes[i][0], notes[i][1]).distance_to(Vector2(notes[i - 1][0], notes[i - 1][1]))
+		if tb - ta < 450.0 or chord < 0.8: continue
+		var len_ = 0.0
+		var q = mv.update(ta)
+		var tt = ta
+		while tt < tb:
+			tt += 4.0
+			var c = mv.update(tt)
+			len_ += c.distance_to(q)
+			q = c
+		slow_n += 1
+		slow_ratio += len_ / chord
 	var need = 0.0
 	for i in range(1, notes.size()):
 		if float(notes[i][2]) >= at - 300 and float(notes[i][2]) <= at + 300:
 			var gap = max(float(notes[i][2]) - float(notes[i - 1][2]), 1.0)
 			need = max(need, Vector2(notes[i][0], notes[i][1]).distance_to(Vector2(notes[i - 1][0], notes[i - 1][1])) / gap * step)
-	return {spin = abs(wind) / max(wind_abs, 0.001), at = at, need = need, inside = inside, worst = worst, maxstep = maxstep, p99 = speeds[int(speeds.size() * 0.99)], length = length, turns = turns}
+	return {slow = slow_ratio / max(slow_n, 1), slow_n = slow_n, spin = abs(wind) / max(wind_abs, 0.001), at = at, need = need, inside = inside, worst = worst, maxstep = maxstep, p99 = speeds[int(speeds.size() * 0.99)], length = length, turns = turns}
 
 # the cursor path over 6 s of the map's busiest part, notes as squares (old -> new = dark -> bright)
 func path_png(mv, notes, name):
@@ -122,6 +140,7 @@ func run():
 	check(a.p99 < b.p99 * 0.8, "top speed sane (p99 %.1f units/s, stock %.1f)" % [a.p99, b.p99])
 	check(a.turns < b.turns, "fewer sharp direction changes than stock (%d vs %d)" % [a.turns, b.turns])
 	check(a.spin > b.spin + 0.1, "spins: one turning direction dominates (%.2f of all turning, stock %.2f)" % [a.spin, b.spin])
+	check(a.slow_n == 0 or a.slow < 1.25, "easy parts move plainly (path / straight line %.2f over %d slow jumps, stock %.2f)" % [a.slow, a.slow_n, b.slow])
 	if OS.get_environment("RR_SHOTS") != "":
 		path_png(hm, notes, "auto_path_human")
 		path_png(BouncyDanceMover.new(song), notes, "auto_path_stock")
