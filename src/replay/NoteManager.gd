@@ -536,9 +536,6 @@ func _peak_window_notes() -> int:
 
 
 func _ready():
-	# the Rewrite's raw input (Game.cs): every mouse move reaches the cursor as it comes, not
-	# merged into one per frame
-	Input.use_accumulated_input = false
 	cache_settings()
 	_mp_lock()
 	if ResourceLoader.exists("res://mods/replay/Reimagined.gd"):

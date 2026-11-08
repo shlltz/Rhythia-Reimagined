@@ -396,21 +396,60 @@ func _fan(n:int) -> PoolIntArray:
 		fans[n] = ix
 	return fans[n]
 
-# a soft white bloom on the cursor (additive rings) and a beam of light through it
+# a soft white bloom on the cursor and a beam of light through the hit: smooth gradients (meshes with
+# a gaussian falloff in their vertex colours, additive), not stacked shapes
 func _draw_halo():
+	var ci = halo.get_canvas_item()
 	if halo_k > 0.0:
-		var r = halo.rect_size.y * 0.09 * (0.6 + 0.4 * halo_k)
-		for i in 8:
-			var k = float(i + 1) / 8.0
-			halo.draw_circle(hit_p, r * k, Color(1.0, 0.95, 0.8, 0.07 * halo_k))
+		var p = cur_trail[-1] if !cur_trail.empty() else hit_p
+		_glow_disc(ci, p, halo.rect_size.y * 0.1 * (0.6 + 0.4 * halo_k), Color(1.0, 0.95, 0.82, 0.5 * halo_k))
 	var el = last_el
 	var bk = (min(1.0, el / 0.06) if el < 0.06 else max(0.0, 1.0 - (el - 0.06) / 1.4))
 	if bk > 0.0:
-		var h = halo.rect_size.y
-		var w = halo.rect_size.x * 0.07 * (0.3 + 0.7 * bk)
-		for i in 7:
-			var k = float(i + 1) / 7.0
-			halo.draw_rect(Rect2(hit_p.x - w * k, 0, w * 2.0 * k, h), Color(0.8, 0.85, 1.0, 0.09 * bk))
+		bk = bk * bk * (3.0 - 2.0 * bk)
+		_glow_beam(ci, hit_p.x, halo.rect_size.x * 0.06 * (0.3 + 0.7 * bk), halo.rect_size.y, Color(0.8, 0.86, 1.0, 0.6 * bk))
+
+const GLOW_STEPS = 14
+func _falloff(k:float) -> float: # (k 0 = the middle, 1 = the edge: gaussian, reaching 0 at the edge)
+	return max(0.0, exp(-k * k * 4.0) - exp(-4.0)) / (1.0 - exp(-4.0))
+
+func _glow_beam(ci:RID, x:float, half:float, h:float, c:Color):
+	var pts = PoolVector2Array()
+	var cols = PoolColorArray()
+	var ix = PoolIntArray()
+	var n = GLOW_STEPS * 2
+	for i in n + 1:
+		var u = float(i) / n * 2.0 - 1.0 # (-1 .. 1 across)
+		var col = Color(c.r, c.g, c.b, c.a * _falloff(abs(u)))
+		for y in [0.0, h]:
+			pts.append(Vector2(x + u * half, y))
+			cols.append(col)
+		if i > 0:
+			var b = i * 2
+			ix.append_array([b - 2, b - 1, b, b - 1, b + 1, b])
+	VisualServer.canvas_item_add_triangle_array(ci, ix, pts, cols)
+
+func _glow_disc(ci:RID, p:Vector2, r:float, c:Color):
+	var seg = 40
+	var pts = PoolVector2Array([p])
+	var cols = PoolColorArray([c])
+	var ix = PoolIntArray()
+	for ring in range(1, GLOW_STEPS + 1):
+		var k = float(ring) / GLOW_STEPS
+		var col = Color(c.r, c.g, c.b, c.a * _falloff(k))
+		for j in seg:
+			var a = TAU * j / seg
+			pts.append(p + Vector2(cos(a), sin(a)) * r * k)
+			cols.append(col)
+	for j in seg: # (the centre fan)
+		ix.append_array([0, 1 + j, 1 + (j + 1) % seg])
+	for ring in range(1, GLOW_STEPS):
+		var a0 = 1 + (ring - 1) * seg
+		var b0 = a0 + seg
+		for j in seg:
+			var j2 = (j + 1) % seg
+			ix.append_array([a0 + j, b0 + j, b0 + j2, a0 + j, b0 + j2, a0 + j2])
+	VisualServer.canvas_item_add_triangle_array(ci, ix, pts, cols)
 
 # ------------------------------------------------------------------ the clear sound
 # a low impact under a bright fifth / octave bloom with a sparkle on top, then a ping-pong echo

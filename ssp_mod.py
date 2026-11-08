@@ -547,7 +547,18 @@ def build(profile):
     for name in ORDER:
         if name in profile: apply(pk, name, profile[name])
     if 'replay' in profile: file_logging(pk)
+    if CHANNEL == 'own': async_shaders(pk)
     return pk
+
+# shaders compile in the background (Godot 3.6 "Asynchronous and Cache": an ubershader draws in the
+# meantime, and compiled shaders are cached in user://shader_cache), so the first time an effect
+# shows it no longer stalls the frame (one-time 100-200 ms spikes in the first play of a session)
+def async_shaders(pk):
+    p = 'res://project.binary'; b = pk.read(p); key = b'rendering/gles3/shaders/shader_compilation_mode'
+    if key in b: return
+    n, = struct.unpack_from('<I', b, 4)
+    ent = struct.pack('<I', len(key)) + key + struct.pack('<IIi', 8, 2, 2)   # int 2 = Asynchronous and Cache
+    pk.write(p, b[:4] + struct.pack('<I', n + 1) + b[8:] + ent)
 
 # the log file is only on by default on desktop: turn it on everywhere, so phones get
 # user://logs/godot.log too (shown in Customize > Logs)

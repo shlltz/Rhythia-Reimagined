@@ -41,7 +41,7 @@ func _process(_d):
 	if rec != null and last_us > 0 and is_instance_valid(game):
 		var ms = (now - last_us) / 1000.0
 		var sp = game.get_node_or_null("Spawn")
-		rec.append([ms, sp.ms if sp else float(OS.get_ticks_msec()), int(game.get("hits")) if game.get("hits") != null else 0, added.duplicate(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0])
+		rec.append([ms, sp.ms if sp else float(OS.get_ticks_msec()), int(game.get("hits")) if game.get("hits") != null else 0, added.duplicate(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, OS.get_ticks_msec()])
 	added = []
 	last_us = now
 
@@ -78,7 +78,7 @@ func report(label:String, r:Array):
 	by.sort_custom(self, "_desc")
 	for k in min(25, by.size()):
 		var x = r[by[k][1]]
-		out("%7.2f ms  at %8.0f ms  frame %5d  hits %4d  process %.2f physics %.2f  %s" % [x[0], x[1], by[k][1], x[2], x[4], x[5], str(x[3]).left(200)])
+		out("%7.2f ms  at %8.0f ms  frame %5d  hits %4d  process %.2f physics %.2f  since launch %.2f s  %s" % [x[0], x[1], by[k][1], x[2], x[4], x[5], x[6] / 1000.0, str(x[3]).left(200)])
 	var pm = []
 	for x in r: pm.append(x[4])
 	pm.sort()
