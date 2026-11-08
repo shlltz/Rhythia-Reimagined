@@ -226,7 +226,7 @@ func read_data(from_path:String=""):
 			debug_txt.autoplayer = true
 			update_debug_text()
 			song = Rhythia.selected_song
-			dance = load("res://mods/replay/HumanDance.gd").new(song) # (human-like cursor; stock: BouncyDanceMover)
+			dance = load("res://mods/replay/RewriteAuto.gd").new(song) # (the rewrite's autoplay; stock: BouncyDanceMover)
 #			var notes = song.read_notes()
 #			var prev = Vector3(1,-1,-1)
 #			var cursor_unrev = []
