@@ -761,6 +761,11 @@ func make_song_button(id:int=-1):
 # animated button shader; hover / selection drawn by CardLook.gd and MapFocus.gd. The styles and
 # the cover material are made once and shared by every card.
 const CardLook = preload("res://mods/stars/CardLook.gd")
+# room on the left for the hover / selected slide-out (CardLook.gd), so it isn't clipped by the list
+var _room = -1.0
+func _rr_room() -> float:
+	if _room < 0: _room = CardLook.SEL_SLIDE + 2.0 if Look.mono() else 0.0
+	return _room
 const COVER_SHADER = """shader_type canvas_item;
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
@@ -895,7 +900,7 @@ func _rr_retarget(snap:bool):
 	for i in btns.size():
 		var b = btns[i]
 		if !is_instance_valid(b): continue
-		var w = size_x - 15 * abs(mid - i)
+		var w = size_x - 15 * abs(mid - i) - _rr_room()
 		var dx = 0.0 if snap else float(b.get_meta("rr_dx")) if b.has_meta("rr_dx") else 0.0
 		dx += w - b.rect_min_size.x if !snap else 0.0
 		b.set_meta("rr_dx", dx)
@@ -912,8 +917,16 @@ func _rr_place():
 	if abs(rect_position.y - glide_set) > 0.001: rect_position.y = glide_set
 	for b in btns:
 		if !is_instance_valid(b) or !b.has_meta("rr_nx"): continue
-		var x = b.get_meta("rr_nx") + (b.get_meta("rr_dx") if b.has_meta("rr_dx") else 0.0) - (b.get_meta("rr_hx") if b.has_meta("rr_hx") else 0.0) # (rr_hx: hover slide, CardLook.gd)
+		# rr_hx: hover / selected slide-out (CardLook.gd) - the card grows out to the left, its right
+		# edge stays where it was
+		var hx = b.get_meta("rr_hx") if b.has_meta("rr_hx") else 0.0
+		var x = b.get_meta("rr_nx") + (b.get_meta("rr_dx") if b.has_meta("rr_dx") else 0.0) - hx
 		if abs(b.rect_position.x - x) > 0.01: b.rect_position.x = x
+		if hx > 0.0 or b.has_meta("rr_grown"): # (only slid-out cards; at 0 it's put back once)
+			var w = b.get_combined_minimum_size().x + hx
+			if abs(b.rect_size.x - w) > 0.01: b.rect_size.x = w
+			if hx > 0.0: b.set_meta("rr_grown", true)
+			else: b.remove_meta("rr_grown")
 
 func _rr_glide(delta:float):
 	var a = 1.0 - exp(-delta * GLIDE_RATE)
@@ -965,7 +978,7 @@ func tween_length(delta:float = 0.016):
 	for i in btns.size():
 		var b = btns[i]
 		if !is_instance_valid(b): continue
-		var w = size_x - 15 * abs(mid - i)
+		var w = size_x - 15 * abs(mid - i) - _rr_room()
 		var nw:float
 		if sliding:
 			var vh = max(1.0, get_viewport_rect().size.y)

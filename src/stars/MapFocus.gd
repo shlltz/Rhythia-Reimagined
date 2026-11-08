@@ -43,7 +43,7 @@ func _draw():
 	var Look = load("res://mods/replay/Look.gd")
 	var c = Look.hot() # red-ish marks follow the red setting; SEVERE / EXTREME maps get a stronger red frame
 	if tier >= 3: c = Look.danger_col(tier)
-	if flash > 0.0: draw_rect(r, Color(c.r, c.g, c.b, 0.22 * flash))
-	draw_rect(Rect2(0, 0, 4, r.size.y), Color(c.r, c.g, c.b, 0.95))
-	draw_rect(r.grow(-1), Color(c.r, c.g, c.b, 0.55), false, 1.0)
-	Look.brackets(self, r.grow(-5), 12.0 + (4.0 if tier == 4 and Look.red() > 0.0 else 0.0), Color(c.r, c.g, c.b, 0.9), 2.0)
+	draw_rect(r, Color(c.r, c.g, c.b, 0.07 + 0.22 * flash)) # (a light wash: it reads as lit)
+	draw_rect(Rect2(0, 0, 7, r.size.y), Color(c.r, c.g, c.b, 1.0))
+	draw_rect(Rect2(Vector2(1, 1), r.size - Vector2(2, 2)), Color(c.r, c.g, c.b, 0.9), false, 2.0)
+	Look.brackets(self, r.grow(-6), 16.0 + (4.0 if tier == 4 and Look.red() > 0.0 else 0.0), Color(c.r, c.g, c.b, 1.0), 3.0)
