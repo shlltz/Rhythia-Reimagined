@@ -1,10 +1,13 @@
 extends CanvasLayer
-# Startup intro (personal build), after osu!lazer's: while the game loads, a thin line pulses on black;
-# once the menu is up and running smoothly, your RHYTHIA wordmark (logo.webp, monochrome) writes itself -
-# a white pen runs along its outlines left to right, the letters fill in behind it with a bright edge,
-# the camera easing in and a soft light coming up behind - REIMAGINED decodes under it, lands with a
-# thump and a glint runs across the wordmark, then the camera rushes through it (speed lines, a swell), the square Rhythia logo zooms down into place drawing itself on (exactly where the title
-# screen's logo sits) and a white flash hands over to the title menu, the music starting with it.
+# Startup intro (personal build), after osu!lazer's: while the game loads, a bright piece slides along
+# a thin line on black; once the menu is up and running smoothly, your RHYTHIA wordmark (logo.webp,
+# monochrome) writes itself - a white pen runs along its outlines left to right, the letters fill in
+# behind it with a bright edge, the camera easing in and a soft light coming up behind - REIMAGINED
+# decodes under it, lands with a thump (the map's song starts from the top here, fading in under the
+# rest) and a glint runs across the wordmark, then the camera rushes through it (speed lines, a
+# swell), the square Rhythia logo zooms down into place drawing itself on (exactly where the title
+# screen's logo sits) and locks in (spring, click, brackets clamp on, a ring goes out), and a white
+# flash hands over to the title menu.
 # No voice. Injected into init.tscn; moves itself to the root so it survives the init -> menu scene
 # change. Click / any key skips to the flash.
 # Smooth: the animation only starts once loading is over (the startup frames are long), its clock
@@ -39,12 +42,16 @@ const RUSH_AT = 2.05             # the camera rushes through the wordmark
 const RUSH_TIME = 0.45
 const ICON_AT = 2.2              # the square logo zooms down into place, drawing itself on
 const ICON_TIME = 0.55
-const FLASH_AT = 2.85            # white flash: the title menu takes over
+const LOCK_TIME = 0.4            # ...and locks in: springs, clicks, brackets clamp on, a ring goes out
+const FLASH_AT = 3.15            # white flash: the title menu takes over
 const FLASH_TIME = 0.8
 const SHEEN_AT = 1.6             # a glint runs across the wordmark after the impact
 const SHEEN_TIME = 0.5
 const WHOOSH_AT = 1.85           # the rush's swell (peaks 0.5 s in)
 const WARP_LINES = 90
+const MUSIC_AT = 1.55            # = IMPACT_AT: the map's song starts from the top and fades in
+const MUSIC_FADE = 2.4
+const TITLE_MENU = "res://mods/replay/TitleMenu.gd"
 const SETTLE_FRAMES = 12         # smooth frames in a row (< 30 ms) before it starts
 const MAX_LOAD_WAIT = 15.0       # start anyway after this long
 
@@ -120,6 +127,15 @@ var impacted:bool = false
 var flashed:bool = false
 var music_bus:int = -1
 var music_was_muted:bool = false
+var music_db:float = 0.0         # the Music bus's own volume (put back after the fade)
+var music_set:float = 0.0        # what the fade last set (if anything else changes it, the fade stops)
+var music_at:float = -1.0        # clock when the song started fading in
+var fading:bool = false
+var lock:Control                 # the square logo's lock-in: brackets + ring
+var clack:AudioStreamPlayer
+var clacked:bool = false
+var tilt:float = 0.0             # (as the title menu measures its logo: the brackets sit where its do)
+var side:float = 0.62
 
 func _ready():
 	if get_parent() != get_tree().root:
@@ -182,6 +198,13 @@ func _ready():
 	icon.material.set_shader_param("lift", 1.9) # (= the title logo's grey material)
 	icon.visible = false
 	add_child(icon)
+	var tm = load(TITLE_MENU)
+	if tm:
+		tilt = tm._measure_tilt(icon.texture)
+		side = tm._measure_side(icon.texture, tilt)
+	lock = Control.new()
+	_full(lock, self)
+	lock.connect("draw", self, "_draw_lock")
 	flash = ColorRect.new()
 	flash.color = Color(1, 1, 1, 0)
 	_full(flash, self)
@@ -197,6 +220,11 @@ func _ready():
 	whoosh.bus = thump.bus
 	whoosh.volume_db = -11.0
 	add_child(whoosh)
+	clack = AudioStreamPlayer.new()
+	clack.stream = _clack()
+	clack.bus = thump.bus
+	clack.volume_db = -7.0
+	add_child(clack)
 	# keep the menu music quiet until the flash
 	music_bus = AudioServer.get_bus_index("Music")
 	if music_bus >= 0:
@@ -314,11 +342,17 @@ func _process(delta):
 	if !whooshed and clock >= WHOOSH_AT:
 		whooshed = true
 		whoosh.play()
+	if music_at < 0 and clock >= MUSIC_AT: _start_music()
+	if fading: _fade()
+	if !clacked and clock >= ICON_AT + ICON_TIME:
+		clacked = true
+		clack.play()
 	if !flashed and clock >= FLASH_AT: _flash()
-	if clock >= FLASH_AT + FLASH_TIME:
+	if clock >= FLASH_AT + FLASH_TIME and !fading:
 		finish()
 		return
 	_apply()
+	if !flashed and clock > ICON_AT + ICON_TIME - 0.3: lock.update()
 	if clock < RUSH_AT + 0.1: text.update()
 	if clock > RUSH_AT - 0.2 and clock < ICON_AT + ICON_TIME + 0.1: warp.update()
 
@@ -373,17 +407,19 @@ func _apply():
 	stage.rect_scale = Vector2(s, s)
 	stage.modulate.a = 1.0 - smoothstep(0.25, 0.8, rush) # (gone before the square logo is big)
 	# the light behind it: comes up with the fill, blooms on the impact, swells into the flash
-	var gl = 0.05 * _cubic_out((t - FILL_AT) / FILL_TIME) + 0.09 * _hit(t, IMPACT_AT, 4.0) + 0.1 * _sine_io((t - RUSH_AT) / (FLASH_AT - RUSH_AT))
+	var gl = 0.05 * _cubic_out((t - FILL_AT) / FILL_TIME) + 0.09 * _hit(t, IMPACT_AT, 4.0) + 0.1 * _sine_io((t - RUSH_AT) / (FLASH_AT - RUSH_AT)) + 0.07 * _hit(t, ICON_AT + ICON_TIME, 6.0)
 	glow.material.set_shader_param("glow", gl)
 	# the square logo: zooms down from big into its place on the title screen, drawing on clockwise
 	var ik = _c01((t - ICON_AT) / ICON_TIME)
 	icon.visible = ik > 0.0 and !flashed
 	if icon.visible:
-		var e = _cubic_out(ik)
-		var si = 1.0 + 1.4 * (1.0 - e) + 0.04 * _hit(t, ICON_AT + ICON_TIME, 9.0)
+		var si = _icon_scale(t)
 		icon.rect_scale = Vector2(si, si)
+		icon.rect_rotation = _icon_turn(t)
 		icon.modulate.a = _c01(ik * 3.0)
 		icon.material.set_shader_param("progress", _sine_io(ik / 0.8))
+		var land = ICON_AT + ICON_TIME # (a glint across it as it locks)
+		icon.material.set_shader_param("sheen", -0.4 + 1.8 * _sine_io((t - land) / 0.3) if t >= land else -1.0)
 	# flash: full white the moment the title menu takes over, then fading
 	if flashed: flash.color.a = pow(1.0 - _c01((t - FLASH_AT) / FLASH_TIME), 2)
 
@@ -397,8 +433,9 @@ func _flash():
 	stage.visible = false
 	loader.visible = false
 	icon.visible = false
+	lock.visible = false
 	flash.color.a = 1.0
-	if music_bus >= 0: AudioServer.set_bus_mute(music_bus, music_was_muted)
+	_start_music() # (skipped before it started)
 	thump.volume_db = -9.0
 	thump.play()
 
@@ -471,12 +508,94 @@ func _input(ev):
 		_flash()
 
 func finish():
-	if music_bus >= 0 and !flashed: AudioServer.set_bus_mute(music_bus, music_was_muted)
 	queue_free()
 
-# never leave the music bus muted, however the intro goes away
+# never leave the music bus muted or turned down, however the intro goes away
 func _exit_tree():
-	if music_bus >= 0 and !flashed: AudioServer.set_bus_mute(music_bus, music_was_muted)
+	if music_bus < 0: return
+	if fading: AudioServer.set_bus_volume_db(music_bus, music_db)
+	if music_at < 0: AudioServer.set_bus_mute(music_bus, music_was_muted)
+
+# the map's song (the jukebox's) starts from the top, the Music bus fading up from silence to its
+# own volume (stays muted if it was muted)
+func _start_music():
+	if music_at >= 0: return
+	music_at = clock
+	if music_bus < 0: return
+	var sc = get_tree().current_scene
+	var jb = sc.get_node_or_null("Jukebox") if sc else null
+	var p = jb.player() if jb else null
+	if p and p.playing: p.seek(0.0) # (a stream still loading starts at 0:00 anyway - Jukebox.gd)
+	if music_was_muted: return
+	music_db = AudioServer.get_bus_volume_db(music_bus) # (now: the settings set it after the intro started)
+	music_set = -60.0
+	AudioServer.set_bus_volume_db(music_bus, music_set)
+	AudioServer.set_bus_mute(music_bus, false)
+	fading = true
+
+func _fade():
+	if abs(AudioServer.get_bus_volume_db(music_bus) - music_set) > 0.01:
+		fading = false # (someone turned the volume: theirs wins)
+		return
+	var k = _c01((clock - music_at) / MUSIC_FADE)
+	music_set = music_db if k >= 1.0 else music_db + linear2db(max(k * k, 0.001))
+	AudioServer.set_bus_volume_db(music_bus, music_set)
+	if k >= 1.0: fading = false
+
+# the square logo: comes down out of the rush (turning into place), slams in still moving and
+# springs - squash, a little twist back - then holds
+func _icon_scale(t:float) -> float:
+	var land = ICON_AT + ICON_TIME
+	if t < land:
+		var k = _c01((t - ICON_AT) / ICON_TIME)
+		return 1.0 + 1.4 * pow(1.0 - k, 2)
+	var dt = t - land
+	return 1.0 - 0.12 * exp(-dt * 10.0) * sin(dt * 26.0)
+
+func _icon_turn(t:float) -> float:
+	var land = ICON_AT + ICON_TIME
+	if t < land:
+		var k = _c01((t - ICON_AT) / ICON_TIME)
+		return 30.0 * pow(1.0 - k, 2)
+	var dt = t - land
+	return -4.0 * exp(-dt * 10.0) * sin(dt * 26.0)
+
+# lock-in: four corner brackets slide in and clamp onto the logo (where the title menu's brackets
+# are, so they carry over through the flash) and a square ring goes out from it
+func _draw_lock():
+	var t = clock
+	var land = ICON_AT + ICON_TIME
+	var lk = _c01((t - land + 0.25) / 0.25)
+	if lk <= 0.0: return
+	var c = icon.rect_position + icon.rect_pivot_offset
+	var si = icon.rect_scale.x
+	var half = ICON_PX / 2 * side * 1.08 * si
+	var rot = deg2rad(icon.rect_rotation - tilt)
+	var xa = Vector2(cos(rot), sin(rot))
+	var ya = Vector2(-xa.y, xa.x)
+	var arr = []
+	var dt = t - land
+	var g = half + 22.0
+	var a = 0.9 * lk
+	if dt < 0:
+		g += half * 1.2 * (1.0 - _cubic_out(lk))
+	else:
+		g -= 12.0 * exp(-dt * 10.0) * sin(dt * 26.0) # (clamps, springs back)
+		a = 0.5 + 0.45 * exp(-dt * 6.0)
+	var arm = 30.0
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			var k = c + xa * sx * g + ya * sy * g
+			arr.append([k, k - xa * sx * arm, 2.0, Color(1, 1, 1, a)])
+			arr.append([k, k - ya * sy * arm, 2.0, Color(1, 1, 1, a)])
+	if dt >= 0 and dt < 0.45:
+		var q = dt / 0.45
+		var h = half * (1.05 + 0.7 * _cubic_out(q))
+		var col = Color(1, 1, 1, 0.55 * pow(1.0 - q, 2))
+		var pts = [c + (xa + ya) * h, c + (xa - ya) * h, c + (-xa - ya) * h, c + (-xa + ya) * h]
+		for i in 4:
+			arr.append([pts[i], pts[(i + 1) % 4], 3.0 - 2.0 * q, col])
+	Ring.bars(lock, arr)
 
 # a rising air swell for the rush (filtered noise opening up; peaks at 0.5 s, then cut)
 static func _whoosh() -> AudioStreamSample:
@@ -497,6 +616,29 @@ static func _whoosh() -> AudioStreamSample:
 		if v < 0: v += 65536
 		data[i * 2] = v & 0xff
 		data[i * 2 + 1] = (v >> 8) & 0xff
+	var s = AudioStreamSample.new()
+	s.format = AudioStreamSample.FORMAT_16_BITS
+	s.mix_rate = rate
+	s.stereo = false
+	s.data = data
+	return s
+
+# the lock-in click: a short bright clack over a small knock (made on the fly, 16-bit mono)
+static func _clack() -> AudioStreamSample:
+	var rate = 44100
+	var n = int(rate * 0.25)
+	var data = PoolByteArray()
+	data.resize(n * 2)
+	var rng = RandomNumberGenerator.new()
+	rng.seed = 5
+	for i in n:
+		var t = float(i) / rate
+		var v = sin(TAU * 1900.0 * t) * exp(-t * 90.0) * 0.45 + sin(TAU * 2950.0 * t) * exp(-t * 120.0) * 0.25
+		v += (rng.randf() * 2.0 - 1.0) * exp(-t * 250.0) * 0.5 + sin(TAU * 95.0 * t) * exp(-t * 22.0) * 0.7
+		var w = int(clamp(v * min(1.0, t * 2000.0), -1.0, 1.0) * 30000.0)
+		if w < 0: w += 65536
+		data[i * 2] = w & 0xff
+		data[i * 2 + 1] = (w >> 8) & 0xff
 	var s = AudioStreamSample.new()
 	s.format = AudioStreamSample.FORMAT_16_BITS
 	s.mix_rate = rate
