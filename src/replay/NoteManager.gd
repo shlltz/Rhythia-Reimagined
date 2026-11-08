@@ -536,6 +536,9 @@ func _peak_window_notes() -> int:
 
 
 func _ready():
+	# the Rewrite's raw input (Game.cs): every mouse move reaches the cursor as it comes, not
+	# merged into one per frame
+	Input.use_accumulated_input = false
 	cache_settings()
 	_mp_lock()
 	if ResourceLoader.exists("res://mods/replay/Reimagined.gd"):
@@ -990,8 +993,19 @@ func _process(delta:float):
 		emit_signal("timer_update",ms,can_skip)
 		
 		if $Music.playing and !Rhythia.disable_desync:
-			var playback_pos:float = $Music.get_playback_position()*1000.0
-			if abs(playback_pos - (ms + Rhythia.music_offset)) > (100 * max(speed_multi, 1.0)):
+			# the Rewrite's de-sync corrector (Runner.cs): the position includes the time since the
+			# last mix (the plain reading moves in mix blocks), and a small drift is pulled back by
+			# nudging the music's speed (max 3 %) instead of restarting it - no audible jump
+			var playback_pos:float = ($Music.get_playback_position() + clamp(AudioServer.get_time_since_last_mix(), 0.0, 0.05)) * 1000.0
+			var base_pitch:float = speed_multi * (replay_rate if replay_viewer else 1.0)
+			var drift:float = (ms + Rhythia.music_offset) - playback_pos
+			if rr_slow == 1.0 and !(replay_viewer and replay_paused):
+				if abs(drift) > 25.0 * max(speed_multi, 1.0):
+					$Music.pitch_scale = base_pitch * clamp(1.0 + drift / 1000.0, 0.97, 1.03)
+				elif $Music.pitch_scale != base_pitch:
+					$Music.pitch_scale = base_pitch
+			if abs(playback_pos - (ms + Rhythia.music_offset)) > (250 * max(speed_multi, 1.0)):
+				$Music.pitch_scale = base_pitch
 				if Rhythia.desync_alerts:
 					Globals.notify(
 						Globals.NOTIFY_WARN,
