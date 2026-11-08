@@ -119,11 +119,32 @@ func run():
 		if is_instance_valid(b) and "song" in b and b.song != null:
 			var r = b.get_global_rect()
 			if r.position.y > 0 and r.end.y < vs.y: shown.append(b)
-	if shown.size() >= 2:
-		Rhythia.select_song(shown[1].song)
-		yield(wait(0.3), "completed")
+	# the middle card (the widest) is selected: the one that could be clipped on the left
+	list.scroll_to(min(10, list.disp.size() - 1))
+	yield(wait(1.0), "completed")
+	if list.cur_map >= 0 and list.cur_map < list.disp.size():
+		Rhythia.select_song(list.disp[list.cur_map])
+	yield(wait(0.5), "completed")
+	shown = []
+	for b in list.btns:
+		if is_instance_valid(b) and "song" in b and b.song != null:
+			var r = b.get_global_rect()
+			if r.position.y > 0 and r.end.y < vs.y: shown.append(b)
+	if shown.size() >= 1:
 		move_mouse(shown[0].get_global_rect().position + shown[0].rect_size * Vector2(0.7, 0.5))
 	yield(wait(0.6), "completed")
+	for b in list.btns: # selected card vs whatever clips it (its left edge must be inside)
+		if is_instance_valid(b) and "song" in b and b.song == Rhythia.selected_song:
+			var left = b.get_global_rect().position.x
+			var n = b.get_parent()
+			var clip_x = -1e9
+			while n and n is Control:
+				if n.rect_clip_content or n is ScrollContainer:
+					clip_x = max(clip_x, n.get_global_rect().position.x)
+					out("    clips: %s %s (min %s)" % [n.name, str(n.get_global_rect()), str(n.get_combined_minimum_size())])
+				n = n.get_parent()
+			out("    list %s (min %s), size_x %s" % [str(list.get_global_rect()), str(list.get_combined_minimum_size()), str(list.size_x)])
+			out("  selected card left %.1f, clip left %.1f: %s" % [left, clip_x, "inside" if left >= clip_x - 0.5 else "CLIPPED"])
 	var hov = [] # (cards with a hover look: CardLook.gd)
 	for b in list.btns:
 		if !is_instance_valid(b): continue

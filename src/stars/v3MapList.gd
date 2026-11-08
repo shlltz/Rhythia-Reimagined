@@ -1108,6 +1108,10 @@ func _exit_tree():
 func size_list():
 	size_x = get_viewport_rect().size.x/2.8
 	$"..".rect_min_size.x = size_x
+	# personal build: the list clips its cards and would shrink to the widest one - keep it the full
+	# width so the room left of the cards (_rr_room) is inside the clip and the selected card's
+	# grow-out shows
+	if Look.mono(): rect_min_size.x = size_x
 
 # List covers (Rhythia-reimagined): the stock list loaded every map's full-size cover at startup
 # and kept them all in video memory. Now each button gets a small thumbnail (THUMB px), decoded
