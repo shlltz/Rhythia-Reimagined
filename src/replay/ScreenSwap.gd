@@ -16,12 +16,12 @@ extends CanvasLayer
 const TIME = {"back": 0.36, "forward": 0.4}
 const MAX_HOLD = 6.0   # (still loading: the frozen frame waits for the next screen)
 const MAX_SETTLE = 0.4 # s it waits for smooth frames once the next screen is up (a slow machine never gets them)
-const FLASH = 0.44     # s the red card shows: the logo pops around the band (POPS s), then back to the centre
-const POPS = 0.3
+const FLASH = 0.28     # s the red card shows: the logo pops around the band (POPS s), then back to the centre
+const POPS = 0.2
 const POP_EVERY = 0.042
-const CLOSE = 0.12     # s the eyelids take to close
+const CLOSE = 0.07     # s the eyelids take to close (a quick, subtle ending: the log is the show)
 const EYE_W = 0.62     # the eye's half width (x screen width): an almond, the corners shut at once
-const RIM = 0.05       # the lids' shaded rim (x screen height)
+const RIM = 0.03       # the lids' shaded rim (x screen height)
 const OPEN = 0.35      # s to open on the restarted run
 const FADE_IN = 0.4    # s the results take to come out of the black
 
@@ -155,7 +155,6 @@ func _fail_step(delta):
 				dead_fail.rect_rotation = prng.randf_range(-12.0, 12.0)
 				var fz = prng.randf_range(0.75, 1.25)
 				dead_fail.rect_scale = Vector2(fz, fz)
-				_pop_sound(prng.randf_range(1.5, 2.2), -15.0)
 			dead_copy.visible = true # glitching while they jump
 			dead_glitch.visible = true
 			dead_glitch.material.set_shader_param("seed", prng.randf() * 100.0)
@@ -166,8 +165,8 @@ func _fail_step(delta):
 			dead_glitch.visible = false
 			dead_logo.rect_position = logo_home
 			dead_logo.rect_rotation = 0.0
-			dead_logo.rect_scale = Vector2(1.25, 1.25)
-			_pop_sound(1.0, -9.0)
+			dead_logo.rect_scale = Vector2(1.12, 1.12)
+			_pop_sound(1.0, -14.0)
 		else:
 			dead_logo.rect_scale = dead_logo.rect_scale.linear_interpolate(Vector2.ONE, 1.0 - exp(-dt * 22.0))
 		if lid_t < FLASH: return
