@@ -54,6 +54,11 @@ func run():
 	while t < 3.0 and !(pm and pm.started):
 		yield(get_tree(), "idle_frame"); t += get_process_delta_time()
 	check(pm and pm.started, "pass moment starts on the last note")
+	# (a map whose song runs on past its last note: 6 s of it left - the glass falls until it ends)
+	Rhythia.disable_desync = true
+	var mu = sp.get_node("Music")
+	if mu.stream: mu.play(max(0.0, mu.stream.get_length() - 6.0))
+	var tail0 = OS.get_ticks_usec()
 	yield(get_tree(), "idle_frame")
 	shot("0_stop")
 	var ts0 = Engine.time_scale
@@ -64,14 +69,28 @@ func run():
 	check(ts0 == 0.0 and abs(ts1 - 0.3) < 0.01 and fl > 0.4, "hit-stop (time scale %.2f, flash %.2f) then slow motion (%.2f)" % [ts0, fl, ts1])
 	check(cam.fov < fov0 - 4.0, "camera pushes in (fov %.1f -> %.1f)" % [fov0, cam.fov])
 	yield(real_wait(0.85), "completed")
-	shot("2_white")
+	shot("2_glass")
+	var worst = 0.0 # glass falling: frame times
+	var u1 = OS.get_ticks_usec()
+	var lu = u1
+	while OS.get_ticks_usec() - u1 < 2500000:
+		yield(get_tree(), "idle_frame")
+		var nu = OS.get_ticks_usec()
+		worst = max(worst, (nu - lu) / 1000.0)
+		lu = nu
+	shot("3_rain")
+	check(is_instance_valid(pm) and pm.started and pm.shards.size() > 20, "glass still falling at 3.8 s (%d shards), worst frame %.2f ms" % [pm.shards.size() if is_instance_valid(pm) else -1, worst])
+	var mus = sp.get_node("Music")
+	out("  music playing %s at %.1f / %.1f s" % [mus.playing, mus.get_playback_position(), mus.stream.get_length() if mus.stream else -1.0])
 	t = 0.0
-	while t < 10 and !get_tree().root.has_node("Menu/ResultsScreen"):
+	while t < 120 and !get_tree().root.has_node("Menu/ResultsScreen"):
 		yield(wait(0.05), "completed"); t += 0.05
 	var rs = get_tree().root.get_node_or_null("Menu/ResultsScreen")
+	out("  results %.1f s after the last note (song had 6 s left)" % ((OS.get_ticks_usec() - tail0) / 1e6))
+	Rhythia.disable_desync = false
 	check(rs != null and Engine.time_scale == 1.0, "results after the white-out, time scale back to %.2f" % Engine.time_scale)
 	yield(wait(1.5), "completed")
-	shot("3_results")
+	shot("4_results")
 	if rs:
 		var pl = rs._progress()
 		check(rs.run.get("prev") is Dictionary and rs.stamped and rs.shake >= 0.0, "results: history known (%s), stamped; progress lines: %s" % [str(rs.run.get("prev", {}).get("attempts")), str(pl)])
