@@ -57,13 +57,12 @@ var line_t:float = 0.0
 var end_t:float = -1.0
 var t:float = 0.0
 var total:float = 1.0
-# the last line floods the screen (ULTRAKILL): FLOOD copies, each faster than the one before, the
-# log scrolling up once it reaches the bottom so they keep dropping down
-const FLOOD = 48
+# the last line floods the screen (ULTRAKILL): FLOOD copies, each faster than the one before, running
+# on down past the bottom edge (no scrolling)
+const FLOOD = 16
 var flood_from:int = 1 << 30
 var row_y0:float = 0.0
 var row_h:float = 1.0
-var row_end:float = 1.0
 
 # s line i takes (typing + gap)
 func _dur(i:int) -> float:
@@ -163,7 +162,6 @@ func _ready():
 		l.add_constant_override("shadow_as_outline", 1)
 		row_y0 = vs.y * 0.07
 		row_h = size * 1.1
-		row_end = vs.y * 0.94
 		l.rect_position = Vector2(vs.x * 0.04, row_y0 + i * row_h)
 		l.visible = false
 		l.mouse_filter = MOUSE_FILTER_IGNORE
@@ -417,9 +415,6 @@ func _next():
 		return
 	labels[cur].visible = true
 	labels[cur].visible_characters = 0
-	var over = row_y0 + (cur + 1) * row_h - row_end # (past the bottom: everything moves up a row)
-	if over > 0.0:
-		for i in labels.size(): labels[i].rect_position.y = row_y0 + i * row_h - over
 	var j = cur - flood_from
 	if j < 6 or j % 2 == 0: _line_sound(lines[cur][1] != RED)
 
