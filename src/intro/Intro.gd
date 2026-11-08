@@ -2,8 +2,8 @@ extends CanvasLayer
 # Startup intro (personal build), after osu!lazer's: while the game loads, a thin line pulses on black;
 # once the menu is up and running smoothly, your RHYTHIA wordmark (logo.webp, monochrome) writes itself -
 # a white pen runs along its outlines left to right, the letters fill in behind it with a bright edge,
-# the camera easing in - REIMAGINED lands under it with a thump, then the camera rushes through the
-# wordmark, the square Rhythia logo zooms down into place drawing itself on (exactly where the title
+# the camera easing in and a soft light coming up behind - REIMAGINED decodes under it, lands with a
+# thump and a glint runs across the wordmark, then the camera rushes through it (speed lines, a swell), the square Rhythia logo zooms down into place drawing itself on (exactly where the title
 # screen's logo sits) and a white flash hands over to the title menu, the music starting with it.
 # No voice. Injected into init.tscn; moves itself to the root so it survives the init -> menu scene
 # change. Click / any key skips to the flash.
@@ -17,8 +17,9 @@ const ICON = "res://assets/images/branding/icon.png"
 const MENUS = ["res://scenes/menu/menu2.tscn", "res://scenes/menu/oldmenu2.tscn"]
 const Ring = preload("res://mods/replay/Ring.gd")
 const SUB = "REIMAGINED"
+const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#/<>"
 
-const STROKES = 900              # outline segments
+const STEP = 3                   # outline pixels per pen segment (the outlines are chained, so no gaps)
 const SAMPLE_W = 340             # the wordmark's alpha is traced at this width
 const LOGO_W = 0.6               # of the screen's width (at most LOGO_HMAX of its height)
 const LOGO_HMAX = 0.34
@@ -40,6 +41,10 @@ const ICON_AT = 2.2              # the square logo zooms down into place, drawin
 const ICON_TIME = 0.55
 const FLASH_AT = 2.85            # white flash: the title menu takes over
 const FLASH_TIME = 0.8
+const SHEEN_AT = 1.6             # a glint runs across the wordmark after the impact
+const SHEEN_TIME = 0.5
+const WHOOSH_AT = 1.85           # the rush's swell (peaks 0.5 s in)
+const WARP_LINES = 90
 const SETTLE_FRAMES = 12         # smooth frames in a row (< 30 ms) before it starts
 const MAX_LOAD_WAIT = 15.0       # start anyway after this long
 
@@ -50,7 +55,7 @@ uniform float fade = 1.0;
 void fragment() {
 	float behind = progress * 1.001 - COLOR.r;
 	float head = exp(-max(behind, 0.0) * 25.0);
-	float g = 0.72 + 0.28 * head;
+	float g = 0.66 + 0.34 * head;
 	COLOR = vec4(vec3(g), COLOR.a * step(0.0, behind) * fade);
 }"""
 
@@ -62,6 +67,7 @@ uniform float progress = 0.0;
 uniform float slant = 0.12;
 uniform float lift = 1.45;
 uniform float mode = 0.0;
+uniform float sheen = -1.0;
 const float TAU = 6.28318530718;
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
@@ -73,10 +79,28 @@ void fragment() {
 	float shown = 1.0 - smoothstep(p - 0.025, p, a);
 	float edge = exp(-abs(p - a) * 40.0) * step(a, p) * (1.0 - smoothstep(0.97, 1.03, progress));
 	c.rgb = min(c.rgb + vec3(0.85 * edge), vec3(1.0));
+	float sd = UV.x - 0.3 * UV.y - sheen;
+	c.rgb = min(c.rgb + vec3(0.6 * exp(-sd * sd * 300.0)), vec3(1.0));
 	COLOR = vec4(c.rgb, c.a * shown) * COLOR;
 }"""
 
+# a soft light behind the wordmark (dithered so the falloff doesn't band)
+const GLOW_SHADER = """shader_type canvas_item;
+uniform float glow = 0.0;
+uniform vec2 centre = vec2(0.5, 0.45);
+uniform float aspect = 1.78;
+void fragment() {
+	vec2 d = (UV - centre) * vec2(aspect, 1.0);
+	float n = fract(sin(dot(FRAGCOORD.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+	COLOR = vec4(vec3(1.0), max(glow * exp(-dot(d, d) * 4.0) + n / 255.0, 0.0));
+}"""
+
 var bg:ColorRect
+var glow:ColorRect
+var warp:Control                 # speed lines while the camera rushes through
+var lines:Array = []             # [angle, start 0..1, speed, width]
+var whoosh:AudioStreamPlayer
+var whooshed:bool = false
 var loader:Control               # the loading line
 var stage:Control                # the wordmark part: logo, pen, subtitle (zooms as one)
 var logo:TextureRect
@@ -113,6 +137,9 @@ func _ready():
 	bg = ColorRect.new()
 	bg.color = Color(0, 0, 0, 1)
 	_full(bg, self)
+	glow = ColorRect.new()
+	glow.material = _mat(GLOW_SHADER)
+	_full(glow, self)
 	loader = Control.new()
 	_full(loader, self)
 	loader.connect("draw", self, "_draw_loader")
@@ -138,6 +165,13 @@ func _ready():
 	if ResourceLoader.exists("res://uitheme.tres"): text.theme = load("res://uitheme.tres")
 	font = text.get_font("font", "Label")
 	if font is DynamicFont: font = font.duplicate()
+	warp = Control.new()
+	_full(warp, self)
+	warp.connect("draw", self, "_draw_warp")
+	var rng = RandomNumberGenerator.new()
+	rng.seed = 7
+	for i in WARP_LINES:
+		lines.append([rng.randf() * TAU, rng.randf_range(0.08, 0.6), rng.randf_range(0.6, 1.4), rng.randf_range(1.0, 2.5)])
 	icon = TextureRect.new()
 	icon.texture = load(ICON)
 	icon.expand = true
@@ -158,6 +192,11 @@ func _ready():
 	thump.bus = "Effects" if AudioServer.get_bus_index("Effects") >= 0 else "Master"
 	thump.volume_db = -4.0
 	add_child(thump)
+	whoosh = AudioStreamPlayer.new()
+	whoosh.stream = _whoosh()
+	whoosh.bus = thump.bus
+	whoosh.volume_db = -11.0
+	add_child(whoosh)
 	# keep the menu music quiet until the flash
 	music_bus = AudioServer.get_bus_index("Music")
 	if music_bus >= 0:
@@ -195,8 +234,8 @@ func _wordmark():
 static func _sweep(p:Vector2) -> float:
 	return (p.x + SLANT * (1.0 - p.y)) / (1.0 + SLANT)
 
-# the wordmark's outlines: opaque pixels with a clear neighbour, picked evenly, each joined to another
-# outline pixel 3-6 px away into a short segment (a grid of 8 px cells finds that neighbour)
+# the wordmark's outlines: opaque pixels with a clear neighbour, walked neighbour to neighbour into
+# polylines, cut into segments of STEP pixels that join end to end
 func _trace():
 	if !tex: return
 	var img = tex.get_data()
@@ -215,28 +254,32 @@ func _trace():
 				edge.append(Vector2(x, y))
 	img.unlock()
 	if edge.size() < 4: return
-	var cells = {}
-	for p in edge:
-		var k = int(p.x / 8) * 1000 + int(p.y / 8)
-		if !cells.has(k): cells[k] = []
-		cells[k].append(p)
+	var left = {}
+	for p in edge: left[p] = true
 	var size = Vector2(w, h)
-	var step = max(1, edge.size() / STROKES)
-	for i in range(0, edge.size(), step):
-		var a:Vector2 = edge[i]
-		var b = a
-		var best = 1e9
-		var cx = int(a.x / 8)
-		var cy = int(a.y / 8)
-		for gx in range(cx - 1, cx + 2):
-			for gy in range(cy - 1, cy + 2):
-				for q in cells.get(gx * 1000 + gy, []):
-					var d = a.distance_squared_to(q)
-					if d > 9 and d < 36 and d < best:
-						best = d
-						b = q
-		if b == a: continue
-		segs.append([a / size, b / size, _sweep((a + b) / 2 / size)])
+	var nb = [Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0), Vector2(0, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]
+	for start in edge:
+		if !left.has(start): continue
+		left.erase(start)
+		var line = [start]
+		var p = start
+		while true:
+			var nx = null
+			for d in nb:
+				if left.has(p + d):
+					nx = p + d
+					break
+			if nx == null: break
+			left.erase(nx)
+			line.append(nx)
+			p = nx
+		if line.size() < 4: continue
+		if line[-1].distance_to(start) < 2.5: line.append(start) # (a closed outline)
+		var i = 0
+		while i < line.size() - 1:
+			var j = min(i + STEP, line.size() - 1)
+			segs.append([line[i] / size, line[j] / size, _sweep((line[i] + line[j]) / 2 / size)])
+			i = j
 
 func logo_rect() -> Rect2:
 	var vs = get_viewport().get_visible_rect().size
@@ -253,6 +296,8 @@ func layout():
 	icon.rect_size = Vector2(ICON_PX, ICON_PX)
 	icon.rect_position = (vs - icon.rect_size) / 2
 	icon.rect_pivot_offset = icon.rect_size / 2
+	glow.material.set_shader_param("aspect", vs.x / max(1.0, vs.y))
+	glow.material.set_shader_param("centre", Vector2(0.5, LOGO_Y))
 	if font is DynamicFont: font.size = int(max(12, round(r.size.y * 0.16)))
 	pen.update()
 	text.update()
@@ -266,14 +311,18 @@ func _process(delta):
 	if !impacted and clock >= IMPACT_AT:
 		impacted = true
 		thump.play()
+	if !whooshed and clock >= WHOOSH_AT:
+		whooshed = true
+		whoosh.play()
 	if !flashed and clock >= FLASH_AT: _flash()
 	if clock >= FLASH_AT + FLASH_TIME:
 		finish()
 		return
 	_apply()
 	if clock < RUSH_AT + 0.1: text.update()
+	if clock > RUSH_AT - 0.2 and clock < ICON_AT + ICON_TIME + 0.1: warp.update()
 
-# loading: a thin line pulses until the menu is up and frames come smoothly
+# loading: a thin line with a bright piece sliding along it until the menu is up and frames come smoothly
 func _wait(delta):
 	wait_t += delta
 	loader.update()
@@ -289,9 +338,15 @@ func _wait(delta):
 
 func _draw_loader():
 	var vs = loader.rect_size
-	var k = 0.5 + 0.5 * sin(wait_t * 4.0)
-	var half = 18.0 + 22.0 * k
-	loader.draw_rect(Rect2(vs.x / 2 - half, vs.y / 2 - 1, half * 2, 2), Color(1, 1, 1, 0.25 + 0.35 * k))
+	var half = 70.0
+	var x0 = vs.x / 2 - half
+	var y = vs.y * LOGO_Y
+	var fade = _c01(wait_t / 0.4)
+	loader.draw_rect(Rect2(x0, y - 1, half * 2, 2), Color(1, 1, 1, 0.12 * fade))
+	var u = fmod(wait_t * 0.8, 1.0)
+	var a = x0 + half * 2 * _sine_io(u * 1.3 - 0.3)
+	var b = x0 + half * 2 * _sine_io(u * 1.3)
+	if b > a: loader.draw_rect(Rect2(a, y - 1, b - a, 2), Color(1, 1, 1, 0.7 * fade))
 
 static func _c01(v:float) -> float:
 	return clamp(v, 0.0, 1.0)
@@ -310,12 +365,16 @@ func _apply():
 	pen.material.set_shader_param("progress", _sine_io((t - PEN_AT) / PEN_TIME))
 	pen.material.set_shader_param("fade", 1.0 - _c01((t - FILL_AT - FILL_TIME) / 0.3))
 	logo.material.set_shader_param("progress", _sine_io((t - FILL_AT) / FILL_TIME))
+	logo.material.set_shader_param("sheen", -0.4 + 1.8 * _sine_io((t - SHEEN_AT) / SHEEN_TIME) if t >= SHEEN_AT else -1.0)
 	# camera: eases in while it writes, punches on the impact, then rushes through the wordmark
 	var s = 0.86 + 0.14 * _cubic_out(t / (IMPACT_AT + 0.2)) + 0.05 * _hit(t, IMPACT_AT, 7.0)
 	var rush = _c01((t - RUSH_AT) / RUSH_TIME)
 	s *= 1.0 + 3.0 * rush * rush * rush
 	stage.rect_scale = Vector2(s, s)
-	stage.modulate.a = 1.0 - rush * rush
+	stage.modulate.a = 1.0 - smoothstep(0.25, 0.8, rush) # (gone before the square logo is big)
+	# the light behind it: comes up with the fill, blooms on the impact, swells into the flash
+	var gl = 0.05 * _cubic_out((t - FILL_AT) / FILL_TIME) + 0.09 * _hit(t, IMPACT_AT, 4.0) + 0.1 * _sine_io((t - RUSH_AT) / (FLASH_AT - RUSH_AT))
+	glow.material.set_shader_param("glow", gl)
 	# the square logo: zooms down from big into its place on the title screen, drawing on clockwise
 	var ik = _c01((t - ICON_AT) / ICON_TIME)
 	icon.visible = ik > 0.0 and !flashed
@@ -333,6 +392,8 @@ func _flash():
 	flashed = true
 	clock = max(clock, FLASH_AT)
 	bg.visible = false
+	glow.visible = false
+	warp.visible = false
 	stage.visible = false
 	loader.visible = false
 	icon.visible = false
@@ -351,7 +412,23 @@ func _draw_pen():
 		arr.append([r.position + sg[0] * r.size, r.position + sg[1] * r.size, w, Color(sg[2], 0, 0, 1)])
 	Ring.bars(pen, arr)
 
-# REIMAGINED tracking in under the wordmark along a rule that draws out from the middle
+# speed lines flying out from the middle while the camera rushes through the wordmark
+func _draw_warp():
+	var e = _c01((clock - RUSH_AT + 0.15) / (RUSH_TIME + 0.4))
+	if e <= 0.0 or e >= 1.0: return
+	var env = sin(PI * e)
+	var vs = warp.rect_size
+	var c = Vector2(vs.x / 2, vs.y * LOGO_Y)
+	var far = vs.length() * 0.6
+	var arr = []
+	for l in lines:
+		var d = Vector2(cos(l[0]), sin(l[0]))
+		var r0 = far * (l[1] + 1.1 * e * e * l[2])
+		var ln = far * (0.03 + 0.3 * e * e) * l[2]
+		arr.append([c + d * r0, c + d * (r0 + ln), l[3], Color(1, 1, 1, 0.3 * env * _c01(l[1] * 4.0))])
+	Ring.bars(warp, arr)
+
+# REIMAGINED decoding letter by letter, tracking in under the wordmark along a rule that draws out from the middle
 func _draw_text():
 	if clock < 0: return
 	var r = logo_rect()
@@ -370,7 +447,15 @@ func _draw_text():
 		total -= spacing
 		var x = cx - total / 2
 		for i in SUB.length():
-			text.draw_string(font, Vector2(x, y + font.get_ascent() * 0.5), SUB[i], Color(1, 1, 1, 0.92 * k))
+			# each letter flickers through random glyphs, then locks in (left to right)
+			var at = TEXT_AT + 0.035 * i
+			var li = _c01((t - at) / 0.05)
+			if li > 0:
+				var ch = SUB[i]
+				var lock = t >= at + 0.16
+				if !lock: ch = GLYPHS[(int(t * 30.0) * 13 + i * 7) % GLYPHS.length()]
+				var off = (adv[i] - font.get_string_size(ch).x) / 2
+				text.draw_string(font, Vector2(x + off, y + font.get_ascent() * 0.5), ch, Color(1, 1, 1, (0.92 if lock else 0.55) * k * li))
 			x += adv[i] + spacing
 	var rule = _cubic_out((t - TEXT_AT + 0.1) / 0.35)
 	if rule > 0:
@@ -392,6 +477,32 @@ func finish():
 # never leave the music bus muted, however the intro goes away
 func _exit_tree():
 	if music_bus >= 0 and !flashed: AudioServer.set_bus_mute(music_bus, music_was_muted)
+
+# a rising air swell for the rush (filtered noise opening up; peaks at 0.5 s, then cut)
+static func _whoosh() -> AudioStreamSample:
+	var rate = 44100
+	var n = int(rate * 0.62)
+	var data = PoolByteArray()
+	data.resize(n * 2)
+	var rng = RandomNumberGenerator.new()
+	rng.seed = 11
+	var lp = 0.0
+	var lo = 0.0
+	for i in n:
+		var t = float(i) / rate
+		var env = pow(min(t / 0.5, 1.0), 2.5) * exp(-max(t - 0.5, 0.0) * 28.0)
+		lp += ((rng.randf() * 2.0 - 1.0) - lp) * (0.015 + 0.35 * pow(min(t / 0.5, 1.0), 2.0))
+		lo += (lp - lo) * 0.02
+		var v = int(clamp((lp - lo) * env * 2.2, -1.0, 1.0) * 30000.0)
+		if v < 0: v += 65536
+		data[i * 2] = v & 0xff
+		data[i * 2 + 1] = (v >> 8) & 0xff
+	var s = AudioStreamSample.new()
+	s.format = AudioStreamSample.FORMAT_16_BITS
+	s.mix_rate = rate
+	s.stereo = false
+	s.data = data
+	return s
 
 # a short low thump, made on the fly (16-bit mono)
 static func _thump() -> AudioStreamSample:
