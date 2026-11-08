@@ -750,10 +750,51 @@ func make_song_button(id:int=-1):
 	btn.add_child(badge)
 	badge.set_song(map, _badge_font(btn))
 	if Look.mono(): # personal build: white focus frame on the selected card
+		_rr_card_look(btn)
 		var fx = Control.new()
 		fx.set_script(MapFocus)
 		btn.add_child(fx)
 	return btn
+
+# personal build card look: dark base, the cover full-bleed fading in from the left (the name stays
+# readable), a difficulty accent bar instead of the thick coloured border, no tile pattern, no
+# animated button shader; hover / selection drawn by CardLook.gd and MapFocus.gd. The styles and
+# the cover material are made once and shared by every card.
+const CardLook = preload("res://mods/stars/CardLook.gd")
+const COVER_SHADER = """shader_type canvas_item;
+void fragment() {
+	vec4 c = texture(TEXTURE, UV);
+	float k = smoothstep(0.02, 0.8, UV.x);
+	COLOR = vec4(c.rgb * (0.3 + 0.7 * k), c.a) * COLOR;
+}"""
+var _look_res = null
+func _rr_card_look(btn:Panel):
+	if _look_res == null:
+		var panel = StyleBoxFlat.new()
+		panel.bg_color = Color(0.045, 0.045, 0.055, 0.9)
+		var pressed = StyleBoxFlat.new()
+		pressed.bg_color = Color(1, 1, 1, 0.06)
+		var mat = ShaderMaterial.new()
+		mat.shader = Shader.new()
+		mat.shader.code = COVER_SHADER
+		_look_res = [panel, pressed, StyleBoxEmpty.new(), mat]
+	var col = btn.self_modulate
+	btn.self_modulate = Color(1, 1, 1, 1)
+	btn.add_stylebox_override("panel", _look_res[0])
+	var tiles = btn.get_node_or_null("TextureRect")
+	if tiles: tiles.visible = false
+	var cv = btn.get_node("Cover")
+	cv.material = _look_res[3]
+	cv.margin_left = 0; cv.margin_top = 0; cv.margin_right = 0; cv.margin_bottom = 0
+	var sel = btn.get_node("Select")
+	sel.material = null
+	for st in ["normal", "hover", "focus", "disabled"]: sel.add_stylebox_override(st, _look_res[2])
+	sel.add_stylebox_override("pressed", _look_res[1])
+	var fx = Control.new()
+	fx.set_script(CardLook)
+	fx.col = col
+	btn.add_child(fx)
+	btn.move_child(fx, cv.get_index() + 1) # (over the cover, under the name / badge / focus)
 
 # right-click a card: that map's actions menu (the map page's ⋯ button: delete, copy, collections,
 # export...) opens at the cursor, the map selected first so the menu acts on it
@@ -871,7 +912,7 @@ func _rr_place():
 	if abs(rect_position.y - glide_set) > 0.001: rect_position.y = glide_set
 	for b in btns:
 		if !is_instance_valid(b) or !b.has_meta("rr_nx"): continue
-		var x = b.get_meta("rr_nx") + (b.get_meta("rr_dx") if b.has_meta("rr_dx") else 0.0)
+		var x = b.get_meta("rr_nx") + (b.get_meta("rr_dx") if b.has_meta("rr_dx") else 0.0) - (b.get_meta("rr_hx") if b.has_meta("rr_hx") else 0.0) # (rr_hx: hover slide, CardLook.gd)
 		if abs(b.rect_position.x - x) > 0.01: b.rect_position.x = x
 
 func _rr_glide(delta:float):

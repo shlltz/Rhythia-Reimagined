@@ -43,6 +43,17 @@ func wheel(list:Control, down:bool):
 	up.pressed = false
 	Input.parse_input_event(up)
 
+func shot(path:String):
+	var img = get_viewport().get_texture().get_data()
+	img.flip_y()
+	img.save_png(path)
+
+func move_mouse(p:Vector2):
+	var ev = InputEventMouseMotion.new()
+	ev.position = p
+	ev.global_position = p
+	Input.parse_input_event(ev)
+
 func stats(label:String, a:Array):
 	var p = proc
 	var s = 0.0
@@ -86,10 +97,41 @@ func run():
 			wheel(list, dir)
 			for k in 3: yield(get_tree(), "idle_frame")
 			yield(VisualServer, "frame_post_draw")
-			get_viewport().get_texture().get_data().save_png("@@OUT@@/scroll_%s.png" % ("down" if dir else "up"))
+			shot("@@OUT@@/scroll_%s.png" % ("down" if dir else "up"))
 		stats("scroll " + ("down" if dir else "up") + " %d/s" % hz, a)
 		cap = []; proc = []
 		yield(wait(1.0), "completed")
 		stats("  settling after", cap)
+	# hover: the mouse sweeps up and down over the cards (card hover highlights), then rests on one
+	var vs = get_viewport().get_visible_rect().size
+	var cx = list.rect_global_position.x + list.rect_size.x * 0.6
+	cap = []; proc = []
+	var t1 = OS.get_ticks_msec()
+	while OS.get_ticks_msec() - t1 < 3000:
+		var u = (OS.get_ticks_msec() - t1) / 1500.0
+		move_mouse(Vector2(cx, vs.y * (0.1 + 0.8 * abs(fmod(u, 2.0) - 1.0))))
+		yield(get_tree(), "idle_frame")
+	stats("hover sweep", cap)
+	cap = null
+	# select the second card on screen, rest the mouse on the first (selected + hovered looks)
+	var shown = []
+	for b in list.btns:
+		if is_instance_valid(b) and "song" in b and b.song != null:
+			var r = b.get_global_rect()
+			if r.position.y > 0 and r.end.y < vs.y: shown.append(b)
+	if shown.size() >= 2:
+		Rhythia.select_song(shown[1].song)
+		yield(wait(0.3), "completed")
+		move_mouse(shown[0].get_global_rect().position + shown[0].rect_size * Vector2(0.7, 0.5))
+	yield(wait(0.6), "completed")
+	var hov = [] # (cards with a hover look: CardLook.gd)
+	for b in list.btns:
+		if !is_instance_valid(b): continue
+		for c in b.get_children():
+			if "hover" in c and c.hover > 0.01: hov.append("%s %.2f" % [b.get_node("Name").text, c.hover])
+	out("  hovered cards: %s (the real mouse over the window can get in the way)" % str(hov))
+	if OS.get_environment("RR_SCROLL_SHOT") == "1":
+		yield(VisualServer, "frame_post_draw")
+		shot("@@OUT@@/scroll_hover.png")
 	out("== done")
 	OS.kill(OS.get_process_id())
