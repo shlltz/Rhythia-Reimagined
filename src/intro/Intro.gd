@@ -5,8 +5,8 @@ extends CanvasLayer
 # behind it with a bright edge, the camera easing in and a soft light coming up behind - REIMAGINED
 # decodes under it, lands with a thump (the map's song starts from the top here, fading in under the
 # rest) and a glint runs across the wordmark, then the camera rushes through it (speed lines, a
-# swell), the square Rhythia logo zooms down into place drawing itself on (exactly where the title
-# screen's logo sits) and locks in (spring, click, brackets clamp on, a ring goes out), and a white
+# swell), the square Rhythia logo spins down into place drawing itself on (exactly where the title
+# screen's logo sits) and locks in (snap, click, brackets clamp on, a ring goes out), and a white
 # flash hands over to the title menu.
 # No voice. Injected into init.tscn; moves itself to the root so it survives the init -> menu scene
 # change. Click / any key skips to the flash.
@@ -40,10 +40,10 @@ const TEXT_TIME = 0.4
 const IMPACT_AT = 1.55
 const RUSH_AT = 2.05             # the camera rushes through the wordmark
 const RUSH_TIME = 0.45
-const ICON_AT = 2.2              # the square logo zooms down into place, drawing itself on
-const ICON_TIME = 0.55
-const LOCK_TIME = 0.4            # ...and locks in: springs, clicks, brackets clamp on, a ring goes out
-const FLASH_AT = 3.15            # white flash: the title menu takes over
+const ICON_AT = 2.2              # the square logo zooms down spinning one turn, drawing itself on
+const ICON_TIME = 0.8
+const LOCK_TIME = 0.4            # ...and locks in: snaps, clicks, brackets clamp on, a ring goes out
+const FLASH_AT = 3.4             # white flash: the title menu takes over
 const FLASH_TIME = 0.8
 const SHEEN_AT = 1.6             # a glint runs across the wordmark after the impact
 const SHEEN_TIME = 0.5
@@ -542,23 +542,24 @@ func _fade():
 	AudioServer.set_bus_volume_db(music_bus, music_set)
 	if k >= 1.0: fading = false
 
-# the square logo: comes down out of the rush (turning into place), slams in still moving and
-# springs - squash, a little twist back - then holds
+# the square logo: comes down out of the rush in one smooth turn that slows to a stop just short of
+# its place (LOCK_GAP degrees), then snaps the rest of the way - a click, a little overshoot, a
+# squash - and holds
+const SPIN = 360.0
+const LOCK_GAP = 7.0
 func _icon_scale(t:float) -> float:
 	var land = ICON_AT + ICON_TIME
 	if t < land:
-		var k = _c01((t - ICON_AT) / ICON_TIME)
-		return 1.0 + 1.4 * pow(1.0 - k, 2)
+		return 1.0 + 1.4 * pow(1.0 - _c01((t - ICON_AT) / ICON_TIME), 3)
 	var dt = t - land
-	return 1.0 - 0.12 * exp(-dt * 10.0) * sin(dt * 26.0)
+	return 1.0 - 0.07 * exp(-dt * 12.0) * sin(dt * 30.0)
 
 func _icon_turn(t:float) -> float:
 	var land = ICON_AT + ICON_TIME
 	if t < land:
-		var k = _c01((t - ICON_AT) / ICON_TIME)
-		return 30.0 * pow(1.0 - k, 2)
+		return LOCK_GAP + (SPIN - LOCK_GAP) * pow(1.0 - _c01((t - ICON_AT) / ICON_TIME), 3)
 	var dt = t - land
-	return -4.0 * exp(-dt * 10.0) * sin(dt * 26.0)
+	return LOCK_GAP * exp(-dt * 18.0) * cos(dt * 34.0)
 
 # lock-in: four corner brackets slide in and clamp onto the logo (where the title menu's brackets
 # are, so they carry over through the flash) and a square ring goes out from it
@@ -570,7 +571,7 @@ func _draw_lock():
 	var c = icon.rect_position + icon.rect_pivot_offset
 	var si = icon.rect_scale.x
 	var half = ICON_PX / 2 * side * 1.08 * si
-	var rot = deg2rad(icon.rect_rotation - tilt)
+	var rot = deg2rad(-tilt) # (held at the logo's final angle: it spins into them)
 	var xa = Vector2(cos(rot), sin(rot))
 	var ya = Vector2(-xa.y, xa.x)
 	var arr = []
