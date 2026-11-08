@@ -57,6 +57,19 @@ var line_t:float = 0.0
 var end_t:float = -1.0
 var t:float = 0.0
 var total:float = 1.0
+# the last line floods the screen (ULTRAKILL): FLOOD copies, each faster than the one before, the
+# log scrolling up once it reaches the bottom so they keep dropping down
+const FLOOD = 48
+var flood_from:int = 1 << 30
+var row_y0:float = 0.0
+var row_h:float = 1.0
+var row_end:float = 1.0
+
+# s line i takes (typing + gap)
+func _dur(i:int) -> float:
+	var d = lines[i][0].length() / CPS + GAP
+	if i >= flood_from: d /= min(pow(1.17, i - flood_from), 7.0)
+	return d
 var done:bool = false
 var stopped:bool = false
 var players = []
@@ -130,13 +143,11 @@ func _ready():
 		["WARNING: UNABLE TO HOLD THE BEAT", W],
 		["-!- RUN TERMINATED -!-", E],
 		["-!- RUN TERMINATED -!-", E],
-		["I CAN STILL HEAR THE MUSIC.", E],
-		["I CAN STILL HEAR THE MUSIC.", E],
-		["I CAN STILL HEAR THE MUSIC.", E],
-		["I CAN STILL HEAR THE MUSIC.", E],
 	]
+	flood_from = lines.size()
+	for j in FLOOD: lines.append(["I CAN STILL HEAR THE MUSIC.", E])
 	total = HOLD
-	for l in lines: total += l[0].length() / CPS + GAP
+	for i in lines.size(): total += _dur(i)
 	var vs = get_viewport_rect().size
 	var size = int(clamp(vs.y * 0.0235, 12, 40))
 	var f = DynamicFont.new()
@@ -150,7 +161,10 @@ func _ready():
 		l.add_color_override("font_color", c)
 		l.add_color_override("font_color_shadow", Color(c.r, c.g * 0.6, c.b * 0.4, 0.35)) # (a soft glow)
 		l.add_constant_override("shadow_as_outline", 1)
-		l.rect_position = Vector2(vs.x * 0.04, vs.y * 0.07 + i * size * 1.1)
+		row_y0 = vs.y * 0.07
+		row_h = size * 1.1
+		row_end = vs.y * 0.94
+		l.rect_position = Vector2(vs.x * 0.04, row_y0 + i * row_h)
 		l.visible = false
 		l.mouse_filter = MOUSE_FILTER_IGNORE
 		add_child(l)
@@ -367,10 +381,14 @@ func _process(delta):
 			if end_t >= HOLD: done = true
 		else:
 			line_t += dt
-			if cur < 0 or line_t >= lines[cur][0].length() / CPS + GAP:
+			var n = 0
+			while (cur < 0 or line_t >= _dur(cur)) and end_t < 0.0 and n < 8: # (fast flood lines: several a frame)
+				line_t = line_t - _dur(cur) if cur >= 0 else 0.0
 				_next()
-			else:
-				labels[cur].visible_characters = int(min(line_t * CPS, lines[cur][0].length()))
+				n += 1
+			if end_t < 0.0 and cur >= 0:
+				var full = lines[cur][0].length() / CPS + GAP # (flood lines type faster by the same factor)
+				labels[cur].visible_characters = int(min(line_t * CPS * full / _dur(cur), lines[cur][0].length()))
 		for l in labels: # a faint CRT flicker
 			if l.visible: l.modulate.a = 0.9 + 0.1 * rng.randf()
 	_tilt(min(t / total, 1.0))
@@ -393,14 +411,17 @@ func _glitch(dt:float, k:float):
 func _next():
 	if cur >= 0: labels[cur].visible_characters = -1
 	cur += 1
-	line_t = 0.0
 	if cur >= labels.size():
 		cur = labels.size() - 1
 		end_t = 0.0
 		return
 	labels[cur].visible = true
 	labels[cur].visible_characters = 0
-	_line_sound(lines[cur][1] != RED)
+	var over = row_y0 + (cur + 1) * row_h - row_end # (past the bottom: everything moves up a row)
+	if over > 0.0:
+		for i in labels.size(): labels[i].rect_position.y = row_y0 + i * row_h - over
+	var j = cur - flood_from
+	if j < 6 or j % 2 == 0: _line_sound(lines[cur][1] != RED)
 
 # R: restart (ScreenSwap.retry); a click or Esc: on to the results (ScreenSwap.finish)
 var answered:bool = false
