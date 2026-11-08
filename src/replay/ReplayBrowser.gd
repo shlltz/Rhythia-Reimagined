@@ -224,3 +224,11 @@ func _input(ev):
 	if ev is InputEventKey and ev.pressed and ev.scancode == KEY_ESCAPE:
 		get_tree().set_input_as_handled()
 		close()
+		return
+	# typing goes to the replay search, whatever else would take it (the map list's search box
+	# behind grabbed the keys): the character is put in here and the key stops
+	if ev is InputEventKey and ev.pressed and !closing and !ev.control and !ev.alt and !ev.command and ev.unicode >= 32 and ev.unicode != 127:
+		if search.get_focus_owner() != search: search.grab_focus()
+		search.append_at_cursor(char(ev.unicode))
+		_filter(search.text)
+		get_tree().set_input_as_handled()
