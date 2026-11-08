@@ -3,6 +3,7 @@ extends CanvasLayer
 # replay / autoplay / multiplayer / map queue) the run freezes for a beat with a white flash and a
 # "clear" sound that echoes out (ping-pong, ~4 s), a ripple goes out from the cursor (screen
 # distortion + a bright ring), the screen cracks from the cursor and breaks, a beam of light, and
+# everything but the cursor and the effects fades to near black, and big bright
 # glass shards fall from the sky (after DMC5's Vergil return: tumbling panes that glint as they turn,
 # now and then a huge chunk close past the camera, glitter) - they keep falling until the map itself
 # ends (the song runs out), then a white-out cuts to the results (Game.end(END_PASS); ScreenSwap
@@ -53,6 +54,15 @@ var t0:int = 0
 var flash:ColorRect
 var halo:Control
 var glass:Control
+var dim:ColorRect       # everything but the cursor and the effects fades out under it
+var cur_layer:Control   # the cursor drawn again over the dimming (its texture, size and a short trail)
+var cur_mesh:MeshInstance = null
+var cur_tex:Texture = null
+var cur_col:Color = Color(1, 1, 1)
+var cur_trail = []      # recent cursor points on screen
+const DIM = 0.93        # how dark the rest gets
+const DIM_FROM = 0.15   # s: fading from ...
+const DIM_TO = 1.4      # ... to
 var ripple:ColorRect
 var ripple_copy:BackBufferCopy
 var warm_frames:int = 2
@@ -78,6 +88,12 @@ func _ready():
 	pause_mode = PAUSE_MODE_PROCESS
 	process_priority = 1000 # (after the run's own camera code)
 	rng.randomize()
+	dim = ColorRect.new()
+	dim.color = Color(0, 0, 0, 0)
+	dim.anchor_right = 1
+	dim.anchor_bottom = 1
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(dim)
 	ripple_copy = BackBufferCopy.new()
 	ripple_copy.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
 	add_child(ripple_copy)
@@ -90,6 +106,7 @@ func _ready():
 	ripple.material = ShaderMaterial.new()
 	ripple.material.shader = sh
 	add_child(ripple) # (drawn for the first frames so the shader is compiled under the run's start)
+	cur_layer = _layer("_draw_cursor", false)
 	glass = _layer("_draw_glass", false)
 	halo = _layer("_draw_halo", true)
 	flash = ColorRect.new()
@@ -152,6 +169,9 @@ func _process(delta):
 	halo_k = min(1.0, el / 0.25) * (1.0 - smoothstep(1.2, 2.4, el))
 	_ripples(el)
 	_glass_step(el, dt)
+	dim.color.a = DIM * smoothstep(DIM_FROM, DIM_TO, el)
+	_cursor_step()
+	cur_layer.update()
 	halo.update()
 	glass.update()
 	if end_at >= 0.0 and el - end_at >= WHITE:
@@ -170,6 +190,12 @@ func _start():
 	cam = sc.get_node_or_null("Camera") if sc else null
 	if cam: base_fov = cam.fov
 	cursor = spawn.get_node_or_null("Cursor")
+	cur_mesh = spawn.get_node_or_null("Cursor/Mesh")
+	if cur_mesh and cur_mesh.get("material/0") is SpatialMaterial:
+		var mt = cur_mesh.get("material/0")
+		cur_tex = mt.albedo_texture
+		cur_col = mt.albedo_color
+		cur_col.a = 1.0
 	var vs = glass.rect_size
 	hit_p = vs / 2.0
 	if is_instance_valid(cursor) and is_instance_valid(cam): hit_p = cam.unproject_position(cursor.global_transform.origin)
@@ -216,6 +242,28 @@ func _ripples(el:float):
 	m.set_shader_param("amp", a)
 	if !live and el > RIPPLES[-1] + RIPPLE_TIME: _ripple_on(false)
 
+# ------------------------------------------------------------------ the cursor over the dimming
+func _cursor_step():
+	if !is_instance_valid(cursor) or !is_instance_valid(cam): return
+	cur_trail.append(cam.unproject_position(cursor.global_transform.origin))
+	if cur_trail.size() > 14: cur_trail.remove(0)
+
+func _draw_cursor():
+	var k = smoothstep(DIM_FROM, DIM_TO * 0.7, last_el) # (only needed once the rest is dark)
+	if k <= 0.0 or cur_trail.empty() or !is_instance_valid(cam): return
+	var p = cur_trail[-1]
+	var r = cur_layer.rect_size.y * 0.02
+	if is_instance_valid(cur_mesh) and cur_mesh.mesh: # (its real size on screen)
+		var half = cur_mesh.mesh.get_aabb().size.x * 0.5 * cur_mesh.global_transform.basis.get_scale().x
+		r = cam.unproject_position(cursor.global_transform.origin + cam.global_transform.basis.x * half).distance_to(p)
+	for i in range(1, cur_trail.size()): # a short trail
+		var f = float(i) / cur_trail.size()
+		if cur_trail[i - 1].distance_squared_to(cur_trail[i]) < 0.25: continue # (a wide zero-length line fails to draw)
+		cur_layer.draw_line(cur_trail[i - 1], cur_trail[i], Color(cur_col.r, cur_col.g, cur_col.b, 0.5 * f * k), max(1.0, r * 0.9 * f))
+	var c = Color(cur_col.r, cur_col.g, cur_col.b, k)
+	if cur_tex: cur_layer.draw_texture_rect(cur_tex, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, c)
+	else: cur_layer.draw_circle(p, r, c)
+
 # ------------------------------------------------------------------ glass
 # cracks out from the cursor: jagged rays to past the screen edge, some branching
 func _crack(vs:Vector2):
@@ -259,12 +307,12 @@ func _shatter(vs:Vector2):
 	for i in 34:
 		var a = rng.randf() * TAU
 		var d = rng.randf_range(0.02, 0.5) * vs.y
-		var s = _shard(hit_p + Vector2(cos(a), sin(a)) * d, rng.randf_range(0.9, 2.0), vs)
+		var s = _shard(hit_p + Vector2(cos(a), sin(a)) * d, rng.randf_range(1.1, 2.2), vs)
 		s[1] = Vector2(cos(a), sin(a)) * rng.randf_range(120, 520) * s[6] * vs.y / 1080.0 + Vector2(0, -rng.randf_range(0, 200))
 		shards.append(s)
 
 func _shard(p:Vector2, depth:float, vs:Vector2, big:bool = false) -> Array:
-	var size = (rng.randf_range(0.8, 3.0) if !big else rng.randf_range(10.0, 15.0)) * 0.018 * vs.y * depth
+	var size = (rng.randf_range(1.6, 5.0) if !big else rng.randf_range(15.0, 22.0)) * 0.018 * vs.y * depth
 	var n = rng.randi_range(3, 5)
 	var angs = []
 	for i in n: angs.append(rng.randf() * TAU)
@@ -284,7 +332,7 @@ func _glass_step(el:float, dt:float):
 	var vs = glass.rect_size
 	var raining = end_at < 0.0
 	if raining and el > STOP:
-		rain_t += dt * (10.0 + 14.0 * min(el / 3.0, 1.0)) # (shards a second, building up)
+		rain_t += dt * (8.0 + 9.0 * min(el / 3.0, 1.0)) # (shards a second, building up)
 		while rain_t >= 1.0:
 			rain_t -= 1.0
 			var dep = rng.randf_range(0.35, 1.5)
@@ -325,20 +373,28 @@ func _draw_glass():
 		var tf = Transform2D(s[2], s[0])
 		var pts = PoolVector2Array()
 		for q in s[7]: pts.append(tf.xform(Vector2(q.x * (0.15 + 0.85 * abs(cs)), q.y)))
-		var a = clamp(0.5 + 0.35 * s[6], 0.4, 1.0)
+		var a = clamp(0.7 + 0.3 * s[6], 0.6, 1.0)
 		var cols = PoolColorArray()
 		for q in pts: # (sky in the glass: lighter towards the top of each pane)
 			var up = clamp((q.y - s[0].y) / 80.0, -1.0, 1.0)
-			cols.append(Color(0.7 - 0.14 * up + 0.3 * glint, 0.8 - 0.1 * up + 0.2 * glint, 1.0, (0.24 + 0.4 * glint) * a))
-		glass.draw_polygon(pts, cols)
+			cols.append(Color(0.8 - 0.12 * up + 0.2 * glint, 0.88 - 0.08 * up + 0.12 * glint, 1.0, (0.42 + 0.45 * glint) * a))
+		VisualServer.canvas_item_add_triangle_array(glass.get_canvas_item(), _fan(pts.size()), pts, cols) # (convex: a fan, no triangulation to fail)
 		pts.append(pts[0])
 		glass.draw_polyline(pts, Color(0.1, 0.12, 0.32, 0.55 * a), 2.0)
-		glass.draw_polyline(pts, Color(0.92, 0.96, 1.0, (0.35 + 0.65 * glint) * a), 1.0)
+		glass.draw_polyline(pts, Color(0.95, 0.98, 1.0, (0.6 + 0.4 * glint) * a), 2.0)
 	for p in sparks: # glitter
 		var tw = 0.5 + 0.5 * sin(p[2])
 		if tw > 0.35: glass.draw_rect(Rect2(p[0], Vector2(2, 2)), Color(1, 1, 1, 0.75 * tw * min(1.0, el / 0.3)))
 
 func _by_depth(a, b): return a[6] < b[6]
+
+var fans = {}
+func _fan(n:int) -> PoolIntArray:
+	if !fans.has(n):
+		var ix = PoolIntArray()
+		for i in range(1, n - 1): ix.append_array([0, i, i + 1])
+		fans[n] = ix
+	return fans[n]
 
 # a soft white bloom on the cursor (additive rings) and a beam of light through it
 func _draw_halo():
