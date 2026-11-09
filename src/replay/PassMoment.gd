@@ -44,6 +44,53 @@ void fragment() {
 }
 """
 
+# the glass panes: what's behind bent through the pane (a little colour split), a bright sky reflected
+# in it that shifts as the pane tumbles (more of it the more the pane is tilted), a specular streak
+# sweeping across as it turns to face the light. Per pane data rides in the vertex colour: r, g = the
+# reflection's offset (its tilt), b = glint, a = opacity; UV = the point's place across the pane.
+# UV.x < 0: the bevelled rim, drawn as its plain vertex colour.
+const GLASS_SHADER = """shader_type canvas_item;
+uniform float aspect = 1.7778;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+vec3 sky(vec2 p) { // (y down: bright high up, deeper blue below, soft clouds)
+	float up = clamp(1.0 - p.y * 0.9, 0.0, 1.0);
+	vec3 c = mix(vec3(0.30, 0.40, 0.72), vec3(0.86, 0.92, 1.0), up);
+	float cl = noise(p * 2.6) * 0.65 + noise(p * 6.3) * 0.35;
+	return mix(c, vec3(1.0), smoothstep(0.5, 0.82, cl) * 0.7);
+}
+void fragment() {
+	if (UV.x < -0.5) {
+		COLOR = COLOR;
+	} else {
+		vec2 tilt = COLOR.rg * 2.0 - 1.0;
+		float glint = COLOR.b;
+		float fy = sign(dFdy(SCREEN_UV.y)) * sign(dFdy(UV.y) + 1e-6); // (SCREEN_UV may run bottom-up)
+		vec2 sp = vec2(SCREEN_UV.x, fy > 0.0 ? SCREEN_UV.y : 1.0 - SCREEN_UV.y); // (y down)
+		// behind the pane, bent like through thick glass, the colours a little apart
+		vec2 bend = (UV - 0.5) * vec2(0.035, 0.035) + tilt * 0.01;
+		vec2 b = vec2(bend.x, bend.y * fy);
+		vec3 behind;
+		behind.r = textureLod(SCREEN_TEXTURE, SCREEN_UV + b * 1.12, 0.0).r;
+		behind.g = textureLod(SCREEN_TEXTURE, SCREEN_UV + b, 0.0).g;
+		behind.b = textureLod(SCREEN_TEXTURE, SCREEN_UV + b * 0.88, 0.0).b;
+		// the sky in it: moves with the pane's tilt, not with the screen only
+		vec3 refl = sky(vec2(sp.x * aspect, sp.y) * 0.7 + tilt * 0.9 + UV * 0.18);
+		float fres = clamp(0.1 + 0.32 * dot(tilt, tilt) + 0.3 * glint, 0.0, 0.75); // (more mirror the more it's tilted)
+		// the specular streak: a diagonal band whose place follows the turn
+		float d = UV.x * 0.75 + UV.y * 0.45 - (0.15 + 0.9 * (tilt.y * 0.5 + 0.5));
+		float streak = exp(-d * d * 160.0) * (0.35 + 0.65 * glint) + exp(-d * d * 1400.0) * 0.5;
+		vec3 col = behind * vec3(0.88, 0.94, 1.0) * (1.0 - fres * 0.5) + refl * fres + vec3(streak); // (clear: the scene shows through, the sky on top)
+		COLOR = vec4(min(col, vec3(1.0)), COLOR.a);
+	}
+}
+"""
+
 var game:Node
 var spawn:Node
 var cam:Camera = null
@@ -54,6 +101,9 @@ var t0:int = 0
 var flash:ColorRect
 var halo:Control
 var glass:Control
+var glass_copy:BackBufferCopy
+var crack_layer:Control
+var spark_layer:Control
 var dim:ColorRect       # everything but the cursor and the effects fades out under it
 var cur_layer:Control   # the cursor drawn again over the dimming (its texture, size and a short trail)
 var cur_mesh:MeshInstance = null
@@ -107,7 +157,15 @@ func _ready():
 	ripple.material.shader = sh
 	add_child(ripple) # (drawn for the first frames so the shader is compiled under the run's start)
 	cur_layer = _layer("_draw_cursor", false)
+	crack_layer = _layer("_draw_cracks", false)
+	glass_copy = BackBufferCopy.new() # (the panes see what's under them)
+	glass_copy.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	add_child(glass_copy)
 	glass = _layer("_draw_glass", false)
+	glass.material = ShaderMaterial.new()
+	glass.material.shader = Shader.new()
+	glass.material.shader.code = GLASS_SHADER
+	spark_layer = _layer("_draw_sparks", false)
 	halo = _layer("_draw_halo", true)
 	flash = ColorRect.new()
 	flash.color = Color(1, 1, 1, 0)
@@ -133,6 +191,8 @@ func _process(delta):
 	if warm_frames > 0:
 		warm_frames -= 1
 		if warm_frames == 0 and !started: _ripple_on(false)
+		glass.update() # (the glass shader is compiled under the run's start too)
+		glass_copy.visible = warm_frames > 0 or !shards.empty()
 	if done or !spawn: return
 	if !started:
 		if game.ending: # (failed / gave up / ended some other way first)
@@ -174,6 +234,9 @@ func _process(delta):
 	cur_layer.update()
 	halo.update()
 	glass.update()
+	crack_layer.update()
+	spark_layer.update()
+	glass_copy.visible = !shards.empty()
 	if end_at >= 0.0 and el - end_at >= WHITE:
 		game.set_meta("rr_pass_moment", true) # (Game.end: no zoom-to-black, straight into the results)
 		_finish()
@@ -324,9 +387,16 @@ func _shard(p:Vector2, depth:float, vs:Vector2, big:bool = false) -> Array:
 	raw.append(Vector2(stretch, -0.3) * size * 0.8)
 	var pts = Geometry.convex_hull_2d(raw) # (convex: always draws; the hull comes back closed)
 	pts.remove(pts.size() - 1)
+	var lo = Vector2(1e9, 1e9)
+	var hi = -lo
+	for q in pts:
+		lo = Vector2(min(lo.x, q.x), min(lo.y, q.y))
+		hi = Vector2(max(hi.x, q.x), max(hi.y, q.y))
+	var uvs = PoolVector2Array()
+	for q in pts: uvs.append((q - lo) / (hi - lo))
 	return [p, Vector2(rng.randf_range(-30, 30), rng.randf_range(60, 200)) * depth * vs.y / 1080.0,
 		rng.randf() * TAU, rng.randf_range(-1.6, 1.6) / (3.0 if big else 1.0),
-		rng.randf() * TAU, rng.randf_range(1.0, 4.0) / (3.0 if big else 1.0), depth, pts]
+		rng.randf() * TAU, rng.randf_range(1.0, 4.0) / (3.0 if big else 1.0), depth, pts, uvs]
 
 func _glass_step(el:float, dt:float):
 	var vs = glass.rect_size
@@ -357,34 +427,63 @@ func _glass_step(el:float, dt:float):
 		p[2] += dt * 5.0
 		if p[0].y > vs.y + 4: p[0] = Vector2(rng.randf() * vs.x, -4)
 
-func _draw_glass():
+func _draw_cracks():
 	var el = last_el
 	# the cracks: dark lines with a light edge, gone as the pieces fall
 	var ca = 1.0 if el < STOP + 0.12 else max(0.0, 1.0 - (el - STOP - 0.12) / 0.9)
 	if ca > 0.0:
 		for c in cracks:
-			glass.draw_polyline(c, Color(0.06, 0.07, 0.2, 0.75 * ca), 3.0)
-			glass.draw_polyline(c, Color(0.85, 0.9, 1.0, 0.7 * ca), 1.0)
-	# far shards first (smaller, dimmer)
-	shards.sort_custom(self, "_by_depth")
+			crack_layer.draw_polyline(c, Color(0.06, 0.07, 0.2, 0.75 * ca), 3.0)
+			crack_layer.draw_polyline(c, Color(0.85, 0.9, 1.0, 0.7 * ca), 1.0)
+
+const LIGHT = Vector2(-0.6, -0.8) # (from the top left)
+func _draw_glass():
+	glass.material.set_shader_param("aspect", glass.rect_size.x / max(glass.rect_size.y, 1.0))
+	var ci = glass.get_canvas_item()
+	if warm_frames > 0 and shards.empty(): # (a speck, to compile the shader before it's needed)
+		VisualServer.canvas_item_add_triangle_array(ci, PoolIntArray([0, 1, 2]), PoolVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(0, 1)]), PoolColorArray([Color(0.5, 0.5, 0, 0.01), Color(0.5, 0.5, 0, 0.01), Color(0.5, 0.5, 0, 0.01)]), PoolVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(0, 1)]))
+	shards.sort_custom(self, "_by_depth") # far shards first (smaller, dimmer)
 	for s in shards:
 		var cs = cos(s[4]) # (tumbling: the pane turns edge-on and back)
 		var glint = pow(abs(cs), 10.0)
 		var tf = Transform2D(s[2], s[0])
 		var pts = PoolVector2Array()
 		for q in s[7]: pts.append(tf.xform(Vector2(q.x * (0.15 + 0.85 * abs(cs)), q.y)))
-		var a = clamp(0.7 + 0.3 * s[6], 0.6, 1.0)
+		var a = clamp(0.72 + 0.28 * s[6], 0.6, 0.97)
+		var body = Color(0.5 + 0.5 * sin(s[4]), 0.5 + 0.5 * sin(s[2] * 0.7 + s[4] * 0.5), glint, a)
 		var cols = PoolColorArray()
-		for q in pts: # (sky in the glass: lighter towards the top of each pane)
-			var up = clamp((q.y - s[0].y) / 80.0, -1.0, 1.0)
-			cols.append(Color(0.8 - 0.12 * up + 0.2 * glint, 0.88 - 0.08 * up + 0.12 * glint, 1.0, (0.42 + 0.45 * glint) * a))
-		VisualServer.canvas_item_add_triangle_array(glass.get_canvas_item(), _fan(pts.size()), pts, cols) # (convex: a fan, no triangulation to fail)
-		pts.append(pts[0])
-		glass.draw_polyline(pts, Color(0.1, 0.12, 0.32, 0.55 * a), 2.0)
-		glass.draw_polyline(pts, Color(0.95, 0.98, 1.0, (0.6 + 0.4 * glint) * a), 2.0)
+		for q in pts: cols.append(body)
+		VisualServer.canvas_item_add_triangle_array(ci, _fan(pts.size()), pts, cols, s[8]) # (convex: a fan)
+		# the rim: an inner bevel, bright on the edges that face the light, dark on the others
+		var c = Vector2.ZERO
+		for q in pts: c += q
+		c /= pts.size()
+		var w = (1.6 + 1.6 * s[6]) * (0.4 + 0.6 * abs(cs))
+		var rp = PoolVector2Array()
+		var rc = PoolColorArray()
+		var ru = PoolVector2Array()
+		var ri = PoolIntArray()
+		for k in pts.size():
+			var p0 = pts[k]
+			var p1 = pts[(k + 1) % pts.size()]
+			var n = (p1 - p0).tangent().normalized()
+			if n.dot((p0 + p1) * 0.5 - c) < 0.0: n = -n
+			var lit = n.dot(LIGHT)
+			var col = Color(1, 1, 1, (0.55 + 0.45 * glint) * a) if lit > 0.0 else Color(0.08, 0.1, 0.26, 0.7 * a)
+			col.a *= 0.45 + 0.55 * abs(lit)
+			var b = rp.size()
+			for q in [p0, p1, p1 - n * w, p0 - n * w]:
+				rp.append(q)
+				rc.append(col)
+				ru.append(Vector2(-1, -1))
+			ri.append_array([b, b + 1, b + 2, b, b + 2, b + 3])
+		VisualServer.canvas_item_add_triangle_array(ci, ri, rp, rc, ru)
+
+func _draw_sparks():
+	var el = last_el
 	for p in sparks: # glitter
 		var tw = 0.5 + 0.5 * sin(p[2])
-		if tw > 0.35: glass.draw_rect(Rect2(p[0], Vector2(2, 2)), Color(1, 1, 1, 0.75 * tw * min(1.0, el / 0.3)))
+		if tw > 0.35: spark_layer.draw_rect(Rect2(p[0], Vector2(2, 2)), Color(1, 1, 1, 0.75 * tw * min(1.0, el / 0.3)))
 
 func _by_depth(a, b): return a[6] < b[6]
 
