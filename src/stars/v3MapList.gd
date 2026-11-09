@@ -236,13 +236,27 @@ func reload_to_current_page(_a=null):
 
 func update_search_text(txt:String):
 	search_text = txt
-	if ready: reload_to_current_page()
+	if ready: _rr_search_pick()
 	emit_signal("search_updated")
 
 func update_author_search_text(txt:String):
 	author_search_text = txt
-	if ready: reload_to_current_page()
+	if ready: _rr_search_pick()
 	emit_signal("search_updated")
+
+# osu!-style: a search keeps the selected map if it still matches (the list goes to it), otherwise
+# the first result is picked
+func _rr_search_pick():
+	if rr_batch: return
+	scrolling_to = false
+	build_list()
+	if disp.size() == 0:
+		load_pg()
+		return
+	var sel = Rhythia.registry_song.get_item(Rhythia.selected_song.id) if Rhythia.selected_song else null
+	var at = disp.find(sel) if sel else -1
+	cur_map = at if at != -1 else 0
+	load_pg(at == -1)
 
 func update_search_dfil(dfil:Array):
 	difficulty_filter = dfil
