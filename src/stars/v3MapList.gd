@@ -112,16 +112,17 @@ func switch_to_play_screen():
 var was_maximized = OS.window_maximized
 var was_fullscreen = OS.window_fullscreen
 func _process(delta):
-	if check_drag or dragged:
+	if check_drag:
 		drag_offset = get_global_mouse_position()
-		var diff = drag_offset - drag_start
-		if abs(diff.y) > 40:
+		if abs(drag_offset.y - drag_start.y) > 12: # (a drag, not a click: from here the list follows the mouse)
 			check_drag = false
 			dragged = true
-			if cur_map + int(diff.y/80) < drag_cur_map:
-				call_deferred("pg_down")
-			elif cur_map + int(diff.y/80) > drag_cur_map:
-				call_deferred("pg_up")
+			rr_dragging = true
+			scrolling_to = false
+			drag_start = drag_offset
+			rr_drag_from = rr_pos
+			rr_vel = 0.0
+			rr_hist.clear()
 
 	tween_length(delta)
 	pt += delta
@@ -131,34 +132,18 @@ func _process(delta):
 		handle_window_resize()
 
 func _physics_process(delta):
-	# when the mouse is released from drag, the list will scroll based on the momentum
-	if momentum != 0:
-		momentum = lerp(momentum, 0, 0.3)
-		if abs(momentum) < 0.3:
-			momentum = 0
-		else:
-			if momentum < 0:
-				call_deferred("pg_up")
-			else:
-				call_deferred("pg_down")
-
+	# (scrolling: _rr_glide - one continuous position easing to a target; a card picked is scrolled to)
 	if scrolling_to:
-		if scroll_target < cur_map:
-			call_deferred("pg_up")
-		elif scroll_target > cur_map:
-			call_deferred("pg_down")
-		else:
+		rr_tgt = scroll_target
+		if abs(rr_pos - scroll_target) < 0.05:
 			scrolling_to = false
-			if disp[cur_map] != Rhythia.selected_song:
+			if cur_map >= 0 and cur_map < disp.size() and disp[cur_map] != Rhythia.selected_song:
 				Rhythia.select_song(disp[cur_map])
-	if scroll_down:
-		call_deferred("pg_down")
-	if scroll_up:
-		call_deferred("pg_up")
 
 func check_drag_on():
 	momentum = 0
 	dragged = false
+	rr_dragging = false
 	check_drag = true
 	drag_start = get_global_mouse_position()
 	drag_offset = drag_start
@@ -166,8 +151,10 @@ func check_drag_on():
 
 func check_drag_off():
 	check_drag = false
-	dragged = false
-	momentum = (drag_offset - get_global_mouse_position()).y 
+	if rr_dragging: # a fling: it carries on with the drag's speed and eases out
+		rr_dragging = false
+		if rr_hist.size() > 0 and OS.get_ticks_msec() - rr_hist[-1][0] > 80: rr_vel = 0.0 # (held still before letting go)
+		rr_tgt = rr_pos + clamp(rr_vel * 0.25, -40.0, 40.0)
 
 func select_random():
 	if disp.size() == 0: return
@@ -857,7 +844,15 @@ func _badge_font(btn:Control) -> Font:
 	return badge_font
 
 func pg_up():
-	if cur_map < 0: return
+	scrolling_to = false
+	rr_tgt = max(0.0, min(rr_tgt, rr_pos + 0.5) - 1.0)
+
+func pg_down():
+	scrolling_to = false
+	rr_tgt = min(disp.size() - 1.0, max(rr_tgt, rr_pos - 0.5) + 1.0)
+
+func _rr_shift_up():
+	if cur_map <= 0: return
 	cur_map -= 1
 
 	$Press.play()
@@ -871,7 +866,7 @@ func pg_up():
 	btn.visible = true
 	_rr_step(-1)
 
-func pg_down():
+func _rr_shift_down():
 	if cur_map >= disp.size() - 1: return
 	cur_map += 1
 
@@ -901,26 +896,21 @@ func _rr_drop(p:Control):
 	remove_child(p)
 	p.queue_free()
 
-func _rr_step(dir:int):
-	var h = 90.0 + get_constant("separation")
-	glide_y = clamp(glide_y + dir * h, -h * GLIDE_MAX, h * GLIDE_MAX)
+func _rr_step(_dir:int):
 	_rr_retarget(false)
-	_rr_place()
 
 # card widths for the current page (the curve of the list); keep = cards still look as wide as before
 func _rr_retarget(snap:bool):
 	if !is_connected("sort_children", self, "_rr_sorted"): connect("sort_children", self, "_rr_sorted")
-	var mid = (next_index() - prev_index()) / 2
-	for i in btns.size():
-		var b = btns[i]
+	var w = size_x - _rr_room()
+	for b in btns:
 		if !is_instance_valid(b): continue
-		var w = size_x - 15 * abs(mid - i) - _rr_room()
-		var dx = 0.0 if snap else float(b.get_meta("rr_dx")) if b.has_meta("rr_dx") else 0.0
-		dx += w - b.rect_min_size.x if !snap else 0.0
-		b.set_meta("rr_dx", dx)
-		b.rect_min_size = Vector2(w, 90)
+		if !b.has_meta("rr_dx"): b.set_meta("rr_dx", 0.0)
+		if b.rect_min_size != Vector2(w, 90): b.rect_min_size = Vector2(w, 90)
+	rr_arc_dirty = true
 
 func _rr_sorted():
+	rr_arc_dirty = true # (cards moved in the layout: their curve again)
 	for b in btns:
 		if is_instance_valid(b) and b.get_parent() == self: b.set_meta("rr_nx", b.rect_position.x)
 	_rr_place()
@@ -942,19 +932,82 @@ func _rr_place():
 			if hx > 0.0: b.set_meta("rr_grown", true)
 			else: b.remove_meta("rr_grown")
 
+# osu!-style carousel (Rhythia-reimagined): one continuous scroll position (in cards) easing toward a
+# target - the wheel moves the target a card a notch, a drag holds the list to the mouse and a fling
+# carries on; the cards swap when the position passes half a card (one new card, no relayout) and
+# the list is drawn at the fraction by its offset. The cards bend away from the middle along a
+# curve (an x offset from where each card is on screen, every frame it moves).
+var rr_pos:float = 0.0          # cards, 0 = the first map in the middle
+var rr_tgt:float = 0.0
+var rr_cm:int = -1              # cur_map the position last saw (anything else: moved from outside)
+var rr_vel:float = 0.0          # drag speed, cards a second
+var rr_dragging:bool = false
+var rr_drag_from:float = 0.0
+var rr_hist:Array = []          # [msec, position] while dragging
+var rr_arc_dirty:bool = true
+const SCROLL_RATE = 11.0        # easing to the target (1/s)
+const HOLD_RATE = 14.0          # cards a second with the UP / DOWN buttons held
+const ARC = 120.0               # px the cards at the list's ends bend away
+
 func _rr_glide(delta:float):
-	var a = 1.0 - exp(-delta * GLIDE_RATE)
-	var moving = abs(glide_y) > 0.0
-	glide_y = lerp(glide_y, 0.0, a)
-	if abs(glide_y) < 0.25: glide_y = 0.0
+	var n = disp.size()
+	if n == 0 or btns.size() == 0: return
+	if cur_map != rr_cm: # moved from outside (a new page, search, random, the jukebox): no glide
+		rr_pos = cur_map
+		rr_tgt = cur_map
+		rr_cm = cur_map
+		rr_arc_dirty = true
+	var h = 90.0 + get_constant("separation")
+	var before = rr_pos
+	if rr_dragging:
+		var p = rr_drag_from - (get_global_mouse_position().y - drag_start.y) / h
+		if p < 0.0: p = p * 0.35 # (past the ends it gives a little)
+		elif p > n - 1: p = n - 1 + (p - n + 1) * 0.35
+		rr_pos = p
+		var now = OS.get_ticks_msec() # (the speed over the last 0.1 s: frame by frame it's noise at high fps)
+		rr_hist.append([now, p])
+		while rr_hist.size() > 2 and now - rr_hist[0][0] > 100: rr_hist.pop_front()
+		var dt = (now - rr_hist[0][0]) / 1000.0
+		rr_vel = (p - rr_hist[0][1]) / dt if dt > 0.01 else 0.0
+		rr_tgt = clamp(p, 0, n - 1)
+	else:
+		if scroll_up: rr_tgt -= HOLD_RATE * delta
+		if scroll_down: rr_tgt += HOLD_RATE * delta
+		rr_tgt = clamp(rr_tgt, 0, n - 1)
+		rr_pos = lerp(rr_pos, rr_tgt, 1.0 - exp(-delta * SCROLL_RATE))
+		if abs(rr_pos - rr_tgt) < 0.001: rr_pos = rr_tgt
+	var want = int(round(clamp(rr_pos, 0, n - 1)))
+	if abs(want - cur_map) > page_size: # (a long way: the page is built there at once)
+		cur_map = want
+		load_pg()
+	var guard = 0
+	while want > cur_map and guard < 64:
+		_rr_shift_down()
+		guard += 1
+	while want < cur_map and guard < 64:
+		_rr_shift_up()
+		guard += 1
+	rr_cm = cur_map
+	glide_y = (cur_map - rr_pos) * h
+	if rr_pos != before or rr_arc_dirty:
+		rr_arc_dirty = false
+		_rr_place()
+		_rr_arc()
+
+func _rr_arc():
+	var sc = get_parent()
+	var half = max(1.0, sc.rect_size.y / 2.0)
+	var changed = false
 	for b in btns:
-		if !is_instance_valid(b) or !b.has_meta("rr_dx"): continue
-		var dx = b.get_meta("rr_dx")
-		if dx == 0.0: continue
-		moving = true
-		dx = lerp(dx, 0.0, a)
-		b.set_meta("rr_dx", 0.0 if abs(dx) < 0.2 else dx)
-	if moving: _rr_place()
+		if !is_instance_valid(b): continue
+		var cy = rect_position.y + b.rect_position.y + b.rect_size.y / 2.0
+		var t = clamp((cy - half) / half, -1.4, 1.4)
+		var dx = ARC * t * t
+		var old = b.get_meta("rr_dx") if b.has_meta("rr_dx") else 0.0
+		if abs(old - dx) > 0.1:
+			b.set_meta("rr_dx", dx)
+			changed = true
+	if changed: _rr_place()
 
 # Card widths (the curve of the list). Stock started a new tween for every card on every physics
 # frame (~1000 tweens a second); now each width just eases toward its target every frame - same
@@ -1022,11 +1075,9 @@ func tween_length(delta:float = 0.016):
 func _input(ev:InputEvent):
 	if is_visible_in_tree() and ev is InputEventMouseButton and ev.is_pressed():
 		if ev.button_index == BUTTON_WHEEL_UP:
-			scrolling_to = false
-			call_deferred("pg_up")
+			pg_up()
 		elif ev.button_index == BUTTON_WHEEL_DOWN:
-			scrolling_to = false
-			call_deferred("pg_down")
+			pg_down()
 	if ev is InputEventKey and ev.is_pressed():
 		#if f2 is pressed, it will select a random map
 		if ev.scancode == KEY_F2:
