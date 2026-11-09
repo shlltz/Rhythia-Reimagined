@@ -17,6 +17,8 @@ const SLOW_BACK = 2.6
 const HOLD_MIN = 1.5   # s at least from the last note to the results (when the song is already over)
 const HOLD_MAX = 180.0 # (a song that never reports its end)
 const WHITE = 0.14     # s of white-out at the end
+const SKIP_FALL = 0.32 # s the glass drops away for after R, before the white-out
+const SKIP_SPEED = 3.5 # how much faster it falls then
 const FOV_PUSH = 14.0  # degrees the camera pushes in
 const RIPPLES = [0.0, 0.16, 0.34] # s: three rings out from the cursor
 const RIPPLE_TIME = 1.1
@@ -60,9 +62,8 @@ float noise(vec2 p) {
 }
 vec3 sky(vec2 p) { // (y down: bright high up, deeper blue below, soft clouds)
 	float up = clamp(1.0 - p.y * 0.9, 0.0, 1.0);
-	vec3 c = mix(vec3(0.30, 0.40, 0.72), vec3(0.86, 0.92, 1.0), up);
-	float cl = noise(p * 2.6) * 0.65 + noise(p * 6.3) * 0.35;
-	return mix(c, vec3(1.0), smoothstep(0.5, 0.82, cl) * 0.7);
+	vec3 c = mix(vec3(0.42, 0.46, 0.55), vec3(0.88, 0.9, 0.95), up);
+	return c;
 }
 void fragment() {
 	if (UV.x < -0.5) {
@@ -76,15 +77,13 @@ void fragment() {
 		vec2 bend = (UV - 0.5) * vec2(0.035, 0.035) + tilt * 0.01;
 		vec2 b = vec2(bend.x, bend.y * fy);
 		vec3 behind;
-		behind.r = textureLod(SCREEN_TEXTURE, SCREEN_UV + b * 1.12, 0.0).r;
-		behind.g = textureLod(SCREEN_TEXTURE, SCREEN_UV + b, 0.0).g;
-		behind.b = textureLod(SCREEN_TEXTURE, SCREEN_UV + b * 0.88, 0.0).b;
+		behind = textureLod(SCREEN_TEXTURE, SCREEN_UV + b, 0.0).rgb;
 		// the sky in it: moves with the pane's tilt, not with the screen only
 		vec3 refl = sky(vec2(sp.x * aspect, sp.y) * 0.7 + tilt * 0.9 + UV * 0.18);
-		float fres = clamp(0.1 + 0.32 * dot(tilt, tilt) + 0.3 * glint, 0.0, 0.75); // (more mirror the more it's tilted)
+		float fres = clamp(0.06 + 0.22 * dot(tilt, tilt) + 0.2 * glint, 0.0, 0.5); // (more mirror the more it's tilted)
 		// the specular streak: a diagonal band whose place follows the turn
 		float d = UV.x * 0.75 + UV.y * 0.45 - (0.15 + 0.9 * (tilt.y * 0.5 + 0.5));
-		float streak = exp(-d * d * 160.0) * (0.35 + 0.65 * glint) + exp(-d * d * 1400.0) * 0.5;
+		float streak = exp(-d * d * 1400.0) * (0.25 + 0.5 * glint); // (one fine line of light)
 		vec3 col = behind * vec3(0.88, 0.94, 1.0) * (1.0 - fres * 0.5) + refl * fres + vec3(streak); // (clear: the scene shows through, the sky on top)
 		COLOR = vec4(min(col, vec3(1.0)), COLOR.a);
 	}
@@ -118,6 +117,7 @@ var ripple_copy:BackBufferCopy
 var warm_frames:int = 2
 var halo_k:float = 0.0
 var done:bool = false
+var skipping:bool = false
 var end_at:float = -1.0 # (el when the white-out started)
 var rng = RandomNumberGenerator.new()
 var hit_p:Vector2 = Vector2.ZERO # the cursor on screen at the last note
@@ -204,13 +204,20 @@ func _process(delta):
 	var el = (OS.get_ticks_usec() - t0) / 1000000.0
 	var real_dt = el - last_el
 	last_el = el
-	if game.ending: # (R held to skip: Game.end runs on its own)
+	if game.ending: # (ended some other way: Game.end runs on its own)
 		_finish()
 		return
-	if el < STOP: Engine.time_scale = 0.0
+	# R skips: the glass drops away fast, then the usual white-out into the results
+	if !skipping and end_at < 0.0 and el > STOP and Input.is_action_just_pressed("give_up"):
+		skipping = true
+		end_at = el + SKIP_FALL
+	if skipping: game.giving_up = 0.0 # (the run's own hold-to-give-up would cut it short)
+	if skipping: Engine.time_scale = 1.0
+	elif el < STOP: Engine.time_scale = 0.0
 	elif el < SLOW_UNTIL: Engine.time_scale = SLOW
 	else: Engine.time_scale = lerp(SLOW, 1.0, smoothstep(SLOW_UNTIL, SLOW_BACK, el))
 	var dt = real_dt * Engine.time_scale # (the shards fall in the slow motion too; frozen in the hit-stop)
+	if skipping: dt = real_dt * SKIP_SPEED
 	var f = 0.0
 	if el < STOP: f = 0.6
 	else: f = 0.6 * max(0.0, 1.0 - (el - STOP) / 0.4)
@@ -264,7 +271,7 @@ func _start():
 	if is_instance_valid(cursor) and is_instance_valid(cam): hit_p = cam.unproject_position(cursor.global_transform.origin)
 	_crack(vs)
 	_shatter(vs)
-	for i in 90: sparks.append([Vector2(rng.randf() * vs.x, rng.randf() * vs.y), Vector2(rng.randf_range(-12, 12), rng.randf_range(20, 70)), rng.randf() * TAU])
+	for i in 40: sparks.append([Vector2(rng.randf() * vs.x, rng.randf() * vs.y), Vector2(rng.randf_range(-12, 12), rng.randf_range(20, 70)), rng.randf() * TAU])
 	_ripple_on(true)
 	_take_sound()
 	if Engine.has_meta("rr_clear_sfx"):
@@ -411,7 +418,7 @@ func _glass_step(el:float, dt:float):
 		if chunk_t <= 0.0: # a huge chunk close past the camera
 			chunk_t = rng.randf_range(1.4, 2.6)
 			shards.append(_shard(Vector2(rng.randf_range(0.1, 0.9) * vs.x, -0.45 * vs.y), rng.randf_range(1.6, 2.1), vs, true))
-	var g = 700.0 * vs.y / 1080.0
+	var g = 700.0 * vs.y / 1080.0 * (4.0 if skipping else 1.0)
 	var keep = []
 	for s in shards:
 		s[1].y = min(s[1].y + g * s[6] * dt, 900.0 * s[6] * vs.y / 1080.0)
@@ -433,8 +440,7 @@ func _draw_cracks():
 	var ca = 1.0 if el < STOP + 0.12 else max(0.0, 1.0 - (el - STOP - 0.12) / 0.9)
 	if ca > 0.0:
 		for c in cracks:
-			crack_layer.draw_polyline(c, Color(0.06, 0.07, 0.2, 0.75 * ca), 3.0)
-			crack_layer.draw_polyline(c, Color(0.85, 0.9, 1.0, 0.7 * ca), 1.0)
+			crack_layer.draw_polyline(c, Color(0.9, 0.93, 1.0, 0.55 * ca), 1.0) # (hairlines)
 
 const LIGHT = Vector2(-0.6, -0.8) # (from the top left)
 func _draw_glass():
@@ -458,7 +464,7 @@ func _draw_glass():
 		var c = Vector2.ZERO
 		for q in pts: c += q
 		c /= pts.size()
-		var w = (1.6 + 1.6 * s[6]) * (0.4 + 0.6 * abs(cs))
+		var w = (0.8 + 0.6 * s[6]) * (0.5 + 0.5 * abs(cs)) # (a thin rim)
 		var rp = PoolVector2Array()
 		var rc = PoolColorArray()
 		var ru = PoolVector2Array()
@@ -469,7 +475,7 @@ func _draw_glass():
 			var n = (p1 - p0).tangent().normalized()
 			if n.dot((p0 + p1) * 0.5 - c) < 0.0: n = -n
 			var lit = n.dot(LIGHT)
-			var col = Color(1, 1, 1, (0.55 + 0.45 * glint) * a) if lit > 0.0 else Color(0.08, 0.1, 0.26, 0.7 * a)
+			var col = Color(1, 1, 1, (0.5 + 0.4 * glint) * a) if lit > 0.0 else Color(0.85, 0.88, 0.95, 0.18 * a)
 			col.a *= 0.45 + 0.55 * abs(lit)
 			var b = rp.size()
 			for q in [p0, p1, p1 - n * w, p0 - n * w]:
@@ -483,7 +489,7 @@ func _draw_sparks():
 	var el = last_el
 	for p in sparks: # glitter
 		var tw = 0.5 + 0.5 * sin(p[2])
-		if tw > 0.35: spark_layer.draw_rect(Rect2(p[0], Vector2(2, 2)), Color(1, 1, 1, 0.75 * tw * min(1.0, el / 0.3)))
+		if tw > 0.35: spark_layer.draw_rect(Rect2(p[0], Vector2(1.5, 1.5)), Color(1, 1, 1, 0.5 * tw * min(1.0, el / 0.3)))
 
 func _by_depth(a, b): return a[6] < b[6]
 
