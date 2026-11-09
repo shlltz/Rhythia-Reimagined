@@ -12,7 +12,7 @@ var black_fade:float = 0
 # preview keeps playing muffled). It stays at least MIN_SHOW seconds (its slide-in), then the run starts;
 # restarts go straight to song.tscn, not here.
 const LoadScreen = preload("res://mods/replay/LoadScreen.gd")
-const MIN_SHOW = 1.5 # (= LoadScreen.SHOW: the bar is full then)
+const MIN_SHOW = 0.5 # (= LoadScreen.SHOW: the bar is full then)
 var cancelled:bool = false
 var switched:bool = false
 var screen:Control
@@ -252,9 +252,24 @@ func _input(ev):
 	if Engine.has_meta("rr_launch"): Engine.remove_meta("rr_launch")
 	load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "back") # (at once: the card shrinks away over the map page)
 
-# leaving another way (Esc, an error): the half-built run is finished and dropped
+# leaving another way (Esc, an error): the half-built run is dropped once its worker is done. Not
+# waited for here: Esc right after the card came up froze the game (the worker, still instancing
+# the run, needed the main thread, which sat in wait_to_finish) - a Reaper collects it a frame later
 func _exit_tree():
 	if build_thread:
-		var n = build_thread.wait_to_finish()
+		var r = Reaper.new()
+		r.th = build_thread
+		r.tree = get_tree()
 		build_thread = null
+		Engine.set_meta("rr_build_reaper", r) # (kept alive until it's done)
+		r.tree.connect("idle_frame", r, "_tick")
+
+class Reaper extends Reference:
+	var th:Thread
+	var tree:SceneTree
+	func _tick():
+		if th.is_alive(): return
+		var n = th.wait_to_finish()
 		if n is Node and !n.is_inside_tree(): n.free()
+		tree.disconnect("idle_frame", self, "_tick")
+		if Engine.has_meta("rr_build_reaper") and Engine.get_meta("rr_build_reaper") == self: Engine.remove_meta("rr_build_reaper")

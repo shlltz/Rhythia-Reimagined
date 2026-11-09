@@ -17,7 +17,7 @@ func run():
 		if !s.is_online and s.filePath.get_file() == "@@MAP1@@": Rhythia.select_song(s)
 	yield(wait(1.0), "completed")
 	get_tree().change_scene("res://scenes/loaders/songload.tscn")
-	yield(wait(1.2), "completed")
+	yield(wait(0.25), "completed") # (the card stays 0.5 s)
 	var e = InputEventKey.new(); e.scancode = KEY_ESCAPE; e.pressed = true
 	Input.parse_input_event(e)
 	yield(wait(4.0), "completed")
