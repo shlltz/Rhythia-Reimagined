@@ -57,12 +57,23 @@ func run():
 	var e = InputEventAction.new(); e.action = "give_up"; e.pressed = true
 	Input.parse_input_event(e)
 	var u0 = OS.get_ticks_usec()
-	yield(real_wait(0.15), "completed")
-	shot("0_falling")
-	var moved = 0.0
-	var n = min(ys.size(), pm.shards.size())
-	check(pm.skipping and Engine.time_scale == 1.0, "R: skipping (time scale %.2f)" % Engine.time_scale)
-	yield(real_wait(0.2), "completed")
+	# the fall speeds up smoothly: the shards' mean drop per second, frame by frame
+	var speeds = []
+	var prev = -1.0
+	var lu = OS.get_ticks_usec()
+	while OS.get_ticks_usec() - u0 < 350000:
+		yield(get_tree(), "idle_frame")
+		var nu = OS.get_ticks_usec()
+		var s = 0.0
+		for x in pm.shards: s += x[1].y
+		var v = s / max(pm.shards.size(), 1) * float(pm.get("skip_k") * (pm.SKIP_SPEED - pm.skip_ts) + pm.skip_ts if pm.skipping else 1.0)
+		speeds.append(v)
+		lu = nu
+		if OS.get_ticks_usec() - u0 > 150000 and OS.get_ticks_usec() - u0 < 170000: shot("0_falling")
+	var jump = 0.0
+	for i in range(1, speeds.size()): if speeds[i - 1] > 1.0: jump = max(jump, speeds[i] / speeds[i - 1])
+	check(pm.skipping and Engine.time_scale > 0.99, "R: skipping, time scale back to %.2f by 0.35 s" % Engine.time_scale)
+	check(speeds.size() > 10 and jump < 1.5, "the fall speeds up smoothly: %.0f -> %.0f px/s over %d frames, biggest step x%.2f a frame" % [speeds[0], speeds[-1], speeds.size(), jump])
 	shot("1_white")
 	t = 0.0
 	while t < 5 and !get_tree().root.has_node("Menu/ResultsScreen"):

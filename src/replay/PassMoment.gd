@@ -17,8 +17,9 @@ const SLOW_BACK = 2.6
 const HOLD_MIN = 1.5   # s at least from the last note to the results (when the song is already over)
 const HOLD_MAX = 180.0 # (a song that never reports its end)
 const WHITE = 0.14     # s of white-out at the end
-const SKIP_FALL = 0.32 # s the glass drops away for after R, before the white-out
-const SKIP_SPEED = 3.5 # how much faster it falls then
+const SKIP_FALL = 0.4  # s the glass drops away for after R, before the white-out
+const SKIP_SPEED = 3.5 # how much faster it falls by then
+const SKIP_EASE = 0.2  # s the speed-up takes to build
 const FOV_PUSH = 14.0  # degrees the camera pushes in
 const RIPPLES = [0.0, 0.16, 0.34] # s: three rings out from the cursor
 const RIPPLE_TIME = 1.1
@@ -118,6 +119,9 @@ var warm_frames:int = 2
 var halo_k:float = 0.0
 var done:bool = false
 var skipping:bool = false
+var skip_at:float = 0.0
+var skip_ts:float = 1.0 # (the time scale R was pressed in)
+var skip_k:float = 0.0  # 0..1: how far the speed-up has built
 var end_at:float = -1.0 # (el when the white-out started)
 var rng = RandomNumberGenerator.new()
 var hit_p:Vector2 = Vector2.ZERO # the cursor on screen at the last note
@@ -210,14 +214,18 @@ func _process(delta):
 	# R skips: the glass drops away fast, then the usual white-out into the results
 	if !skipping and end_at < 0.0 and el > STOP and Input.is_action_just_pressed("give_up"):
 		skipping = true
+		skip_at = el
+		skip_ts = Engine.time_scale
 		end_at = el + SKIP_FALL
 	if skipping: game.giving_up = 0.0 # (the run's own hold-to-give-up would cut it short)
-	if skipping: Engine.time_scale = 1.0
+	# the speed-up eases in (slow motion out, the fall faster and faster) instead of jumping
+	skip_k = smoothstep(0.0, SKIP_EASE, el - skip_at) if skipping else 0.0
+	if skipping: Engine.time_scale = lerp(skip_ts, 1.0, skip_k)
 	elif el < STOP: Engine.time_scale = 0.0
 	elif el < SLOW_UNTIL: Engine.time_scale = SLOW
 	else: Engine.time_scale = lerp(SLOW, 1.0, smoothstep(SLOW_UNTIL, SLOW_BACK, el))
 	var dt = real_dt * Engine.time_scale # (the shards fall in the slow motion too; frozen in the hit-stop)
-	if skipping: dt = real_dt * SKIP_SPEED
+	if skipping: dt = real_dt * lerp(skip_ts, SKIP_SPEED, skip_k * skip_k)
 	var f = 0.0
 	if el < STOP: f = 0.6
 	else: f = 0.6 * max(0.0, 1.0 - (el - STOP) / 0.4)
@@ -418,7 +426,7 @@ func _glass_step(el:float, dt:float):
 		if chunk_t <= 0.0: # a huge chunk close past the camera
 			chunk_t = rng.randf_range(1.4, 2.6)
 			shards.append(_shard(Vector2(rng.randf_range(0.1, 0.9) * vs.x, -0.45 * vs.y), rng.randf_range(1.6, 2.1), vs, true))
-	var g = 700.0 * vs.y / 1080.0 * (4.0 if skipping else 1.0)
+	var g = 700.0 * vs.y / 1080.0 * (1.0 + 3.0 * skip_k)
 	var keep = []
 	for s in shards:
 		s[1].y = min(s[1].y + g * s[6] * dt, 900.0 * s[6] * vs.y / 1080.0)
