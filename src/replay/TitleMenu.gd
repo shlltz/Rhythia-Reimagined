@@ -88,6 +88,7 @@ var root:Control
 var topo:ColorRect
 var logo:TextureRect
 var ring:Control
+var vis_bars:Control
 var cards:Array = []
 var items:Array = []           # ITEMS minus Browse when the browser mod is missing
 var tilt:float = 0.0           # the icon is drawn tilted; turning by this makes it upright
@@ -133,6 +134,13 @@ func _ready():
 	topo.material = ShaderMaterial.new()
 	topo.material.shader = Shader.new()
 	root.add_child(topo)
+	# the menu's visualizer sits under the dim: a copy of its bars drawn above it (no second analyser)
+	vis_bars = Control.new()
+	vis_bars.anchor_top = 1; vis_bars.anchor_right = 1; vis_bars.anchor_bottom = 1
+	vis_bars.margin_top = -140; vis_bars.margin_left = 8; vis_bars.margin_right = -8
+	vis_bars.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vis_bars.connect("draw", self, "_draw_vis_bars")
+	root.add_child(vis_bars)
 	apply_bg()
 
 	var hide = Array(load("res://mods/replay/Reimagined.gd").val("title_hide"))
@@ -531,6 +539,7 @@ func _process(delta):
 			c.update()
 	ring.rect_position = centre
 	ring.update()
+	if vis_bars: vis_bars.update()
 	_logo_fx_step(delta)
 	_terminal_step(delta)
 
@@ -558,6 +567,22 @@ func _draw_ring():
 # (upright once the cards are open): bars out of all four edges, and corner brackets that kick
 # outward on each beat and spring back
 const SQ_BARS = 18                 # bars per edge
+func _draw_vis_bars():
+	var vis = menu.get_node_or_null("AudioVisualizer")
+	if !vis or vis.mags.size() < 2 or vis.ceiling <= 0: return
+	var n = vis.mags.size()
+	var bs = vis.BAR_SIZE
+	var w = vis_bars.rect_size.x - bs
+	var h = vis_bars.rect_size.y
+	var split = vis.progress * vis_bars.rect_size.x
+	var fill = Color(1, 1, 1, 0.42)
+	var back = Color(1, 1, 1, 0.16)
+	for i in n:
+		var s = clamp(vis.mags[i] / vis.ceiling, vis.BAR_MIN / h, 1.0)
+		var x = i / (n - 1.0) * w
+		var bh = s * h
+		vis_bars.draw_rect(Rect2(x, h - bh, bs, bh), fill if x + bs / 2 < split else back)
+
 func _draw_square(vis):
 	var half = LOGO / 2 * logo.rect_scale.x * logo_side * 1.08
 	var rot = deg2rad(logo.rect_rotation - tilt)

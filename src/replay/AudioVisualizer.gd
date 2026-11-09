@@ -34,8 +34,8 @@ var col_back:Color = COLOR_BACK
 func _ready():
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if load("res://mods/replay/Look.gd").mono():
-		col_fill = Color(0.92, 0.92, 0.92, 0.9)
-		col_back = Color(1, 1, 1, 0.22)
+		col_fill = Color(0.92, 0.92, 0.92, 0.5) # (softer: was 0.9 / 0.22)
+		col_back = Color(1, 1, 1, 0.13)
 	anchor_top = 1
 	anchor_right = 1
 	anchor_bottom = 1

@@ -157,6 +157,12 @@ func _beat(menu:Node, delta:float):
 	for i in 4: raw += v.mags[i]
 	raw = raw / 4.0 / v.ceiling
 	energy = max(energy, clamp(raw, 0.0, 1.0))
+	# on the map page the hit comes from the map's own notes at the moment they're heard (the cover's
+	# hype mod reads them from the preview position): exact, where the spectrum guess lags and misses
+	var hy = menu.get_node_or_null("Main/Maps/Results/Results/Hype")
+	if hy and hy.accents != null and hy.accents.size() > 0 and hy.has_method("_map_song_playing") and hy._map_song_playing():
+		punch = max(punch, hy.punch)
+		return
 	var rising = raw - bass_prev
 	bass_prev = raw
 	bass_avg = lerp(bass_avg, raw, 1.0 - exp(-delta * 3.0))

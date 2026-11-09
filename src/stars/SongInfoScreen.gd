@@ -541,6 +541,10 @@ func _place_filters():
 			filters_panel.rect_size = r.size
 
 func _process(_d):
+	if filters: # (out of the layout, it doesn't hide with the page: shown only while the page is)
+		var on = filters.get_parent().is_visible_in_tree()
+		if filters.visible != on: filters.visible = on
+		if filters_panel.visible != (on and filters_open): filters_panel.visible = on and filters_open
 	_place_filters() # (the page moves with the menu's parallax; the filter column is out of the layout)
 	_align_bar()
 
