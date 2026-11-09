@@ -93,7 +93,7 @@ void fragment() {
 		behind = textureLod(SCREEN_TEXTURE, SCREEN_UV + b, 0.0).rgb;
 		// the sky in it: moves with the pane's tilt, not with the screen only
 		vec3 refl = sky(vec2(sp.x * aspect, sp.y) * 0.7 + tilt * 0.9 + UV * 0.18);
-		float fres = clamp(0.06 + 0.22 * dot(tilt, tilt) + 0.2 * glint, 0.0, 0.5); // (more mirror the more it's tilted)
+		float fres = clamp(0.04 + 0.16 * dot(tilt, tilt) + 0.16 * glint, 0.0, 0.4); // (more mirror the more it's tilted)
 		// the specular streak: a diagonal band whose place follows the turn
 		float d = UV.x * 0.75 + UV.y * 0.45 - (0.15 + 0.9 * (tilt.y * 0.5 + 0.5));
 		float streak = exp(-d * d * 1400.0) * (0.25 + 0.5 * glint); // (one fine line of light)
@@ -124,7 +124,7 @@ var cur_mesh:MeshInstance = null
 var cur_tex:Texture = null
 var cur_col:Color = Color(1, 1, 1)
 var cur_trail = []      # recent cursor points on screen
-const DIM = 0.93        # how dark the rest gets
+const DIM = 0.8         # how dark the rest gets (was 0.93)
 const DIM_FROM = 0.15   # s: fading from ...
 const DIM_TO = 1.4      # ... to
 var ripple:ColorRect
@@ -490,7 +490,7 @@ func _draw_glass():
 		var tf = Transform2D(s[2], s[0])
 		var pts = PoolVector2Array()
 		for q in s[7]: pts.append(tf.xform(Vector2(q.x * (0.15 + 0.85 * abs(cs)), q.y)))
-		var a = clamp(0.72 + 0.28 * s[6], 0.6, 0.97)
+		var a = clamp(0.4 + 0.2 * s[6], 0.4, 0.62) # (see-through: was 0.6-0.97)
 		var body = Color(0.5 + 0.5 * sin(s[4]), 0.5 + 0.5 * sin(s[2] * 0.7 + s[4] * 0.5), glint, a)
 		var cols = PoolColorArray()
 		for q in pts: cols.append(body)
