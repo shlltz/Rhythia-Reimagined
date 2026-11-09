@@ -406,6 +406,7 @@ func _move_run_box():
 var filters:Control = null
 var filters_panel:Panel = null
 var filters_btn:Button = null
+const BAR_H = 30.0 # the bar: search, dice, FILTER and the sort all this tall
 var sort_slot:Control = null
 var filters_open:bool = false
 func _mono_page():
@@ -436,16 +437,18 @@ func _mono_page():
 			au.emit_signal("text_changed", "")
 	var lead = t.get_node_or_null("VSeparator") # (the bar starts where the list does)
 	if lead:
-		lead.add_constant_override("separation", 56)
-		lead.rect_min_size.x = 56
+		bar_lead = lead
+		bar_list = maps.get_node_or_null("MapRegistry/S/VBoxContainer")
+		lead.size_flags_horizontal = 0 # (sized in _align_bar: the search starts at the cards' left edge)
 	var se = t.get_node_or_null("Search")
 	if se: se.size_flags_horizontal = SIZE_EXPAND_FILL
 	var rnd = t.get_node_or_null("Random") # a dice
 	if rnd:
 		rnd.text = ""
 		rnd.hint_tooltip = "A random map from the search"
-		rnd.rect_min_size = Vector2(36, 0)
+		rnd.rect_min_size = Vector2(BAR_H, BAR_H) # (square, as tall as the search)
 		rnd.size_flags_horizontal = 0
+		rnd.size_flags_vertical = SIZE_SHRINK_CENTER
 		var d = Control.new()
 		d.anchor_right = 1
 		d.anchor_bottom = 1
@@ -459,17 +462,22 @@ func _mono_page():
 	filters_btn.toggle_mode = true
 	filters_btn.hint_tooltip = "Difficulty, collection, broken / online maps"
 	filters_btn.size_flags_horizontal = 0
+	filters_btn.size_flags_vertical = SIZE_SHRINK_CENTER
 	if rnd:
-		filters_btn.size_flags_vertical = rnd.size_flags_vertical # (as tall as the dice)
 		for st in ["normal", "hover", "pressed", "focus"]:
 			var sb = rnd.get_stylebox(st)
 			if sb: filters_btn.add_stylebox_override(st, sb)
-		filters_btn.add_font_override("font", rnd.get_font("font"))
+	var bf = se.get_font("font") if se else (rnd.get_font("font") if rnd else null) # (the search's lettering)
+	if bf: filters_btn.add_font_override("font", bf)
+	filters_btn.rect_min_size = Vector2((bf.get_string_size(filters_btn.text).x if bf else 52.0) + 24, BAR_H)
 	filters_btn.connect("toggled", self, "_filters_toggle")
 	t.add_child(filters_btn)
 	sort_slot = Control.new() # (the sort drop-down is shown here: it belongs to the filter column)
 	sort_slot.name = "RRSortSlot"
-	sort_slot.rect_min_size = Vector2(150, 0)
+	sort_slot.rect_min_size = Vector2(150, BAR_H)
+	if se:
+		se.rect_min_size.y = BAR_H
+		se.size_flags_vertical = SIZE_SHRINK_CENTER
 	sort_slot.mouse_filter = MOUSE_FILTER_IGNORE
 	t.add_child(sort_slot)
 	call_deferred("_mono_filters", maps)
@@ -488,6 +496,7 @@ func _mono_filters(maps:Node):
 	if filters:
 		if sort_btn:
 			filters.move_child(sort_btn, 0) # (to the top: where the bar shows it)
+			sort_btn.rect_min_size.y = BAR_H
 			for c in filters.get_children(): # (its caption: the bar says what it is)
 				if c is Label and c.text == "sort": c.set_meta("rr_never", true)
 		var bump = filters.get_node_or_null("bump")
@@ -533,6 +542,16 @@ func _place_filters():
 
 func _process(_d):
 	_place_filters() # (the page moves with the menu's parallax; the filter column is out of the layout)
+	_align_bar()
+
+var bar_lead:Control = null
+var bar_list:Control = null
+func _align_bar():
+	if !is_instance_valid(bar_lead) or !is_instance_valid(bar_list): return
+	var t = bar_lead.get_parent()
+	var room = bar_list.call("_rr_room") if bar_list.has_method("_rr_room") else 0.0
+	var w = max(0.0, round(bar_list.rect_global_position.x + room - t.rect_global_position.x - t.get_constant("separation")))
+	if abs(bar_lead.rect_min_size.x - w) > 0.5: bar_lead.rect_min_size.x = w
 
 # a click outside the open filter panel closes it (not while one of its drop-downs is open)
 func _rr_filters_input(ev):

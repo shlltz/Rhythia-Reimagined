@@ -50,7 +50,7 @@ func _dump(f, n, d, maxd):
 	f.store_line("%s%s [%s%s] %s" % ["  ".repeat(d), n.name, n.get_class(), (" " + sc.resource_path.get_file()) if sc and sc.resource_path != "" else "", r])
 	if d >= maxd: return
 	if n.name == "VBoxContainer" and n.get_child_count() > 6: # (the map list's cards: just one)
-		_dump(f, n.get_child(0), d + 1, maxd)
+		_dump(f, n.get_child(n.get_child_count() / 2), d + 1, maxd) # (a shown card, mid page)
 		f.store_line("%s... %d cards" % ["  ".repeat(d + 1), n.get_child_count()])
 		return
 	for c in n.get_children(): _dump(f, c, d + 1, maxd)

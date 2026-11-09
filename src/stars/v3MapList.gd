@@ -1114,7 +1114,7 @@ func size_list():
 	if Look.mono():
 		# the list fills its side of the page (the cards reach towards the cover; was a 1/2.8 strip
 		# with empty space left of it)
-		size_x = get_viewport_rect().size.x / 2.15
+		size_x = get_viewport_rect().size.x / 2.6 # (narrower: was 1/2.15)
 		$"..".rect_min_size.x = size_x
 		rect_min_size.x = size_x
 
