@@ -553,12 +553,20 @@ def build(profile):
 # shaders compile in the background (Godot 3.6 "Asynchronous and Cache": an ubershader draws in the
 # meantime, and compiled shaders are cached in user://shader_cache), so the first time an effect
 # shows it no longer stalls the frame (one-time 100-200 ms spikes in the first play of a session)
+# (thread model 1 - rendering on the main thread - was tried for input delay: frames got slower, p50
+# 0.6 -> 0.9 ms, p99 1.4 -> 1.7-2.0 ms, eating the frame it saves; the game keeps 2, multi-threaded)
 def async_shaders(pk):
-    p = 'res://project.binary'; b = pk.read(p); key = b'rendering/gles3/shaders/shader_compilation_mode'
-    if key in b: return
-    n, = struct.unpack_from('<I', b, 4)
-    ent = struct.pack('<I', len(key)) + key + struct.pack('<IIi', 8, 2, 2)   # int 2 = Asynchronous and Cache
-    pk.write(p, b[:4] + struct.pack('<I', n + 1) + b[8:] + ent)
+    p = 'res://project.binary'; b = pk.read(p)
+    for key, val in [(b'rendering/gles3/shaders/shader_compilation_mode', 2)]:
+        kb = struct.pack('<I', len(key)) + key; val = struct.pack('<IIi', 8, 2, val)   # (int)
+        i = b.find(kb)
+        if i >= 0:                                                   # replace the value
+            j = i + len(kb); vl, = struct.unpack_from('<I', b, j)
+            b = b[:j] + val + b[j + 4 + vl:]
+        else:
+            n, = struct.unpack_from('<I', b, 4)
+            b = b[:4] + struct.pack('<I', n + 1) + b[8:] + kb + val
+    pk.write(p, b)
 
 # the log file is only on by default on desktop: turn it on everywhere, so phones get
 # user://logs/godot.log too (shown in Customize > Logs)
