@@ -12,6 +12,7 @@ var empty:Label
 var toggle:Button
 var body:VBoxContainer
 var spacer:Control           # set by SongInfoScreen: the free space right of the cover column
+var spacer_base:float = 1.0  # (its share when the list is shut: smaller = the cover column further right)
 var open:bool = false
 var k:float = 0.0            # 0 closed .. 1 open (animated)
 var count:int = 0
@@ -32,7 +33,7 @@ func _process(delta):
 		k = 1.0 if open else 0.0
 		set_process(false)
 	size_flags_stretch_ratio = 1.0 + k * 0.6 if spacer else 1.6
-	if spacer: spacer.size_flags_stretch_ratio = 1.0 - k * 0.999
+	if spacer: spacer.size_flags_stretch_ratio = spacer_base * (1.0 - k * 0.999)
 	body.visible = k > 0.02
 	body.modulate.a = k
 

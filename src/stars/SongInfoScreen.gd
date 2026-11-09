@@ -398,8 +398,7 @@ func _move_run_box():
 	mods.rect_min_size.y = max(mods.rect_min_size.y, box.rect_position.y + 48 + 8 + 40 + 8)
 
 # ---------------------------------------------------------------- personal build: a calmer map page
-# Left: the cover column on top, centred; below it, beside the modifiers (START stays under MODS),
-# the scores card - a compact best attempt with the other plays folded in under it. Right: one bar (search, a dice for a random map,
+# Left: as before, a bigger cover, no big faded grade behind the best attempt. Right: one bar (search, a dice for a random map,
 # FILTERS opening the filter panel, the sort), the map list wider (no UP / DOWN strips, no filter
 # column, no author box - the search matches mappers too). Nodes the stock scripts look up by path
 # stay where they are: the filter column is only taken out of the layout (set_as_toplevel) and
@@ -412,31 +411,13 @@ var filters_open:bool = false
 func _mono_page():
 	var h1 = get_node("RS/H1")
 	var right = h1.get_node("Right")
+	right.rect_min_size.x = 440 # (a bigger cover: the space towards the list is used)
 	var recent = h1.get_node_or_null("Recent")
-	# the cover column centred (other plays go to the scores card)
-	var sp = h1.get_node_or_null("Spacer")
-	if sp: sp.size_flags_horizontal = 0
-	var vs = h1.get_node_or_null("VSeparator")
-	if vs: vs.visible = false
-	h1.alignment = BoxContainer.ALIGN_CENTER
-	# scores card: the best attempt, compact, with the other plays under it
-	var h2 = get_node("RS/H2")
-	var ei = h2.get_node_or_null("EndInfo")
-	if ei:
-		var card = VBoxContainer.new()
-		card.name = "Scores"
-		card.add_constant_override("separation", 10)
-		h2.add_child(card)
-		h2.move_child(card, ei.get_index())
-		h2.remove_child(ei)
-		card.add_child(ei)
-		_compact_end_info(ei)
-		if recent:
-			recent.spacer = null
-			h1.remove_child(recent)
-			card.add_child(recent)
-			recent.size_flags_horizontal = SIZE_FILL
-			recent.size_flags_vertical = 0 # (right under the scores, not at the card's bottom)
+	if recent: # (the cover column further right, towards the list; the other plays get the room on the left)
+		recent.spacer_base = 0.3
+		recent.set_process(true)
+	var lg2 = _end_info().get_node_or_null("LetterGrade2") # (the big faded grade behind the best attempt: gone)
+	if lg2: lg2.visible = false
 	# ---- the map list side
 	var maps = get_node_or_null("/root/Menu/Main/Maps")
 	if !maps: return
@@ -453,6 +434,10 @@ func _mono_page():
 		if au.text != "":
 			au.text = ""
 			au.emit_signal("text_changed", "")
+	var lead = t.get_node_or_null("VSeparator") # (the bar starts where the list does)
+	if lead:
+		lead.add_constant_override("separation", 56)
+		lead.rect_min_size.x = 56
 	var se = t.get_node_or_null("Search")
 	if se: se.size_flags_horizontal = SIZE_EXPAND_FILL
 	var rnd = t.get_node_or_null("Random") # a dice
@@ -517,30 +502,6 @@ func _mono_filters(maps:Node):
 		filters.set_as_toplevel(true)
 		filters.rect_min_size.x = 150
 		_filters_show(false)
-
-func _compact_end_info(ei:Control):
-	# the grade under the title on the left; the numbers in two columns beside it (each value has its
-	# caption drawn ~15 px above it)
-	ei.rect_min_size = Vector2(345, 270)
-	ei.size_flags_vertical = 0 # (the other plays come right under it)
-	var lg2 = ei.get_node_or_null("LetterGrade2") # (the big faded grade behind it: gone)
-	if lg2: lg2.visible = false
-	var place = {"Result": Vector2(0, 0), "LetterGrade": Vector2(-4, 50),
-		"Accuracy": Vector2(88, 64), "MaxCombo": Vector2(255, 64),
-		"Misses": Vector2(88, 146), "FullCombo": Vector2(88, 146),
-		"Pauses": Vector2(255, 146), "NoPauses": Vector2(255, 146),
-		"Progress": Vector2(88, 206)}
-	for k in place:
-		var l = ei.get_node_or_null(k)
-		if l is Control: l.rect_position = place[k]
-	var lg = ei.get_node_or_null("LetterGrade")
-	if lg: lg.rect_scale = Vector2(0.5, 0.5)
-	for n in [["VSeparator2", 40], ["VSeparator", 30]]: # (narrower gaps: the card is wider)
-		var v = get_node_or_null("RS/H2/" + n[0])
-		if v:
-			v.add_constant_override("separation", n[1])
-			v.rect_min_size.x = n[1]
-			v.rect_size.x = n[1]
 
 func _filters_toggle(on:bool):
 	_filters_show(on)
