@@ -395,7 +395,7 @@ def friendly_settings(t, scale, hints=False):
 # ---------- script mods: text scripts added under res://mods/<dir>/, game scripts repointed to them ----------
 # name: (pck dir, {source file: game script it replaces}, [extra files])
 SCRIPT_MODS = {
-    'fixes': ('fixes', {'Song.gd': 'res://scripts/content/game/Song.gd', 'Online.gd': 'res://scripts/Online.gd'}, ['BgLoad.gd', 'Phxm.gd']),
+    'fixes': ('fixes', {'Song.gd': 'res://scripts/content/game/Song.gd', 'Online.gd': 'res://scripts/Online.gd', 'init.gd': 'res://scripts/init.gd'}, ['BgLoad.gd', 'Phxm.gd']),
     'stars': ('stars', {'SongInfoScreen.gd': 'res://scripts/ui/menu/SongInfoScreen.gd',
                         'v3MapList.gd': 'res://scripts/ui/menu/buttons/v3MapList.gd',
                         'StartOffset.gd': 'res://scripts/ui/menu/StartOffset.gd',

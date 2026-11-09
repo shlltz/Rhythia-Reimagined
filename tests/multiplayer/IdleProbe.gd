@@ -1,6 +1,6 @@
 extends Node
 # Long frames with nothing going on: sits on the menu (vsync off, uncapped) until RR_IDLE_S s after
-# launch (default 50) and lists every frame over 40 ms with its time since launch.
+# launch (default 50) and lists every frame over RR_IDLE_MS (default 40) ms with its time since launch.
 # Output @@OUT@@/idle.txt
 const OUT = "@@OUT@@/idle.txt"
 var last_us = 0
@@ -19,7 +19,8 @@ func _ready():
 
 func _process(_d):
 	var now = OS.get_ticks_usec()
-	if last_us > 0 and now - last_us > 40000: long.append([(now - last_us) / 1000.0, now / 1000000.0])
+	var th = (float(OS.get_environment("RR_IDLE_MS")) if OS.get_environment("RR_IDLE_MS") != "" else 40.0) * 1000.0
+	if last_us > 0 and now - last_us > th: long.append([(now - last_us) / 1000.0, now / 1000000.0])
 	last_us = now
 	var lim = float(OS.get_environment("RR_IDLE_S")) if OS.get_environment("RR_IDLE_S") != "" else 50.0
 	if now / 1000000.0 > lim:
