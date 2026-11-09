@@ -326,7 +326,7 @@ func layout():
 	icon.rect_pivot_offset = icon.rect_size / 2
 	glow.material.set_shader_param("aspect", vs.x / max(1.0, vs.y))
 	glow.material.set_shader_param("centre", Vector2(0.5, LOGO_Y))
-	if font is DynamicFont: font.size = int(max(12, round(r.size.y * 0.16)))
+	if font is DynamicFont: font.size = int(max(12, round(r.size.y * 0.13))) # (was 0.16)
 	pen.update()
 	text.update()
 	loader.update()
@@ -471,7 +471,7 @@ func _draw_text():
 	var r = logo_rect()
 	var t = clock
 	var cx = r.position.x + r.size.x / 2
-	var y = r.end.y + r.size.y * 0.24
+	var y = r.end.y - r.size.y * 0.02 # (close under the wordmark: was + 0.24; the logo image has empty space at its bottom)
 	var k = _cubic_out((t - TEXT_AT) / TEXT_TIME)
 	if font and k > 0:
 		var spacing = font.get_height() * (0.55 + 0.9 * (1.0 - k))
