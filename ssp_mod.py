@@ -164,7 +164,7 @@ def theme_text(t, width, mono=True, edge=None):
         nd = re.match(r'\[node name="([^"]*)"([^\]]*)\]', blk)
         par = re.search(r'parent="([^"]*)"', nd.group(2)) if nd else None
         path = ((par.group(1) if par else '') + '/' + nd.group(1)).split('/') if nd else []
-        if not mono and any(k in seg for seg in path for k in KEEP_PATH): res.append(blk); continue   # (own look: greyscale too)
+        if any(k in seg for seg in path for k in KEEP_PATH): res.append(blk); continue   # (the score labels keep their colours, own look too)
         for seg in path:
             if seg in DIFF:
                 (o, n) = DIFF[seg]

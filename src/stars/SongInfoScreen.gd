@@ -454,12 +454,13 @@ func _mono_page():
 		rnd.add_child(d)
 	filters_btn = Button.new()
 	filters_btn.name = "RRFilters"
-	filters_btn.text = "FILTERS"
+	filters_btn.text = "FILTER" # (small: as tall as the dice, as wide as the word)
 	filters_btn.focus_mode = FOCUS_NONE
 	filters_btn.toggle_mode = true
 	filters_btn.hint_tooltip = "Difficulty, collection, broken / online maps"
-	filters_btn.rect_min_size = Vector2(104, 0)
+	filters_btn.size_flags_horizontal = 0
 	if rnd:
+		filters_btn.size_flags_vertical = rnd.size_flags_vertical # (as tall as the dice)
 		for st in ["normal", "hover", "pressed", "focus"]:
 			var sb = rnd.get_stylebox(st)
 			if sb: filters_btn.add_stylebox_override(st, sb)
