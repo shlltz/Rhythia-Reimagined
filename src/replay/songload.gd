@@ -12,7 +12,7 @@ var black_fade:float = 0
 # preview keeps playing muffled). It stays at least MIN_SHOW seconds (its slide-in), then the run starts;
 # restarts go straight to song.tscn, not here.
 const LoadScreen = preload("res://mods/replay/LoadScreen.gd")
-const MIN_SHOW = 0.5 # (= LoadScreen.SHOW: the bar is full then)
+const MIN_SHOW = 1.0 # (= LoadScreen.SHOW: the bar is full then)
 var cancelled:bool = false
 var switched:bool = false
 var screen:Control
@@ -233,6 +233,7 @@ func _process(delta):
 	if leaving and result and !cancelled and !switched:
 		if build_thread and build_thread.is_alive(): return # (built in a moment)
 		switched = true
+		load("res://mods/replay/ScreenSwap.gd").free_sleeping() # (the menu kept for Esc: the run starts, it goes)
 		if build_thread: built = build_thread.wait_to_finish()
 		build_thread = null
 		if ResourceLoader.exists("res://mods/replay/RunIntro.gd"): load("res://mods/replay/RunIntro.gd").start(get_tree(), 0.85, true) # (snaps in)
@@ -250,12 +251,14 @@ func _input(ev):
 	cancelled = true
 	Rhythia.replaying = false
 	if Engine.has_meta("rr_launch"): Engine.remove_meta("rr_launch")
-	load("res://mods/replay/ScreenSwap.gd").go(get_tree(), "res://scenes/loaders/menuload.tscn", "back") # (at once: the card shrinks away over the map page)
+	var pos = screen.player.get_playback_position() if is_instance_valid(screen) and screen.player and screen.player.playing else -1.0
+	load("res://mods/replay/ScreenSwap.gd").back_to_menu(get_tree(), self, pos) # (at once: the card shrinks away over the menu, woken as it was)
 
 # leaving another way (Esc, an error): the half-built run is dropped once its worker is done. Not
 # waited for here: Esc right after the card came up froze the game (the worker, still instancing
 # the run, needed the main thread, which sat in wait_to_finish) - a Reaper collects it a frame later
 func _exit_tree():
+	if !cancelled: load("res://mods/replay/ScreenSwap.gd").free_sleeping() # (left some other way: an error screen)
 	if build_thread:
 		var r = Reaper.new()
 		r.th = build_thread

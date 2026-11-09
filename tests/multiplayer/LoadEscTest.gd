@@ -16,7 +16,7 @@ func run():
 	for s in Rhythia.registry_song.get_items():
 		if !s.is_online and s.filePath.get_file() == "@@MAP1@@": Rhythia.select_song(s)
 	yield(wait(1.0), "completed")
-	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (as the game starts a map: the menu kept asleep)
 	yield(wait(0.25), "completed") # (the card stays 0.5 s)
 	var e = InputEventKey.new(); e.scancode = KEY_ESCAPE; e.pressed = true
 	Input.parse_input_event(e)

@@ -92,7 +92,7 @@ func run():
 	yield(wait(1.5), "completed")
 	out("base light on the menu %.3f" % lum())
 	# 1. Esc on the loading card
-	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (as the game starts a map: the menu kept asleep)
 	yield(wait(0.7), "completed")
 	var e = InputEventKey.new(); e.scancode = KEY_ESCAPE; e.pressed = true
 	Input.parse_input_event(e)
@@ -103,7 +103,7 @@ func run():
 	check(at_menu(), "Esc on the loading card -> map page in %.2f s (darkest %.3f, slowest frame %.0f ms)" % r)
 	yield(wait(2.0), "completed")
 	# 2. a run -> results
-	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (as the game starts a map: the menu kept asleep)
 	tag = "in"
 	r = yield(watch("at_run", 12.0), "completed")
 	check(at_run(), "loading card -> run in %.2f s (darkest %.3f, slowest %.0f ms)" % r)
@@ -123,7 +123,7 @@ func run():
 	check(at_results(), "run -> results in %.2f s (darkest %.3f, slowest %.0f ms)" % r)
 	# 4. fail: the death log over the run, which plays on (not paused, nothing judged, camera tilting)
 	yield(wait(2.0), "completed")
-	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (as the game starts a map: the menu kept asleep)
 	r = yield(watch("at_run", 12.0), "completed")
 	Rhythia.restart_on_death = false
 	g = get_tree().current_scene.get_node("Game")
@@ -214,7 +214,7 @@ func run():
 	check(at_results(), "click on the death log -> results in %.2f s (darkest %.3f: black between)" % [r[0], r[1]])
 	yield(wait(1.5), "completed")
 	# the log runs out by itself
-	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (as the game starts a map: the menu kept asleep)
 	r = yield(watch("at_run", 12.0), "completed")
 	yield(wait(3.0), "completed")
 	get_tree().current_scene.get_node("Game").end(Globals.END_FAIL)
@@ -222,7 +222,7 @@ func run():
 	check(at_results(), "death log run out -> results in %.2f s" % r[0])
 	yield(wait(1.5), "completed")
 	# 5. a failed replay: no death log
-	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (as the game starts a map: the menu kept asleep)
 	r = yield(watch("at_run", 12.0), "completed")
 	yield(wait(1.0), "completed")
 	Rhythia.replaying = true

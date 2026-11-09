@@ -15,7 +15,7 @@ func files_dropped(files:PoolStringArray,_screen:int):
 		load("res://mods/replay/MapBackdrop.gd").launch(get_viewport().get_node("Menu")) # (cover, zoom and preview carry on into the loading screen)
 		get_viewport().get_node("Menu").black_fade_target = true
 		yield(get_tree().create_timer(0.55),"timeout")
-		get_tree().change_scene("res://scenes/loaders/songload.tscn")
+		load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (the menu kept asleep: Esc on the card wakes it)
 	else:
 		var song
 		var cleanup = load("res://mods/import/ImportCleanup.gd").new() # auto-delete mod
@@ -82,13 +82,13 @@ func _pressed():
 			load("res://mods/replay/MapBackdrop.gd").launch(get_viewport().get_node("Menu")) # (cover, zoom and preview carry on into the loading screen)
 			get_viewport().get_node("Menu").black_fade_target = true
 			yield(get_tree().create_timer(0.55),"timeout")
-			get_tree().change_scene("res://scenes/loaders/songload.tscn")
+			load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (the menu kept asleep: Esc on the card wakes it)
 			return
 	else:
 		load("res://mods/replay/MapBackdrop.gd").launch(get_viewport().get_node("Menu")) # (cover, zoom and preview carry on into the loading screen)
 		get_viewport().get_node("Menu").black_fade_target = true
 		yield(get_tree().create_timer(0.55),"timeout")
-		get_tree().change_scene("res://scenes/loaders/songload.tscn")
+		load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (the menu kept asleep: Esc on the card wakes it)
 
 	# Debug printing
 #	print("Connected controllers:\n")

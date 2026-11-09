@@ -266,4 +266,4 @@ func _watch(path:String):
 	var menu = get_tree().root.get_node_or_null("Menu")
 	if menu and "black_fade_target" in menu: menu.black_fade_target = true
 	yield(get_tree().create_timer(0.35), "timeout")
-	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (the menu kept asleep: Esc on the card wakes it)

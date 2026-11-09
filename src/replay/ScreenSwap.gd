@@ -71,6 +71,131 @@ static func go(tree:SceneTree, scene:String, style_:String = "back"):
 		tree.root.add_child(n)
 	tree.change_scene(scene)
 
+# ---------- the menu kept asleep behind the loading card ----------
+# A map start used to free the menu (1,800+ nodes) and Esc on the loading card built it again
+# (~450 ms frame). Now launch() keeps it in the tree asleep - hidden, every node's processing and
+# input off, its sounds / timers / animations / viewports paused, renamed so nothing finds it as the
+# menu - and back_to_menu() wakes it exactly as it was. Freed once the run starts (songload).
+const SLEEPING = "rr_sleeping_menu"
+static func launch(tree:SceneTree):
+	var m = tree.current_scene
+	if m and m.name == "Menu" and m.filename.ends_with("menu2.tscn") and !Engine.has_meta(SLEEPING):
+		_sleep(m)
+		tree.current_scene = null # (so the scene change leaves it alone)
+		Engine.set_meta(SLEEPING, m)
+	tree.change_scene("res://scenes/loaders/songload.tscn")
+
+static func _sleep(m:Node):
+	var rec = []
+	var st = [m]
+	while !st.empty():
+		var n = st.pop_back()
+		for c in n.get_children(): st.append(c)
+		var r = [n, n.is_processing(), n.is_physics_processing(), n.is_processing_input(), n.is_processing_unhandled_input(), n.is_processing_unhandled_key_input(), ""]
+		n.set_process(false)
+		n.set_physics_process(false)
+		n.set_process_input(false)
+		n.set_process_unhandled_input(false)
+		n.set_process_unhandled_key_input(false)
+		if (n == m or n is CanvasLayer) and "visible" in n and n.visible:
+			n.visible = false
+			r[6] = "visible"
+		elif (n is AudioStreamPlayer or n is AudioStreamPlayer2D or n is AudioStreamPlayer3D) and n.playing and !n.stream_paused:
+			n.stream_paused = true
+			r[6] = "audio"
+		elif n is Timer and !n.paused and !n.is_stopped():
+			n.paused = true
+			r[6] = "timer"
+		elif n is AnimationPlayer and n.playback_active:
+			n.playback_active = false
+			r[6] = "anim"
+		elif n is Tween and n.is_active():
+			n.set_active(false)
+			r[6] = "tween"
+		elif n is Viewport and n.render_target_update_mode == Viewport.UPDATE_ALWAYS:
+			n.render_target_update_mode = Viewport.UPDATE_DISABLED
+			r[6] = "viewport"
+		rec.append(r)
+	m.set_meta("rr_sleep", rec)
+	m.name = "RRMenuAsleep"
+
+# the sleeping menu, gone for good (the run started, or the card left some other way)
+static func free_sleeping():
+	if !Engine.has_meta(SLEEPING): return
+	var m = Engine.get_meta(SLEEPING)
+	Engine.remove_meta(SLEEPING)
+	if is_instance_valid(m): m.queue_free()
+
+# Esc on the loading card: the frozen card shrinks away over the menu woken up as it was
+static func back_to_menu(tree:SceneTree, card:Node, song_pos:float = -1.0):
+	var m = Engine.get_meta(SLEEPING) if Engine.has_meta(SLEEPING) else null
+	if !is_instance_valid(m):
+		go(tree, "res://scenes/loaders/menuload.tscn", "back")
+		return
+	Engine.remove_meta(SLEEPING)
+	var old = tree.root.get_node_or_null("RRScreenSwap")
+	if old: old.free()
+	var n = load("res://mods/replay/ScreenSwap.gd").new()
+	n.name = "RRScreenSwap"
+	n.style = "back"
+	n.from_sc = weakref(card)
+	var img = tree.root.get_texture().get_data()
+	if img is Image and img.get_width() > 1:
+		img.flip_y()
+		var tex = ImageTexture.new()
+		tex.create_from_image(img, 0)
+		n.set_meta("tex", tex)
+	tree.root.add_child(n)
+	# what menuload does on the way back (the map's notes stay: the woken map page still uses them)
+	tree.paused = false
+	PhysicsServer.set_active(true)
+	Input.set_custom_mouse_cursor(null)
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	Rhythia.load_color_txt()
+	Rhythia.conmgr_transit = null
+	Rhythia.loaded_world = null
+	Rhythia.was_replay = Rhythia.replaying
+	Rhythia.replaying = false
+	if Rhythia.was_replay: Rhythia.restore_prev_state()
+	Rhythia.replay_path = ""
+	# wake it
+	for r in m.get_meta("rr_sleep"):
+		var x = r[0]
+		if !is_instance_valid(x): continue
+		x.set_process(r[1])
+		x.set_physics_process(r[2])
+		x.set_process_input(r[3])
+		x.set_process_unhandled_input(r[4])
+		x.set_process_unhandled_key_input(r[5])
+		match r[6]:
+			"visible": x.visible = true
+			"audio": x.stream_paused = false
+			"timer": x.paused = false
+			"anim": x.playback_active = true
+			"tween": x.set_active(true)
+			"viewport": x.render_target_update_mode = Viewport.UPDATE_ALWAYS
+	m.remove_meta("rr_sleep")
+	m.name = "Menu"
+	tree.current_scene = m
+	card.queue_free()
+	# what the start left set (a fresh menu never had these)
+	if "black_fade_target" in m: m.black_fade_target = false
+	for p in ["Main/Maps/MapRegistry/S/VBoxContainer", "Main/Maps/Results/Results/RS/H1/Info/Run"]:
+		var b = m.get_node_or_null(p)
+		if b and "has_been_pressed" in b: b.has_been_pressed = false
+	for p in ["Main/Maps/MapRegistry/T/Search", "Main/Maps/MapRegistry/T/AuthorSearch"]:
+		var e = m.get_node_or_null(p)
+		if e is LineEdit: e.editable = true
+	var rb = m.get_node_or_null("ReplayBrowser")
+	if rb and "starting" in rb: rb.starting = false
+	if song_pos >= 0.0: # (the preview carries on from where the card's copy of it got to)
+		var pm = m.find_node("PreviewMusic", true, false)
+		if pm:
+			for k in ["Song", "MenuSong"]:
+				var pl = pm.get_node_or_null(k)
+				if pl is AudioStreamPlayer and pl.playing: pl.seek(song_pos)
+
 func _ready():
 	layer = 99
 	pause_mode = PAUSE_MODE_PROCESS

@@ -11,10 +11,10 @@ const W = 760.0
 const BANNER_H = 300.0
 const H = 552.0
 const INTRO = 0.5
-const SHOW = 0.5                  # s the card stays at least (songload waits for it; was 3 s, then 0.8, 1.5); Esc goes back
+const SHOW = 1.0                  # s the card stays at least (songload waits for it; was 3 s, then 0.8, 1.5, 0.5): time to Esc back
 const MUFFLE_BUS = "RRMuffle"
 const MUFFLE_HZ = 650.0           # low-pass cutoff once muffled
-const MUFFLE_TIME = 0.3           # s from open to muffled
+const MUFFLE_TIME = 0.5           # s from open to muffled
 
 var bg:TextureRect
 var card:Panel

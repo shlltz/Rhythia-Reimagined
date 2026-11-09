@@ -74,7 +74,7 @@ func play_song():
 	has_been_pressed = true
 	get_viewport().get_node("Menu").black_fade_target = true
 	yield(get_tree().create_timer(0.35),"timeout")
-	get_tree().change_scene("res://scenes/loaders/songload.tscn")
+	load("res://mods/replay/ScreenSwap.gd").launch(get_tree()) # (the menu kept asleep: Esc on the card wakes it)
 
 var pt = 1
 func on_pressed(i):
