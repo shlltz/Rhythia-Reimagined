@@ -39,7 +39,7 @@ func update(_s=null):
 	var map:Song = Rhythia.selected_song
 #	$Deleted.visible = (map.id == "!DELETED")
 	$RS.visible = (map.id != "!DELETED")
-	$RS/H2/EndInfo.visible = true
+	_end_info().visible = true
 	ctrl_box.get_node("Actions").visible = true
 #	$Actions.visible = true
 	_i("/Id/Id").text = map.id
@@ -149,6 +149,10 @@ func update(_s=null):
 #		else:
 #			$Actions.rect_position.y = 280
 #			$RS/H2/EndInfo.rect_position.y = 280
+
+func _end_info() -> Control:
+	var e = get_node_or_null("RS/H2/EndInfo")
+	return e if e else get_node("RS/H2/Scores/EndInfo")
 
 func return_to_song_select():
 	get_viewport().get_node("Menu/Sidebar").press(0,false)
@@ -267,7 +271,9 @@ func _relayout():
 	run_btn.size_flags_vertical = 0
 	_relayout_mods()
 	_move_run_box()
-	if load("res://mods/replay/Look.gd").mono(): _mono_buttons() # personal build
+	if load("res://mods/replay/Look.gd").mono():
+		_mono_buttons() # personal build
+		_mono_page()
 	elif Color("#8a6cff").r > 0.9: _share_buttons() # share build (the accent is swapped for the logo pink there)
 	add_to_group("rr_mappage")
 	_rr_apply()
@@ -307,7 +313,7 @@ func _rr_edit():
 
 # Start + the icon row as wide as the cover, so the column lines up
 func _fit_column():
-	var box = get_node_or_null("RS/H2/Mods/RunBox")
+	var box = run_box if is_instance_valid(run_box) else get_node_or_null("RS/H2/Mods/RunBox")
 	var side = box.rect_size.x if box else 380.0
 	run_btn.size_flags_horizontal = SIZE_FILL
 	var btns = []
@@ -375,10 +381,12 @@ func _unclip_labels(mods:Node):
 
 # Start + the icon row go under the "[+] MODS" bar, as wide as it (the cover column keeps the
 # map's look: cover, name, mapper, stars)
+var run_box:Control = null
 func _move_run_box():
 	var mods = get_node_or_null("RS/H2/Mods")
 	if !mods or mods.has_node("RunBox") or !mods_toggle: return
 	var box = VBoxContainer.new()
+	run_box = box
 	box.name = "RunBox"
 	box.add_constant_override("separation", 8)
 	mods.add_child(box)
@@ -388,6 +396,198 @@ func _move_run_box():
 	box.rect_position = mods_toggle.rect_position + Vector2(0, mods_toggle.rect_size.y + 16)
 	box.rect_size = Vector2(mods_toggle.rect_size.x, 0)
 	mods.rect_min_size.y = max(mods.rect_min_size.y, box.rect_position.y + 48 + 8 + 40 + 8)
+
+# ---------------------------------------------------------------- personal build: a calmer map page
+# Left: the cover column on top, centred; below it, beside the modifiers (START stays under MODS),
+# the scores card - a compact best attempt with the other plays folded in under it. Right: one bar (search, a dice for a random map,
+# FILTERS opening the filter panel, the sort), the map list wider (no UP / DOWN strips, no filter
+# column, no author box - the search matches mappers too). Nodes the stock scripts look up by path
+# stay where they are: the filter column is only taken out of the layout (set_as_toplevel) and
+# shown as a drop-down panel.
+var filters:Control = null
+var filters_panel:Panel = null
+var filters_btn:Button = null
+var sort_slot:Control = null
+var filters_open:bool = false
+func _mono_page():
+	var h1 = get_node("RS/H1")
+	var right = h1.get_node("Right")
+	var recent = h1.get_node_or_null("Recent")
+	# the cover column centred (other plays go to the scores card)
+	var sp = h1.get_node_or_null("Spacer")
+	if sp: sp.size_flags_horizontal = 0
+	var vs = h1.get_node_or_null("VSeparator")
+	if vs: vs.visible = false
+	h1.alignment = BoxContainer.ALIGN_CENTER
+	# scores card: the best attempt, compact, with the other plays under it
+	var h2 = get_node("RS/H2")
+	var ei = h2.get_node_or_null("EndInfo")
+	if ei:
+		var card = VBoxContainer.new()
+		card.name = "Scores"
+		card.add_constant_override("separation", 10)
+		h2.add_child(card)
+		h2.move_child(card, ei.get_index())
+		h2.remove_child(ei)
+		card.add_child(ei)
+		_compact_end_info(ei)
+		if recent:
+			recent.spacer = null
+			h1.remove_child(recent)
+			card.add_child(recent)
+			recent.size_flags_horizontal = SIZE_FILL
+			recent.size_flags_vertical = 0 # (right under the scores, not at the card's bottom)
+	# ---- the map list side
+	var maps = get_node_or_null("/root/Menu/Main/Maps")
+	if !maps: return
+	for n in ["ScrollControl", "VSeparator2"]: # (no UP / DOWN strips)
+		var c = maps.get_node_or_null(n)
+		if c: c.visible = false
+	var reg = maps.get_node_or_null("MapRegistry")
+	if reg: reg.size_flags_stretch_ratio = 1.18 # (the freed width goes to the list)
+	var t = maps.get_node_or_null("MapRegistry/T")
+	if !t: return
+	var au = t.get_node_or_null("AuthorSearch") # (the search matches mappers: "mapper:" too)
+	if au:
+		au.visible = false
+		if au.text != "":
+			au.text = ""
+			au.emit_signal("text_changed", "")
+	var se = t.get_node_or_null("Search")
+	if se: se.size_flags_horizontal = SIZE_EXPAND_FILL
+	var rnd = t.get_node_or_null("Random") # a dice
+	if rnd:
+		rnd.text = ""
+		rnd.hint_tooltip = "A random map from the search"
+		rnd.rect_min_size = Vector2(36, 0)
+		rnd.size_flags_horizontal = 0
+		var d = Control.new()
+		d.anchor_right = 1
+		d.anchor_bottom = 1
+		d.mouse_filter = MOUSE_FILTER_IGNORE
+		d.connect("draw", self, "_draw_dice", [d])
+		rnd.add_child(d)
+	filters_btn = Button.new()
+	filters_btn.name = "RRFilters"
+	filters_btn.text = "FILTERS"
+	filters_btn.focus_mode = FOCUS_NONE
+	filters_btn.toggle_mode = true
+	filters_btn.hint_tooltip = "Difficulty, collection, broken / online maps"
+	filters_btn.rect_min_size = Vector2(104, 0)
+	if rnd:
+		for st in ["normal", "hover", "pressed", "focus"]:
+			var sb = rnd.get_stylebox(st)
+			if sb: filters_btn.add_stylebox_override(st, sb)
+		filters_btn.add_font_override("font", rnd.get_font("font"))
+	filters_btn.connect("toggled", self, "_filters_toggle")
+	t.add_child(filters_btn)
+	sort_slot = Control.new() # (the sort drop-down is shown here: it belongs to the filter column)
+	sort_slot.name = "RRSortSlot"
+	sort_slot.rect_min_size = Vector2(150, 0)
+	sort_slot.mouse_filter = MOUSE_FILTER_IGNORE
+	t.add_child(sort_slot)
+	call_deferred("_mono_filters", maps)
+	set_process(true)
+
+# the filter column as a drop-down panel; its sort drop-down (the map list adds it: waited for) shown
+# in the bar
+var sort_btn:Control = null
+func _mono_filters(maps:Node):
+	var list = maps.get_node_or_null("MapRegistry/S/VBoxContainer")
+	for i in 120:
+		if list and list.get("rr_sort_btn"): break
+		yield(get_tree(), "idle_frame")
+	sort_btn = list.get("rr_sort_btn") if list else null
+	filters = maps.get_node_or_null("Filters")
+	if filters:
+		if sort_btn:
+			filters.move_child(sort_btn, 0) # (to the top: where the bar shows it)
+			for c in filters.get_children(): # (its caption: the bar says what it is)
+				if c is Label and c.text == "sort": c.set_meta("rr_never", true)
+		var bump = filters.get_node_or_null("bump")
+		if bump: bump.visible = false
+		filters_panel = Panel.new()
+		filters_panel.name = "RRFiltersPanel"
+		filters_panel.mouse_filter = MOUSE_FILTER_STOP
+		filters_panel.add_stylebox_override("panel", load("res://mods/replay/Look.gd").box(Color(0.03, 0.03, 0.04, 0.96), Color(1, 1, 1, 0.3), 1, 0))
+		maps.add_child(filters_panel)
+		maps.move_child(filters_panel, filters.get_index())
+		filters_panel.set_as_toplevel(true)
+		filters_panel.visible = false
+		filters.set_as_toplevel(true)
+		filters.rect_min_size.x = 150
+		_filters_show(false)
+
+func _compact_end_info(ei:Control):
+	# the grade under the title on the left; the numbers in two columns beside it (each value has its
+	# caption drawn ~15 px above it)
+	ei.rect_min_size = Vector2(345, 270)
+	ei.size_flags_vertical = 0 # (the other plays come right under it)
+	var lg2 = ei.get_node_or_null("LetterGrade2") # (the big faded grade behind it: gone)
+	if lg2: lg2.visible = false
+	var place = {"Result": Vector2(0, 0), "LetterGrade": Vector2(-4, 50),
+		"Accuracy": Vector2(88, 64), "MaxCombo": Vector2(255, 64),
+		"Misses": Vector2(88, 146), "FullCombo": Vector2(88, 146),
+		"Pauses": Vector2(255, 146), "NoPauses": Vector2(255, 146),
+		"Progress": Vector2(88, 206)}
+	for k in place:
+		var l = ei.get_node_or_null(k)
+		if l is Control: l.rect_position = place[k]
+	var lg = ei.get_node_or_null("LetterGrade")
+	if lg: lg.rect_scale = Vector2(0.5, 0.5)
+	for n in [["VSeparator2", 40], ["VSeparator", 30]]: # (narrower gaps: the card is wider)
+		var v = get_node_or_null("RS/H2/" + n[0])
+		if v:
+			v.add_constant_override("separation", n[1])
+			v.rect_min_size.x = n[1]
+			v.rect_size.x = n[1]
+
+func _filters_toggle(on:bool):
+	_filters_show(on)
+
+func _filters_show(on:bool):
+	filters_open = on
+	if filters_btn and filters_btn.pressed != on: filters_btn.pressed = on
+	if !filters: return
+	for c in filters.get_children():
+		if !(c is CanvasItem) or c.name == "bump": continue
+		if c.has_meta("rr_never"): c.visible = false
+		elif c == sort_btn: c.visible = true # (the sort: always shown, in the bar)
+		else: c.visible = on
+	filters_panel.visible = on
+	filters.rect_size = Vector2(150, 0) # (shrinks to what's shown)
+	_place_filters()
+
+func _place_filters():
+	if !filters or !is_instance_valid(sort_slot): return
+	var sr = sort_slot.get_global_rect()
+	var p = (sr.position + Vector2(0, (sr.size.y - (sort_btn.rect_size.y if sort_btn else 28.0)) / 2)).round() # (on the bar's line)
+	if filters.rect_global_position != p: filters.rect_global_position = p
+	if filters_panel.visible:
+		var r = Rect2(p - Vector2(8, 8), filters.rect_size + Vector2(16, 16))
+		if filters_panel.get_global_rect() != r:
+			filters_panel.rect_global_position = r.position
+			filters_panel.rect_size = r.size
+
+func _process(_d):
+	_place_filters() # (the page moves with the menu's parallax; the filter column is out of the layout)
+
+# a click outside the open filter panel closes it (not while one of its drop-downs is open)
+func _rr_filters_input(ev):
+	if !filters_open or !(ev is InputEventMouseButton) or !ev.pressed: return
+	for c in filters.get_children():
+		if c is OptionButton and c.get_popup().visible: return
+	var p = ev.global_position
+	if filters_panel.get_global_rect().has_point(p) or filters_btn.get_global_rect().has_point(p): return
+	_filters_show(false)
+
+func _draw_dice(c:Control):
+	var s = min(c.rect_size.x, c.rect_size.y) * 0.56
+	var o = (c.rect_size - Vector2(s, s)) / 2
+	var col = Color(1, 1, 1, 0.85)
+	c.draw_rect(Rect2(o, Vector2(s, s)), col, false, 1.5)
+	for q in [Vector2(0.27, 0.27), Vector2(0.73, 0.27), Vector2(0.5, 0.5), Vector2(0.27, 0.73), Vector2(0.73, 0.73)]:
+		c.draw_rect(Rect2(o + q * s - Vector2(1.5, 1.5), Vector2(3, 3)), col)
 
 # Rhythia-reimagined: interface toggles (also called live from the Customize panel)
 func _rr_apply():
@@ -610,6 +810,7 @@ func _hp_closed():
 	hp_closed_at = OS.get_ticks_msec()
 
 func _input(ev):
+	if filters: _rr_filters_input(ev)
 	var touch = ev is InputEventScreenTouch
 	if !(ev is InputEventMouseButton or touch) or !ev.pressed or mods_nodes.empty() or !mods_nodes[0].visible: return
 	if OS.get_ticks_msec() - hp_closed_at < 500: return
@@ -673,7 +874,7 @@ func _ready():
 	if Rhythia.selected_song: update()
 	else:
 		$RS.visible = false
-		$RS/H2/EndInfo.visible = false
+		_end_info().visible = false
 		run_btn.disabled = true
 		ctrl_box.get_node("Actions").disabled = true
 		ctrl_box.get_node("PreviewMusic").disabled = true
