@@ -1,7 +1,7 @@
 extends Node
 # The pass moment skipped with R: a run jumped to just before its last note (NoFail, the song left
-# running 6 s), R pressed 0.8 s into the moment - the glass drops away fast, then the white-out,
-# then the results (time scale back to 1). Output @@OUT@@/passskip.txt (+ skip_*.png with RR_SHOTS)
+# running 6 s): R held 0.3 s and let go (faster, then eased back, no skip), then held all the way -
+# the speed builds smoothly, the white-out, the results (time scale back to 1). Output @@OUT@@/passskip.txt (+ skip_*.png with RR_SHOTS)
 const OUT = "@@OUT@@/passskip.txt"
 var passed = 0
 var failed = 0
@@ -52,29 +52,32 @@ func run():
 	var mu = sp.get_node("Music")
 	if mu.stream: mu.play(max(0.0, mu.stream.get_length() - 6.0))
 	yield(real_wait(0.8), "completed")
-	var ys = []
-	for s in pm.shards: ys.append(s[0].y)
+	# hold R 0.3 s, let go: faster, then eases back off, no skip
 	var e = InputEventAction.new(); e.action = "give_up"; e.pressed = true
 	Input.parse_input_event(e)
+	var sp0 = _speed(pm)
+	yield(real_wait(0.3), "completed")
+	var h1 = pm.hold
+	var sp1 = _speed(pm)
+	shot("0_holding")
+	e = InputEventAction.new(); e.action = "give_up"; e.pressed = false
+	Input.parse_input_event(e)
+	yield(real_wait(0.6), "completed")
+	check(h1 > 0.35 and h1 < 0.7 and sp1 > sp0 * 1.3, "holding R: the fall speeds up (hold %.2f, %.0f -> %.0f px/s)" % [h1, sp0, sp1])
+	check(is_instance_valid(pm) and !pm.skipping and pm.hold == 0.0 and Engine.time_scale < 0.99, "let go early: eased back off, no skip (hold %.2f, time scale %.2f)" % [pm.hold if is_instance_valid(pm) else -1.0, Engine.time_scale])
+	# hold again until it skips: the speed builds smoothly
+	e = InputEventAction.new(); e.action = "give_up"; e.pressed = true
+	Input.parse_input_event(e)
 	var u0 = OS.get_ticks_usec()
-	# the fall speeds up smoothly: the shards' mean drop per second, frame by frame
 	var speeds = []
-	var prev = -1.0
-	var lu = OS.get_ticks_usec()
-	while OS.get_ticks_usec() - u0 < 350000:
+	while OS.get_ticks_usec() - u0 < 900000 and is_instance_valid(pm) and !pm.skipping:
 		yield(get_tree(), "idle_frame")
-		var nu = OS.get_ticks_usec()
-		var s = 0.0
-		for x in pm.shards: s += x[1].y
-		var v = s / max(pm.shards.size(), 1) * float(pm.get("skip_k") * (pm.SKIP_SPEED - pm.skip_ts) + pm.skip_ts if pm.skipping else 1.0)
-		speeds.append(v)
-		lu = nu
-		if OS.get_ticks_usec() - u0 > 150000 and OS.get_ticks_usec() - u0 < 170000: shot("0_falling")
+		speeds.append(_speed(pm))
 	var jump = 0.0
 	for i in range(1, speeds.size()): if speeds[i - 1] > 1.0: jump = max(jump, speeds[i] / speeds[i - 1])
-	check(pm.skipping and Engine.time_scale > 0.99, "R: skipping, time scale back to %.2f by 0.35 s" % Engine.time_scale)
-	check(speeds.size() > 10 and jump < 1.5, "the fall speeds up smoothly: %.0f -> %.0f px/s over %d frames, biggest step x%.2f a frame" % [speeds[0], speeds[-1], speeds.size(), jump])
-	shot("1_white")
+	var held_s = (OS.get_ticks_usec() - u0) / 1e6
+	check(is_instance_valid(pm) and pm.skipping, "held all the way: skipping after %.2f s" % held_s)
+	check(speeds.size() > 10 and jump < 1.5, "the fall builds smoothly: %.0f -> %.0f px/s over %d frames, biggest step x%.2f a frame" % [speeds[0] if speeds.size() else 0.0, speeds[-1] if speeds.size() else 0.0, speeds.size(), jump])
 	t = 0.0
 	while t < 5 and !get_tree().root.has_node("Menu/ResultsScreen"):
 		yield(get_tree(), "idle_frame"); t += get_process_delta_time()
@@ -82,7 +85,7 @@ func run():
 	e = InputEventAction.new(); e.action = "give_up"; e.pressed = false
 	Input.parse_input_event(e)
 	var rs = get_tree().root.get_node_or_null("Menu/ResultsScreen")
-	check(rs != null and dt < 1.6 and Engine.time_scale == 1.0, "results %.2f s after R (song had ~5 s left), time scale %.2f" % [dt, Engine.time_scale])
+	check(rs != null and dt < 2.0 and Engine.time_scale == 1.0, "results %.2f s after R was pressed again, time scale %.2f" % [dt, Engine.time_scale])
 	check(Rhythia.song_end_type == Globals.END_PASS, "counted as a pass (end type %d)" % Rhythia.song_end_type)
 	Rhythia.disable_desync = false
 	Rhythia.mod_nofail = false
@@ -90,3 +93,11 @@ func run():
 	shot("2_results")
 	out("== totals: %d passed, %d failed" % [passed, failed])
 	OS.kill(OS.get_process_id())
+
+# how fast the glass is falling on screen (px/s): mean drop speed x the moment's speed-up
+func _speed(pm) -> float:
+	if !is_instance_valid(pm) or pm.shards.empty(): return 0.0
+	var s = 0.0
+	for x in pm.shards: s += x[1].y
+	var ts = Engine.time_scale
+	return s / pm.shards.size() * lerp(ts, pm.SKIP_SPEED, pm.skip_k * pm.skip_k) / max(ts, 0.01) * ts
