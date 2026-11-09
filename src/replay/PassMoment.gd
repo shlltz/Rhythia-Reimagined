@@ -22,6 +22,9 @@ const HOLD_DROP = 0.4  # s the speed-up takes to ease off again once R is let go
 const SKIP_FALL = 0.1  # s it keeps dropping once full, before the white-out
 const SKIP_SPEED = 3.5 # how much faster the glass falls with R held all the way
 const FOV_PUSH = 14.0  # degrees the camera pushes in
+const INVERT = 0.05    # s of impact frame (negative) on the hit, before the white flash
+const PUNCH = 9.0      # degrees of a sharp zoom kick on the hit (springs back into the slow push)
+const SHAKE = 0.16     # camera shake on the hit (world units), dying away fast
 const RIPPLES = [0.0, 0.16, 0.34] # s: three rings out from the cursor
 const RIPPLE_TIME = 1.1
 
@@ -30,6 +33,8 @@ uniform vec2 center = vec2(0.5);   // (in this rect's UV: top-down)
 uniform float aspect = 1.7778;
 uniform vec3 radius = vec3(-1.0);  // per ring, in screen heights
 uniform vec3 amp = vec3(0.0);
+uniform float invert = 0.0;        // the impact frame: the scene as a negative
+uniform float split = 0.0;         // colour split along the rings
 void fragment() {
 	vec2 d = UV - center;
 	d.x *= aspect;
@@ -42,8 +47,14 @@ void fragment() {
 	float off = dot(sin(x * 2.4), w);
 	float glow = w.x + w.y + w.z;
 	vec2 o = dir * off * 0.035;
-	vec3 c = textureLod(SCREEN_TEXTURE, SCREEN_UV - vec2(o.x, o.y * fy), 0.0).rgb;
+	vec2 su = SCREEN_UV - vec2(o.x, o.y * fy);
+	vec2 cs = vec2(dir.x, dir.y * fy) * (glow * split + split * 0.3) * 0.012;
+	vec3 c;
+	c.r = textureLod(SCREEN_TEXTURE, su + cs, 0.0).r;
+	c.g = textureLod(SCREEN_TEXTURE, su, 0.0).g;
+	c.b = textureLod(SCREEN_TEXTURE, su - cs, 0.0).b;
 	c += vec3(0.75, 0.88, 1.0) * glow * 0.35;
+	c = mix(c, vec3(1.0) - c, invert);
 	COLOR = vec4(c, 1.0);
 }
 """
@@ -97,6 +108,8 @@ var spawn:Node
 var cam:Camera = null
 var cursor:Spatial = null
 var base_fov:float = 70.0
+var base_h:float = 0.0
+var base_v:float = 0.0
 var started:bool = false
 var t0:int = 0
 var flash:ColorRect
@@ -241,7 +254,14 @@ func _process(delta):
 	# the camera pushes in, then eases half way back while the shards fall
 	var e = 1.0 - pow(1.0 - min(el / 1.3, 1.0), 3)
 	e -= 0.5 * smoothstep(SLOW_UNTIL, SLOW_BACK + 1.0, el)
-	if is_instance_valid(cam): cam.fov = base_fov - FOV_PUSH * e
+	var kick = PUNCH * (1.0 if el < STOP else exp(-(el - STOP) * 9.0) * cos((el - STOP) * 14.0)) # (a kick that springs back)
+	var sh = SHAKE * exp(-el * 6.0) * (1.0 - skip_k)
+	if is_instance_valid(cam):
+		cam.fov = base_fov - FOV_PUSH * e - kick
+		cam.h_offset = base_h + sh * (sin(el * 91.0) + 0.5 * sin(el * 157.0))
+		cam.v_offset = base_v + sh * (cos(el * 83.0) + 0.5 * sin(el * 131.0))
+	ripple.material.set_shader_param("invert", 1.0 if el < INVERT else 0.0)
+	ripple.material.set_shader_param("split", max(0.0, 1.0 - el / 0.8))
 	halo_k = min(1.0, el / 0.25) * (1.0 - smoothstep(1.2, 2.4, el))
 	_ripples(el)
 	_glass_step(el, dt)
@@ -267,7 +287,10 @@ func _start():
 	t0 = OS.get_ticks_usec()
 	var sc = get_tree().current_scene
 	cam = sc.get_node_or_null("Camera") if sc else null
-	if cam: base_fov = cam.fov
+	if cam:
+		base_fov = cam.fov
+		base_h = cam.h_offset
+		base_v = cam.v_offset
 	cursor = spawn.get_node_or_null("Cursor")
 	cur_mesh = spawn.get_node_or_null("Cursor/Mesh")
 	if cur_mesh and cur_mesh.get("material/0") is SpatialMaterial:
@@ -287,13 +310,16 @@ func _start():
 		var p = AudioStreamPlayer.new()
 		p.stream = Engine.get_meta("rr_clear_sfx")
 		p.bus = "Effects" if AudioServer.get_bus_index("Effects") >= 0 else "Master"
-		p.volume_db = -6.0
+		p.volume_db = -3.0 # (the sound is made 0.65x: the same loudness, no clipping)
 		add_child(p)
 		p.play()
 
 func _finish():
 	done = true
 	Engine.time_scale = 1.0
+	if is_instance_valid(cam):
+		cam.h_offset = base_h
+		cam.v_offset = base_v
 
 func _exit_tree():
 	if started: Engine.time_scale = 1.0
@@ -602,7 +628,15 @@ static func _clear_sound() -> AudioStreamSample:
 	var amps = [0.22, 0.2, 0.2, 0.14, 0.1]
 	var ph = [0.0, 0.0, 0.0, 0.0, 0.0]
 	var thump = 0.0
+	var boom = 0.0
 	var lp = 0.0
+	var hp_prev = 0.0
+	var hp = 0.0
+	# glass breaking: a crunch, then shards tinkling (short high pings, most of them early)
+	var pings = []
+	for k in 46:
+		var r = rng.randf()
+		pings.append([0.012 + 0.75 * r * r, rng.randf_range(2300.0, 6800.0), rng.randf_range(0.035, 0.1) * (1.0 - 0.6 * r), rng.randf_range(28.0, 60.0), rng.randf() * TAU])
 	for i in m:
 		if i >= n:
 			x[i] = 0.0
@@ -614,9 +648,18 @@ static func _clear_sound() -> AudioStreamSample:
 			v += sin(ph[k]) * amps[k] * exp(-t * (1.6 + k * 0.5))
 		thump += TAU * (55.0 + 90.0 * exp(-t * 18.0)) / rate
 		v += sin(thump) * 0.55 * exp(-t * 9.0)
+		boom += TAU * (38.0 + 30.0 * exp(-t * 10.0)) / rate # (a deep boom under it, longer)
+		v += sin(boom) * 0.42 * exp(-t * 3.2)
+		var wn = rng.randf() * 2.0 - 1.0
+		hp = 0.86 * (hp + wn - hp_prev) # (high-passed noise: the crunch)
+		hp_prev = wn
+		v += hp * 0.3 * exp(-t * 22.0) * min(1.0, t * 900.0)
+		for pg in pings:
+			var dtp = t - pg[0]
+			if dtp >= 0.0 and dtp < 0.14: v += sin(pg[4] + TAU * pg[1] * dtp) * pg[2] * exp(-dtp * pg[3])
 		lp += ((rng.randf() * 2.0 - 1.0) - lp) * 0.6
 		v += lp * 0.12 * exp(-t * 14.0) # (a bright sparkle at the hit)
-		v *= min(1.0, t * 600.0)
+		v *= min(1.0, t * 600.0) * 0.65 # (peaks just under full scale with the boom + glass)
 		v *= 1.0 - smoothstep(1.2, 1.4, t)
 		x[i] = v
 	# ping-pong delay: the first repeat on the right, then left, ...; each one through a low-pass
