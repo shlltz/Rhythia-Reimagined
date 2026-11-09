@@ -124,7 +124,7 @@ var cur_mesh:MeshInstance = null
 var cur_tex:Texture = null
 var cur_col:Color = Color(1, 1, 1)
 var cur_trail = []      # recent cursor points on screen
-const DIM = 0.8         # how dark the rest gets (was 0.93)
+const DIM = 0.93        # how dark the rest gets
 const DIM_FROM = 0.15   # s: fading from ...
 const DIM_TO = 1.4      # ... to
 var ripple:ColorRect
