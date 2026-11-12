@@ -14,6 +14,9 @@ func stage(text:String,done:bool=false):
 		if Rhythia.enable_oldmenu:
 			Rhythia.menu_target = "res://scenes/menu/oldmenu2.tscn"
 			target = Rhythia.menu_target # re-initializing so it updates everywhere else -fog
+		# Quantum Editor playtest (--a/--t/--sp/--sf): straight into the run (Playtest.gd)
+		if Rhythia.single_map_mode_txt and Rhythia.selected_song and ResourceLoader.exists("res://mods/fixes/Playtest.gd"):
+			target = load("res://mods/fixes/Playtest.gd").begin()
 		var res = RQueue.queue_resource(target)
 		if res != OK:
 			Rhythia.errorstr = "queue_resource returned %s" % res
