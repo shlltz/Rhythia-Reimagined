@@ -141,7 +141,9 @@ func _ready():
 	if get_parent() != get_tree().root:
 		# launched from init.tscn: run as a root node instead (once: init loads twice on a first
 		# launch, the stock cutscene's replacement goes back to it - fixes/NoCutscene.gd)
-		if !Engine.has_meta("rr_intro_started"):
+		# (no intro for a Quantum Editor playtest: --t / --txt go straight into the run, fixes/Playtest.gd)
+		var playtest = Globals.cmdline.has("t") or Globals.cmdline.has("txt")
+		if !Engine.has_meta("rr_intro_started") and !playtest:
 			Engine.set_meta("rr_intro_started", true)
 			var me = load(PATH).new()
 			me.name = "Intro"
